@@ -349,8 +349,11 @@ export function runTests(): void {
   console.log('\n✅ All tests passed!');
 }
 
-// Run tests if this file is executed directly (ESM-compatible check)
-const isMainModule = import.meta.url === `file://${process.argv[1]}`;
-if (isMainModule) {
+// Run tests if this file is executed directly (CommonJS-compatible check).
+// (When the daemon is bundled to CommonJS for production, `import.meta` isn't
+// available; this guard works in both dev tsx-loader and prod cjs builds.)
+declare const require: { main?: NodeModule } | undefined;
+declare const module: NodeModule | undefined;
+if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
   runTests();
 }

@@ -3,10 +3,10 @@
  * Tests in-memory session tracking, reuse policy, and reaper logic.
  * Does not spawn real tmux sessions to avoid environment dependencies.
  *
- * Run with: node --import tsx src/daemon/tmux.test.ts
+ * Run with: node --import tsx tests/tmux.test.ts
  */
 
-import type { SessionHandle } from './tmux-types.js';
+import type { SessionHandle } from '../src/daemon/tmux-types.js';
 
 /**
  * Minimal mock TmuxManager that only tests the state logic.

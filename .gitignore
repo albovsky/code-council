@@ -1,0 +1,29 @@
+node_modules/
+.next/
+.vercel
+dist/
+*.log
+
+.env
+.env.local
+.env*.local
+
+# Local Chorus data (per-user, never committed)
+.chorus/
+chorus.db
+chorus.db-journal
+
+# Build artifacts
+*.tsbuildinfo
+next-env.d.ts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# pnpm
+.pnpm-store/

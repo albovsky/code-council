@@ -68,9 +68,11 @@ Restart Claude Code. The `chorus` MCP server should appear in `/mcp` listing.
 
 Pick **one** of:
 
-**Option 1 — One click in the cockpit.** Open https://chorus.99x.agency/connect (or `localhost:3011/connect`), click **Connect Claude Code**. Done. The page shows live status (`✓ Connected` once approved) for each orchestrator.
+**Option 1 — Already done by `chorus init`** (see step earlier). Init auto-detects Claude Code (and any other supported editor on this host) and registers + pre-approves it. Re-run safely.
 
-**Option 2 — CLI.** `node /home/ubuntu/dev/chorus/bin/chorus.mjs connect` (or once published: `chorus connect`).
+**Option 2 — Cockpit one-click.** Open http://localhost:3011/connect after `chorus start`, click **Connect Claude Code**.
+
+**Option 3 — CLI explicit.** `chorus connect` (idempotent — safe to re-run).
 
 Both patch `~/.claude/settings.local.json` → `permissions.allow` with all 7 `mcp__chorus__*` tools. Idempotent. Without this, Claude prompts "Yes, allow `mcp__chorus__create_chat` for this project?" the first time you use each tool.
 
@@ -115,8 +117,7 @@ watch -n 1 'tmux ls 2>/dev/null | grep chorus-'
 ls -la ~/.chorus/chats/<chatId>/round-1/
 
 # Open the cockpit in a browser:
-open http://127.0.0.1:3011                # local
-# or: https://chorus.99x.agency             remote (proxied)
+open http://127.0.0.1:3011
 
 # Tail daemon logs:
 pm2 logs chorus-daemon --lines 50

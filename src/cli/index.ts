@@ -18,8 +18,9 @@ program
 // Command: chorus init
 program
   .command('init')
-  .description('Initialize Chorus: create ~/.chorus/, seed database, copy built-in templates')
-  .action(() => {
+  .description('Initialize Chorus: create ~/.chorus/, seed database, register MCP with detected editors')
+  .option('--no-register', 'Skip auto-detecting orchestrators (Claude Code etc.)')
+  .action(async (opts: { register?: boolean }) => {
     try {
       const chorusDir = path.join(os.homedir(), '.chorus');
 
@@ -53,12 +54,67 @@ program
         }
       }
 
+      // Auto-detect & register every supported orchestrator on the host.
+      // Skipped if user passes --no-register.
+      if (opts.register !== false) {
+        await runOrchestratorAutoConnect();
+      }
+
       console.log('\nChorus initialized successfully!');
+      console.log('Next: `chorus start` to bring up the daemon, then restart any editor');
+      console.log('we just registered (Claude Code, etc.) so it picks up the MCP server.');
     } catch (error) {
       console.error('Initialization failed:', error);
       process.exit(1);
     }
   });
+
+/**
+ * Detect Claude Code / Codex / Cursor and wire each one we know how to wire.
+ * Prints a summary line per CLI. Resolves the absolute path to bin/chorus.mjs
+ * from `process.argv[1]` so the registered MCP entry survives `npm i -g chorus`
+ * symlink redirects.
+ */
+async function runOrchestratorAutoConnect(): Promise<void> {
+  const { autoConnectAll } = await import('../daemon/orchestrators.js');
+  const binPath = process.argv[1] ?? '';
+
+  if (!binPath) {
+    console.log('\n(Skipped orchestrator detection — could not resolve chorus bin path.)');
+    return;
+  }
+
+  console.log('\nDetecting orchestrators...');
+
+  const result = autoConnectAll({ binPath });
+
+  for (const step of result.steps) {
+    if (!step.detected) {
+      console.log(`  ✗ ${step.label}: not detected`);
+      continue;
+    }
+    if (step.error) {
+      console.log(`  ! ${step.label}: ${step.error}`);
+      continue;
+    }
+    if (step.unsupported) {
+      console.log(`  ~ ${step.label}: detected but auto-wire not supported yet — skipped`);
+      continue;
+    }
+    const parts: string[] = [];
+    if (step.registered) parts.push('MCP server registered');
+    else parts.push('MCP already registered');
+    if (step.toolsAdded > 0) parts.push(`${step.toolsAdded} tool(s) approved`);
+    else parts.push('all tools already approved');
+    console.log(`  ✓ ${step.label}: ${parts.join(' · ')}`);
+  }
+
+  if (!result.anyConnected) {
+    console.log(
+      '  (no supported editors found — to connect manually later: chorus connect)',
+    );
+  }
+}
 
 // Command: chorus start
 program

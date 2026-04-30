@@ -152,3 +152,161 @@ export function connectByName(name: string): ConnectResult {
       throw new Error(`Connecting '${name}' is not supported yet.`);
   }
 }
+
+/**
+ * Register Chorus as an MCP server in Claude Code's project config.
+ * Patches `~/.claude.json` → projects.<projectDir>.mcpServers.chorus.
+ *
+ * Idempotent: if chorus is already pointing at the same bin path, returns
+ * `{ added: false }`.
+ */
+export function registerClaudeMcpServer(opts: {
+  binPath: string;
+  projectDir?: string;
+  daemonUrl?: string;
+}): { added: boolean; configPath: string; project: string } {
+  const configPath = path.join(os.homedir(), '.claude.json');
+  const project = opts.projectDir ?? os.homedir();
+
+  let config: Record<string, unknown> = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    } catch {
+      throw new Error(
+        `Could not parse ${configPath}. Fix the JSON or remove it and re-run.`,
+      );
+    }
+  }
+
+  const projects = (config.projects && typeof config.projects === 'object'
+    ? (config.projects as Record<string, Record<string, unknown>>)
+    : {});
+  const projectBlock = projects[project] ?? {};
+  const mcpServers = (projectBlock.mcpServers && typeof projectBlock.mcpServers === 'object'
+    ? (projectBlock.mcpServers as Record<string, unknown>)
+    : {});
+
+  const existing = mcpServers.chorus as
+    | { command?: string; args?: string[]; env?: Record<string, string> }
+    | undefined;
+  if (
+    existing &&
+    Array.isArray(existing.args) &&
+    existing.args[0] === opts.binPath &&
+    existing.args[1] === 'mcp'
+  ) {
+    return { added: false, configPath, project };
+  }
+
+  mcpServers.chorus = {
+    command: 'node',
+    args: [opts.binPath, 'mcp'],
+    env: { CHORUS_DAEMON_URL: opts.daemonUrl ?? 'http://127.0.0.1:7707' },
+  };
+
+  projects[project] = { ...projectBlock, mcpServers };
+  fs.writeFileSync(configPath, JSON.stringify({ ...config, projects }, null, 2), 'utf-8');
+  return { added: true, configPath, project };
+}
+
+// ─── Auto-connect: detect all supported CLIs, wire each one ─────────────────
+
+export interface AutoConnectStep {
+  name: OrchestratorName;
+  label: string;
+  /** Was this CLI's config file present on disk? */
+  detected: boolean;
+  /** Did we add a new MCP server entry? (false if already registered) */
+  registered: boolean;
+  /** How many tools were added to the allow-list (0 if all were already there) */
+  toolsAdded: number;
+  /** True if the CLI was detected but Chorus doesn't know how to wire it yet */
+  unsupported?: boolean;
+  /** Surfaced when something failed */
+  error?: string;
+}
+
+export interface AutoConnectResult {
+  steps: AutoConnectStep[];
+  /** Did we touch at least one CLI? */
+  anyConnected: boolean;
+}
+
+/**
+ * Detect every CLI we know about and connect to all that are present.
+ * Currently only Claude Code is fully wired; Codex/Cursor are stubs that
+ * report `unsupported: true` if their config dirs are detected.
+ */
+export function autoConnectAll(opts: {
+  binPath: string;
+  projectDir?: string;
+}): AutoConnectResult {
+  const steps: AutoConnectStep[] = [];
+
+  // Claude Code — fully supported.
+  const claudeConfig = path.join(os.homedir(), '.claude.json');
+  if (fs.existsSync(claudeConfig)) {
+    try {
+      const reg = registerClaudeMcpServer(opts);
+      const conn = connectClaude();
+      steps.push({
+        name: 'claude',
+        label: 'Claude Code',
+        detected: true,
+        registered: reg.added,
+        toolsAdded: conn.added.length,
+      });
+    } catch (err) {
+      steps.push({
+        name: 'claude',
+        label: 'Claude Code',
+        detected: true,
+        registered: false,
+        toolsAdded: 0,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  } else {
+    steps.push({
+      name: 'claude',
+      label: 'Claude Code',
+      detected: false,
+      registered: false,
+      toolsAdded: 0,
+    });
+  }
+
+  // Codex CLI — detection only; full wire-up in a later release.
+  const codexConfig = path.join(os.homedir(), '.codex', 'config.toml');
+  if (fs.existsSync(codexConfig)) {
+    steps.push({
+      name: 'codex',
+      label: 'Codex CLI',
+      detected: true,
+      registered: false,
+      toolsAdded: 0,
+      unsupported: true,
+    });
+  }
+
+  // Cursor — same. Detect via known config locations on Linux/macOS.
+  const cursorPaths = [
+    path.join(os.homedir(), '.cursor'),
+    path.join(os.homedir(), '.config', 'Cursor'),
+    path.join(os.homedir(), 'Library', 'Application Support', 'Cursor'),
+  ];
+  if (cursorPaths.some((p) => fs.existsSync(p))) {
+    steps.push({
+      name: 'cursor',
+      label: 'Cursor',
+      detected: true,
+      registered: false,
+      toolsAdded: 0,
+      unsupported: true,
+    });
+  }
+
+  const anyConnected = steps.some((s) => s.detected && !s.unsupported && !s.error);
+  return { steps, anyConnected };
+}

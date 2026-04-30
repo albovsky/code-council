@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Worktree artifacts and node_modules — never lint these.
+    ".claude/**",
+    "node_modules/**",
+    "dist/**",
+    "**/.next/**",
   ]),
 ]);
 

@@ -14,6 +14,22 @@
     "lib": ["ES2022"],
     "jsx": "preserve"
   },
-  "include": ["src/daemon/**/*", "src/mcp/**/*", "src/cli/**/*", "src/lib/**/*"],
-  "exclude": ["src/app/**/*", "src/components/**/*", "node_modules", ".next", "dist"]
+  "include": [
+    "src/daemon/**/*",
+    "src/mcp/**/*",
+    "src/cli/**/*",
+    "src/lib/db/**/*",
+    "src/lib/template-schema.ts"
+  ],
+  "exclude": [
+    "src/app/**/*",
+    "src/components/**/*",
+    "src/lib/api/**/*",
+    "src/lib/types.ts",
+    "src/lib/mock-data.ts",
+    "src/lib/utils.ts",
+    "node_modules",
+    ".next",
+    "dist"
+  ]
 }

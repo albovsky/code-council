@@ -27,3 +27,4 @@ Thumbs.db
 
 # pnpm
 .pnpm-store/
+.claude/

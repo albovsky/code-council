@@ -3,6 +3,9 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { listChats, DaemonError } from "@/lib/api";
 
+export const dynamic = "force-dynamic";
+
+
 async function getChats() {
   try {
     const chats = await listChats({ limit: 50 });

@@ -251,10 +251,11 @@ export function NewTemplateDialog() {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+          aria-label="New template"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
-          New template
+          <span className="hidden sm:inline">New template</span>
         </button>
       </DialogTrigger>
 

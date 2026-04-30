@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { GitFork, Heart, Code2, Eye } from "lucide-react";
+import { Code2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -106,7 +106,7 @@ export default function TemplatesPage() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">
           {/* Template list */}
-          <div className="flex flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-2">
             {filtered.map((t) => (
               <button
                 key={t.id}
@@ -120,8 +120,8 @@ export default function TemplatesPage() {
               >
                 <Card className="bg-card p-4 transition group-hover:border-muted-foreground/30">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold">
                           {t.name}
                         </span>
@@ -137,10 +137,13 @@ export default function TemplatesPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-                    <div className="flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                      {t.driver} →{" "}
+                  {t.phases[0]?.reviewer.candidates.length ? (
+                    <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                        doer
+                      </span>
+                      <span className="text-muted-foreground/40">→</span>
                       <span className="flex items-center gap-1">
                         {t.phases[0]?.reviewer.candidates.map((l) => (
                           <span
@@ -149,19 +152,23 @@ export default function TemplatesPage() {
                             title={l}
                           />
                         ))}
+                        <span>
+                          {t.phases[0]?.reviewer.candidates.length}{" "}
+                          {t.phases[0]?.reviewer.candidates.length === 1
+                            ? "reviewer"
+                            : "reviewers"}
+                        </span>
                       </span>
+                      {t.phases.length > 1 && (
+                        <>
+                          <span className="text-muted-foreground/40">·</span>
+                          <span className="font-mono text-[10px]">
+                            {t.phases.length} phases
+                          </span>
+                        </>
+                      )}
                     </div>
-                    <div className="flex items-center gap-3 font-mono">
-                      <span className="flex items-center gap-1">
-                        <GitFork className="h-3 w-3" />
-                        {t.forks}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Heart className="h-3 w-3" />
-                        {t.popularity}
-                      </span>
-                    </div>
-                  </div>
+                  ) : null}
                 </Card>
               </button>
             ))}
@@ -169,35 +176,18 @@ export default function TemplatesPage() {
 
           {/* YAML preview */}
           {selected ? (
-            <Card className="bg-card p-0">
+            <Card className="min-w-0 overflow-hidden bg-card p-0">
               <div className="flex items-center justify-between border-b border-border bg-card/60 px-4 py-2.5">
-                <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                  <Code2 className="h-3 w-3" />
-                  {selected.id}.yaml
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground transition hover:text-foreground"
-                  >
-                    <Eye className="h-3 w-3" />
-                    Preview
-                  </button>
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground transition hover:text-foreground"
-                  >
-                    <GitFork className="h-3 w-3" />
-                    Fork
-                  </button>
+                <div className="flex min-w-0 items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                  <Code2 className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{selected.id}.yaml</span>
                 </div>
               </div>
-              <pre className="overflow-x-auto px-5 py-4 font-mono text-xs leading-relaxed text-muted-foreground">
+              <pre className="max-h-[60vh] overflow-auto px-5 py-4 font-mono text-xs leading-relaxed text-muted-foreground">
                 {selected.yaml}
               </pre>
               <div className="border-t border-border bg-card/60 px-4 py-2.5 text-[11px] text-muted-foreground">
-                by {selected.authorHandle} · {selected.forks} forks ·{" "}
-                {selected.popularity}% community love
+                by {selected.authorHandle}
               </div>
             </Card>
           ) : (

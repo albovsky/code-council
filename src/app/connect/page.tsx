@@ -4,6 +4,9 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { listBlocked, DaemonError } from "@/lib/api";
 
+export const dynamic = "force-dynamic";
+
+
 async function getBlockedChats() {
   try {
     const chats = await listBlocked();

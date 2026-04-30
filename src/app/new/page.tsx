@@ -60,7 +60,7 @@ function NewChatPageInner() {
   // Cost estimate: rough heuristic based on prompt length + attachments + reviewer count.
   const costEstimate = useMemo(() => {
     const reviewerCount =
-      template.phases[0]?.reviewer.candidates.length ?? 3;
+      template?.phases?.[0]?.reviewer?.candidates?.length ?? 3;
     const promptTokens = Math.ceil(prompt.length / 4);
     const attachTokens = attachments.length * 1500;
     const baseTokens = 800; // template prompt boilerplate
@@ -102,8 +102,11 @@ function NewChatPageInner() {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
-  const overCap =
-    template?.costCapUsd && template.costCapUsd > 0 && costEstimate.usd > template.costCapUsd;
+  const overCap = Boolean(
+    template?.costCapUsd &&
+      template.costCapUsd > 0 &&
+      costEstimate.usd > template.costCapUsd,
+  );
 
   const [yoloMode, setYoloMode] = useState(false);
 
@@ -135,6 +138,16 @@ function NewChatPageInner() {
             <p className="text-sm text-destructive">Error loading templates</p>
             <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
           </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!template) {
+    return (
+      <AppShell>
+        <div className="mx-auto w-full max-w-4xl px-4 py-12 text-sm text-muted-foreground sm:px-6 md:px-8">
+          Loading templates…
         </div>
       </AppShell>
     );
@@ -202,8 +215,7 @@ function NewChatPageInner() {
           />
 
           {/* Attachments row */}
-          {(attachments.length > 0 || true) && (
-            <div className="flex flex-wrap items-center gap-2 border-t border-border bg-card/30 px-5 py-2.5">
+          <div className="flex flex-wrap items-center gap-2 border-t border-border bg-card/30 px-5 py-2.5">
               {attachments.map((a) => (
                 <span
                   key={a.id}
@@ -251,10 +263,9 @@ function NewChatPageInner() {
                   URL
                 </button>
               </div>
-            </div>
-          )}
+          </div>
 
-          <div className="flex items-center justify-between border-t border-border bg-card/40 px-5 py-3">
+          <div className="flex flex-col gap-3 border-t border-border bg-card/40 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
@@ -293,7 +304,7 @@ function NewChatPageInner() {
                 </>
               )}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-3 sm:justify-end">
               {/* Cost preview */}
               <div
                 className={`flex items-center gap-1.5 font-mono text-[10px] ${
@@ -313,7 +324,7 @@ function NewChatPageInner() {
                 type="button"
                 onClick={handleStartRun}
                 disabled={!prompt || overCap || isPending}
-                className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition ${
+                className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition ${
                   !prompt || overCap || isPending
                     ? "cursor-not-allowed bg-muted text-muted-foreground"
                     : "bg-primary text-primary-foreground hover:bg-primary/90"

@@ -11,6 +11,29 @@ interface RawTemplateRow {
   updated_at: number;
 }
 
+interface ParsedDoer {
+  lineage?: string;
+  models?: string[];
+}
+
+interface ParsedReviewer {
+  require?: number;
+  crossLineage?: boolean;
+  candidates?: Array<{ lineage?: string; models?: string[] }>;
+}
+
+interface ParsedPhase {
+  id?: string;
+  kind?: string;
+  title?: string;
+  name?: string;
+  description?: string;
+  doer?: ParsedDoer;
+  reviewer?: ParsedReviewer;
+  inputs?: { include?: string[]; exclude?: string[] };
+  iterate?: { maxRounds?: number; onDisagreement?: string };
+}
+
 interface ParsedTemplateYaml {
   id?: string;
   name?: string;
@@ -21,6 +44,70 @@ interface ParsedTemplateYaml {
   onThresholdMet?: Template["onThresholdMet"] | string;
   maxRounds?: number;
   yoloDefault?: boolean;
+  phases?: ParsedPhase[];
+}
+
+const KNOWN_LINEAGES: ReadonlySet<string> = new Set([
+  "anthropic",
+  "openai",
+  "google",
+  "xai",
+  "any",
+]);
+
+const UI_LINEAGE_MAP: Record<string, Template["phases"][number]["doer"]["lineage"]> = {
+  anthropic: "claude",
+  openai: "codex",
+  google: "gemini",
+  xai: "opencode",
+  any: "claude",
+};
+
+function mapLineage(raw: string | undefined): Template["phases"][number]["doer"]["lineage"] {
+  if (!raw) return "claude";
+  return UI_LINEAGE_MAP[raw] ?? "claude";
+}
+
+function deriveCategory(parsed: ParsedTemplateYaml, id: string): Template["category"] {
+  if (parsed.category) return parsed.category;
+  const idLower = id.toLowerCase();
+  if (idLower.includes("bug") || idLower.includes("debug") || idLower.includes("diagnose")) return "debug";
+  if (idLower.includes("plan") || idLower.includes("architect")) return "plan";
+  if (idLower.includes("decide") || idLower.includes("decision")) return "decide";
+  return "review";
+}
+
+function mapPhase(p: ParsedPhase): Template["phases"][number] {
+  const kind = (p.kind ?? "review") as Template["phases"][number]["kind"];
+  return {
+    id: p.id ?? "phase",
+    name: p.title ?? p.name ?? p.id ?? "Phase",
+    description: p.description ?? "",
+    kind,
+    gate: "auto",
+    doer: {
+      lineage: mapLineage(p.doer?.lineage),
+      models: p.doer?.models ?? [],
+    },
+    reviewer: {
+      require: p.reviewer?.require ?? 1,
+      crossLineage: p.reviewer?.crossLineage ?? true,
+      candidates: (p.reviewer?.candidates ?? [])
+        .map((c) => mapLineage(c.lineage))
+        .filter((l) => KNOWN_LINEAGES.has(Object.keys(UI_LINEAGE_MAP).find((k) => UI_LINEAGE_MAP[k] === l) ?? "")),
+    },
+    inputs: {
+      include: p.inputs?.include ?? [],
+      exclude: p.inputs?.exclude ?? [],
+    },
+    iterate: {
+      max: p.iterate?.maxRounds ?? 2,
+      onMax: "ask-user",
+    },
+    blindSpots: [],
+    execution: "parallel",
+    builtin: true,
+  };
 }
 
 /**
@@ -46,12 +133,14 @@ function parseRow(row: RawTemplateRow): Template {
     threshold = parsed.agreementThreshold as Template["agreementThreshold"];
   }
 
+  const phases = (parsed.phases ?? []).map(mapPhase);
+
   return {
     id: row.id,
     name: parsed.name ?? row.id,
     description: parsed.description ?? "",
-    category: parsed.category ?? "review",
-    phases: [],
+    category: deriveCategory(parsed, row.id),
+    phases,
     agreementThreshold: threshold,
     onThresholdMet:
       parsed.onThresholdMet === "auto-finalize"

@@ -64,6 +64,18 @@ claude mcp add chorus \
 
 Restart Claude Code. The `chorus` MCP server should appear in `/mcp` listing.
 
+### Pre-approve the 7 Chorus tools (skip the per-tool prompts)
+
+```bash
+node /home/ubuntu/dev/chorus/bin/chorus.mjs connect
+# or, once published: chorus connect
+```
+
+This patches `~/.claude/settings.local.json` → `permissions.allow` so all 7
+Chorus tools are pre-approved. Idempotent (re-runs are safe). Without it,
+Claude prompts "Yes, allow `mcp__chorus__create_chat` for this project?"
+the first time you use each tool.
+
 ## Smoke test from inside Claude Code
 
 In a Claude session, ask:

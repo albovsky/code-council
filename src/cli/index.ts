@@ -137,6 +137,15 @@ program
     }
   });
 
+// Command: chorus connect
+program
+  .command('connect [orchestrator]')
+  .description('Pre-approve all Chorus MCP tools in your orchestrator (default: claude)')
+  .action(async (orchestrator?: string) => {
+    const { runConnect } = await import('./connect.js');
+    runConnect(orchestrator);
+  });
+
 // Command: chorus mcp
 program
   .command('mcp')

@@ -473,6 +473,35 @@ async function main() {
     }
   });
 
+  // List orchestrators with their connection status
+  fastify.get<{
+    Reply: ApiResponse<object[]>;
+  }>('/orchestrators', async () => {
+    try {
+      const { listOrchestrators } = await import('./orchestrators.js');
+      return successResponse(listOrchestrators());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('internal', message);
+    }
+  });
+
+  // Pre-approve all Chorus MCP tools in the named orchestrator
+  fastify.post<{
+    Params: { name: string };
+    Reply: ApiResponse<object>;
+  }>('/orchestrators/:name/connect', async (request) => {
+    try {
+      const { connectByName, listOrchestrators } = await import('./orchestrators.js');
+      const result = connectByName(request.params.name);
+      const status = listOrchestrators().find((o) => o.name === request.params.name);
+      return successResponse({ ...result, status });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('validation', message);
+    }
+  });
+
   // Seed built-in templates on startup
   seedBuiltinTemplates();
 

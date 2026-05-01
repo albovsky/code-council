@@ -40,7 +40,7 @@ function parseTargets(arg: string | undefined): OrchestratorName[] | null {
   return valid;
 }
 
-export function runConnect(orchestrator?: string): void {
+export async function runConnect(orchestrator?: string): Promise<void> {
   const only = parseTargets(orchestrator);
   const binPath = CHORUS_BIN_PATH;
 
@@ -48,7 +48,7 @@ export function runConnect(orchestrator?: string): void {
   console.log('');
 
   try {
-    const result = autoConnectAll({
+    const result = await autoConnectAll({
       binPath,
       ...(only && only.length > 0 ? { only } : {}),
     });

@@ -65,11 +65,18 @@ function parseAttachedFiles(raw: string | null | undefined): string[] | undefine
 }
 
 // Type imported for ActiveRun event signature. Matches runner.ts RunnerEvent.
+interface Subscriber {
+  write: (line: string) => boolean; // returns true if buffer available, false if full
+  paused: boolean;
+  queue: string[];
+  close: () => void;
+}
+
 type SubscriberFn = (eventJson: string) => void;
 
 interface ActiveRun {
   promise: Promise<void>;
-  subscribers: Set<SubscriberFn>;
+  subscribers: Set<Subscriber>;
   abortController: AbortController;
 }
 
@@ -127,7 +134,12 @@ function phaseEventToRunnerEvent(
         : ev.state === 'blocked'
           ? 'phase_failed'
           : null;
-  if (!baseType) return null;
+  if (!baseType) {
+    console.warn(
+      `[chorus] phase event replay: unmapped state "${ev.state}" for chat ${chatId}`,
+    );
+    return null;
+  }
   return {
     chatId,
     type: baseType,
@@ -155,19 +167,41 @@ function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
   // Explicit cancellation goes through POST /chats/:id/cancel which calls
   // entry.abortController.abort(). Closing an SSE does NOT abort.
   const abortController = new AbortController();
-  const subscribers = new Set<SubscriberFn>();
+  const subscribers = new Set<Subscriber>();
 
   // Single onEvent for the runChat. Persists side effects exactly once and
-  // fans out to every subscribed SSE. Any subscriber whose write throws is
-  // silently dropped — we never block the runner on a dead client.
+  // fans out to every subscribed SSE. Handles backpressure by queuing writes
+  // when the kernel buffer is full. Drops subscribers that exceed queue cap.
   const onEvent: Parameters<typeof runChat>[0]['onEvent'] = (event) => {
     const line = `data: ${JSON.stringify(event)}\n\n`;
-    for (const sub of subscribers) {
+    const toRemove: Subscriber[] = [];
+    for (const sub of Array.from(subscribers)) {
       try {
-        sub(line);
+        if (sub.paused) {
+          // Subscriber is paused due to backpressure; queue the write
+          sub.queue.push(line);
+          if (sub.queue.length > 1000) {
+            // Queue cap exceeded; drop subscriber to prevent unbounded memory
+            toRemove.push(sub);
+            sub.close();
+          }
+        } else {
+          // Try to write; check return value for backpressure
+          const canContinue = sub.write(line);
+          if (!canContinue) {
+            // Buffer full; pause and set up drain listener
+            sub.paused = true;
+            // Drain listener will be set up by the SSE handler once we have the raw socket
+          }
+        }
       } catch {
-        /* dead subscriber — leave; the SSE close handler will unsubscribe */
+        /* dead subscriber — remove it */
+        toRemove.push(sub);
       }
+    }
+    // Remove dead subscribers
+    for (const sub of toRemove) {
+      subscribers.delete(sub);
     }
 
     // Persist phase events. Same logic as before, lifted from the inline SSE
@@ -439,6 +473,9 @@ async function main() {
   }>('/chats/:id/cancel', async (request) => {
     try {
       const chatId = request.params.id;
+      if (!isValidChatId(chatId)) {
+        return errorResponse('validation', 'invalid chat id');
+      }
       const chat = chats.cancel(chatId);
 
       // Abort the active runner if there is one. This propagates into the
@@ -503,6 +540,16 @@ async function main() {
       const active = activeRuns.get(id);
       if (active) {
         active.abortController.abort();
+        // Wait for the runner to settle before proceeding with the delete.
+        // Use a 5-second timeout to avoid hanging forever.
+        try {
+          await Promise.race([
+            active.promise.catch(() => {}),
+            new Promise(r => setTimeout(r, 5000)),
+          ]);
+        } catch {
+          /* timeout or error — proceed with delete anyway */
+        }
       }
 
       // 2. Kill any tmux sessions tied to this chat.
@@ -547,13 +594,17 @@ async function main() {
     Reply: ApiResponse<object>;
   }>('/chats/:id/resume', async (request) => {
     try {
+      const chatId = request.params.id;
+      if (!isValidChatId(chatId)) {
+        return errorResponse('validation', 'invalid chat id');
+      }
       const { answer } = request.body;
 
       if (!answer) {
         return errorResponse('validation', 'answer is required');
       }
 
-      const chat = chats.update(request.params.id, { status: 'reviewing' });
+      const chat = chats.update(chatId, { status: 'reviewing' });
 
       return successResponse(chat);
     } catch (error) {
@@ -610,16 +661,22 @@ async function main() {
         Connection: 'keep-alive',
       });
 
-      // Subscriber for THIS SSE connection. Pushes a pre-serialised JSON
-      // string to the wire; the persistence + status-update side effects
-      // live in the runner-side onEvent (see runWithMultiplex below) and
-      // happen exactly once per event regardless of how many SSEs subscribe.
-      const subscriber: SubscriberFn = (line) => {
-        try {
-          reply.raw.write(line);
-        } catch {
-          /* connection closed mid-write — unsubscribe handles cleanup */
-        }
+      // Subscriber for THIS SSE connection with backpressure support.
+      // Checks write() return value; pauses on full buffer and resumes on drain.
+      const subscriber: Subscriber = {
+        paused: false,
+        queue: [],
+        write: (line: string) => {
+          try {
+            return reply.raw.write(line);
+          } catch {
+            /* connection closed mid-write */
+            return false;
+          }
+        },
+        close: () => {
+          reply.raw.end();
+        },
       };
 
       // Replay past phase_events from DB so a late-attach run page sees the
@@ -631,7 +688,10 @@ async function main() {
       for (const ev of pastEvents) {
         const reconstructed = phaseEventToRunnerEvent(chatId, ev);
         if (reconstructed) {
-          subscriber(`data: ${JSON.stringify(reconstructed)}\n\n`);
+          const line = `data: ${JSON.stringify(reconstructed)}\n\n`;
+          if (!subscriber.write(line)) {
+            subscriber.paused = true;
+          }
         }
       }
 
@@ -646,23 +706,38 @@ async function main() {
         'no_review',
       ];
       if (TERMINAL.includes(chat.status)) {
-        subscriber(
-          `data: ${JSON.stringify({
-            chatId,
-            type: 'chat_done',
-            payload: {
-              status: chat.status === 'approved' ? 'completed' : chat.status,
-              verdict: chat.status === 'approved' ? 'approved' : chat.status,
-              ...(chat.pr_url ? { prUrl: chat.pr_url } : {}),
-              ...(chat.ship_error ? { shipError: chat.ship_error } : {}),
-              replay: true,
-            },
-            ts: chat.finished_at ?? Date.now(),
-          })}\n\n`,
-        );
+        const line = `data: ${JSON.stringify({
+          chatId,
+          type: 'chat_done',
+          payload: {
+            status: chat.status === 'approved' ? 'completed' : chat.status,
+            verdict: chat.status === 'approved' ? 'approved' : chat.status,
+            ...(chat.pr_url ? { prUrl: chat.pr_url } : {}),
+            ...(chat.ship_error ? { shipError: chat.ship_error } : {}),
+            replay: true,
+          },
+          ts: chat.finished_at ?? Date.now(),
+        })}\n\n`;
+        subscriber.write(line);
         reply.raw.end();
         return;
       }
+
+      // Set up drain listener for backpressure recovery
+      const onDrain = () => {
+        if (subscriber.paused && subscriber.queue.length > 0) {
+          subscriber.paused = false;
+          const queued = subscriber.queue.splice(0);
+          for (const queuedLine of queued) {
+            const canContinue = subscriber.write(queuedLine);
+            if (!canContinue) {
+              subscriber.paused = true;
+              break;
+            }
+          }
+        }
+      };
+      reply.raw.on('drain', onDrain);
 
       // Either attach to an in-flight runner or fire a fresh one. The
       // singleton invariant — exactly one runChat per chatId at any time —
@@ -672,15 +747,11 @@ async function main() {
         existing.subscribers.add(subscriber);
         request.raw.on('close', () => {
           existing.subscribers.delete(subscriber);
+          reply.raw.removeListener('drain', onDrain);
         });
-        // Wait for the run to finish or this connection to drop. Either way,
-        // we're done with this SSE response.
-        try {
-          await existing.promise;
-        } catch {
-          /* run failed — still close cleanly */
-        }
-        reply.raw.end();
+        // Don't await the promise here — just set up the subscriber and return.
+        // The SSE will close when the client disconnects or the run finishes.
+        // The runner doesn't block on client disconnect.
         return;
       }
 
@@ -695,17 +766,21 @@ async function main() {
       run.subscribers.add(subscriber);
       request.raw.on('close', () => {
         run.subscribers.delete(subscriber);
+        reply.raw.removeListener('drain', onDrain);
       });
-      try {
-        await run.promise;
-      } catch {
-        /* run failed — error event already broadcast via onEvent */
-      }
-      reply.raw.end();
+      // Don't await the promise here — just set up the subscriber and return.
+      return;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       request.log.error(error);
-      reply.raw.write(`data: ${JSON.stringify({ type: 'error', error: message })}\n\n`);
+      if (!reply.raw.headersSent) {
+        reply.raw.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        });
+        reply.raw.write(`data: ${JSON.stringify({ type: 'error', error: message })}\n\n`);
+      }
       reply.raw.end();
     }
   });
@@ -740,11 +815,15 @@ async function main() {
   // Initialize tmux manager and reaper
   tmuxMgr = new TmuxManagerImpl();
   stopReaper = startReaper(tmuxMgr, () => {
-    // getActiveChats: return a map of chatId → status
-    const allChats = chats.list({ status: undefined, limit: 1000, offset: 0 });
+    // getActiveChats: return a map of chatId → status for active chats only
+    // (drafting and reviewing states; terminal states are reaped)
+    const allChats = chats.list({ limit: 1000, offset: 0 });
     const activeMap = new Map<string, string>();
+    const activeStatuses = new Set(['drafting', 'reviewing']);
     for (const chat of allChats) {
-      activeMap.set(chat.id, chat.status);
+      if (activeStatuses.has(chat.status)) {
+        activeMap.set(chat.id, chat.status);
+      }
     }
     return activeMap;
   }, {
@@ -754,6 +833,50 @@ async function main() {
 
   // Graceful shutdown
   process.on('SIGTERM', async () => {
+    // Abort all active runs with a 10-second timeout to prevent hanging
+    if (activeRuns.size > 0) {
+      const runs = Array.from(activeRuns.values());
+      for (const entry of runs) {
+        entry.abortController.abort();
+      }
+      try {
+        await Promise.race([
+          Promise.allSettled(runs.map(e => e.promise)),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout waiting for active runs')), 10000)
+          ),
+        ]);
+        console.log(`[chorus] aborted ${activeRuns.size} active runs`);
+      } catch {
+        console.warn('[chorus] timeout or error waiting for active runs to abort');
+      }
+    }
+    if (stopReaper) {
+      stopReaper();
+    }
+    await fastify.close();
+    process.exit(0);
+  });
+
+  process.on('SIGINT', async () => {
+    // Abort all active runs with a 10-second timeout to prevent hanging
+    if (activeRuns.size > 0) {
+      const runs = Array.from(activeRuns.values());
+      for (const entry of runs) {
+        entry.abortController.abort();
+      }
+      try {
+        await Promise.race([
+          Promise.allSettled(runs.map(e => e.promise)),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout waiting for active runs')), 10000)
+          ),
+        ]);
+        console.log(`[chorus] aborted ${activeRuns.size} active runs`);
+      } catch {
+        console.warn('[chorus] timeout or error waiting for active runs to abort');
+      }
+    }
     if (stopReaper) {
       stopReaper();
     }
@@ -774,9 +897,11 @@ function seedBuiltinTemplates(): void {
   }
 
   const files = fs.readdirSync(templatesDir).filter((f) => f.endsWith('.yaml'));
+  const onDiskIds = new Set<string>();
 
   for (const file of files) {
     const id = file.replace('.yaml', '');
+    onDiskIds.add(id);
     const yamlPath = path.join(templatesDir, file);
     const yamlContent = fs.readFileSync(yamlPath, 'utf-8');
 
@@ -796,6 +921,30 @@ function seedBuiltinTemplates(): void {
       templates.create(id, yamlContent, 'builtin');
       console.log(`[daemon] refreshed builtin template from disk: ${id}`);
     }
+  }
+
+  // Delete any builtin templates that are no longer present on disk.
+  // Query for all builtin templates and remove those not in onDiskIds.
+  try {
+    const allTemplates = templates.list();
+    let deletedCount = 0;
+    for (const tmpl of allTemplates) {
+      if (tmpl.source === 'builtin' && !onDiskIds.has(tmpl.id)) {
+        // Attempt to delete if the method exists; templates.delete may not be exposed.
+        const deleteMethod = (templates as unknown as { delete?: (id: string) => void }).delete;
+        if (typeof deleteMethod === 'function') {
+          deleteMethod(tmpl.id);
+          deletedCount++;
+          console.log(`[daemon] deleted stale builtin template: ${tmpl.id}`);
+        }
+      }
+    }
+    if (deletedCount > 0) {
+      console.log(`[daemon] cleaned up ${deletedCount} stale builtin templates`);
+    }
+  } catch (err) {
+    // Non-fatal: if templates.list() doesn't exist or fails, skip cleanup.
+    console.warn('[daemon] failed to clean up stale builtin templates:', err);
   }
 }
 

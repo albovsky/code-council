@@ -241,7 +241,7 @@ async function runOrchestratorAutoConnect(connectFlag?: string): Promise<void> {
   console.log('');
   console.log(`  ${c.dim('Detecting orchestrators...')}`);
 
-  const result = autoConnectAll({ binPath, ...(only ? { only } : {}) });
+  const result = await autoConnectAll({ binPath, ...(only ? { only } : {}) });
 
   for (const step of result.steps) {
     if (!step.detected) {

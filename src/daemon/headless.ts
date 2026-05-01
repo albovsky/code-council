@@ -75,6 +75,15 @@ function unregisterPid(pid: number): void {
   }
 }
 
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Daemon-startup reaper. Walks PID_DIR, kills any process that's still alive
  * (orphan from a prior daemon crash), and clears the records.
@@ -92,12 +101,14 @@ export function reapOrphanProcesses(): { reaped: number; cleared: number } {
     const recordPath = path.join(PID_DIR, entry);
     try {
       const rec = JSON.parse(fs.readFileSync(recordPath, 'utf-8')) as PidRecord;
-      // Check if the process is still alive — `kill(pid, 0)` throws ESRCH if
-      // the PID is gone, doesn't actually signal otherwise.
-      try {
-        process.kill(rec.pid, 0);
+      // Check if the process is still alive.
+      if (processIsAlive(rec.pid)) {
         // Still alive — orphan. Send SIGTERM.
-        process.kill(rec.pid, 'SIGTERM');
+        try {
+          process.kill(rec.pid, 'SIGTERM');
+        } catch {
+          /* ignore */
+        }
         // Schedule SIGKILL after grace; use unref so it doesn't block exit.
         const t = setTimeout(() => {
           try {
@@ -108,11 +119,18 @@ export function reapOrphanProcesses(): { reaped: number; cleared: number } {
         }, KILL_GRACE_MS);
         t.unref();
         reaped++;
-      } catch {
-        // Process already dead — just clear the record.
+        // IMPORTANT: Do not unlink the record yet. If daemon crashes during
+        // the grace period, the PID record stays on disk for next startup.
+        // The next reaper run will find it and try again.
+      } else {
+        // Process already dead — safe to clear the record.
         cleared++;
+        try {
+          fs.unlinkSync(recordPath);
+        } catch {
+          /* ignore */
+        }
       }
-      fs.unlinkSync(recordPath);
     } catch {
       // Malformed record — drop it.
       try {
@@ -196,13 +214,17 @@ export function spawnHeadless(opts: SpawnHeadlessOptions): HeadlessRun {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
-  registerPid({
-    pid: child.pid ?? -1,
-    cli: opts.cli,
-    chatId: opts.chatId,
-    startedAt,
-    cwd: opts.cwd,
-  });
+  if (child.pid !== undefined) {
+    registerPid({
+      pid: child.pid,
+      cli: opts.cli,
+      chatId: opts.chatId,
+      startedAt,
+      cwd: opts.cwd,
+    });
+  } else {
+    console.warn(`[headless] spawn succeeded but child.pid is undefined (cli=${opts.cli})`);
+  }
 
   // Buffer of pending events for the async iterator. We push from stdout
   // listener / heartbeat / exit; the iterator's `next()` drains.

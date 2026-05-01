@@ -95,7 +95,7 @@ export function registerSystemRoutes(
       const { connectByName, listOrchestrators } = await import(
         '../orchestrators.js'
       );
-      const result = connectByName(request.params.name, {
+      const result = await connectByName(request.params.name, {
         binPath: deps.chorusBinPath,
       });
       const status = listOrchestrators().find(

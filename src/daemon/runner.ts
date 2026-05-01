@@ -284,7 +284,7 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
       | { kind: 'blocked'; error: string }
       = { kind: 'skipped' };
 
-    if (!anyPhaseAllReviewersFailed && template.ship?.enabled && repoPath) {
+    if (!anyPhaseAllReviewersFailed && !anyPhaseDoerFailed && template.ship?.enabled && repoPath) {
       const ctx = detectGitContext(repoPath, template.ship.baseBranch);
       if (!ctx.ok) {
         // Surface as a skip with reason — chat still ends approved (we

@@ -9,7 +9,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 export const CHORUS_TOOLS = [
   'mcp__chorus__create_chat',
@@ -161,7 +164,7 @@ function installChorusSlashCommand(): ConnectResult['slashCommand'] {
  * Patch Claude Code's local settings to whitelist all 7 Chorus MCP tools, and
  * drop the `/chorus` slash command into `~/.claude/commands/`. Idempotent.
  */
-export function connectClaude(): ConnectResult {
+export async function connectClaude(): Promise<ConnectResult> {
   const config = readClaudeSettings();
   const permissions = (config.permissions ?? {}) as NonNullable<ClaudeSettings['permissions']>;
   const existing = new Set(permissions.allow ?? []);
@@ -234,7 +237,7 @@ function hasCodexMcpServer(expectedBinPath?: string): boolean {
  *
  * Idempotent: if the entry already exists we skip the call.
  */
-export function connectCodex(opts: { binPath: string; daemonUrl?: string }): ConnectResult {
+export async function connectCodex(opts: { binPath: string; daemonUrl?: string }): Promise<ConnectResult> {
   if (hasCodexMcpServer(opts.binPath)) {
     return {
       added: [],
@@ -248,7 +251,7 @@ export function connectCodex(opts: { binPath: string; daemonUrl?: string }): Con
   // If a stale entry exists with a different binPath, remove it first.
   if (hasCodexMcpServer()) {
     try {
-      execFileSync('codex', ['mcp', 'remove', 'chorus'], { stdio: 'pipe' });
+      await execFileAsync('codex', ['mcp', 'remove', 'chorus'], { timeout: 30_000 });
     } catch {
       // best-effort
     }
@@ -256,14 +259,14 @@ export function connectCodex(opts: { binPath: string; daemonUrl?: string }): Con
 
   const daemonUrl = opts.daemonUrl ?? DEFAULT_DAEMON_URL;
   try {
-    execFileSync(
+    await execFileAsync(
       'codex',
       [
         'mcp', 'add', 'chorus',
         '--env', `CHORUS_DAEMON_URL=${daemonUrl}`,
         '--', 'node', opts.binPath, 'mcp',
       ],
-      { stdio: 'pipe' },
+      { timeout: 30_000 },
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -321,7 +324,7 @@ function hasGeminiMcpServer(expectedBinPath?: string): boolean {
  *
  * Idempotent: skips if already present.
  */
-export function connectGemini(opts: { binPath: string; daemonUrl?: string }): ConnectResult {
+export async function connectGemini(opts: { binPath: string; daemonUrl?: string }): Promise<ConnectResult> {
   if (hasGeminiMcpServer(opts.binPath)) {
     return {
       added: [],
@@ -335,7 +338,7 @@ export function connectGemini(opts: { binPath: string; daemonUrl?: string }): Co
   // Stale entry with different binPath — remove (user-scope) before re-add.
   if (hasGeminiMcpServer()) {
     try {
-      execFileSync('gemini', ['mcp', 'remove', 'chorus', '-s', 'user'], { stdio: 'pipe' });
+      await execFileAsync('gemini', ['mcp', 'remove', 'chorus', '-s', 'user'], { timeout: 30_000 });
     } catch {
       // best-effort
     }
@@ -343,7 +346,7 @@ export function connectGemini(opts: { binPath: string; daemonUrl?: string }): Co
 
   const daemonUrl = opts.daemonUrl ?? DEFAULT_DAEMON_URL;
   try {
-    execFileSync(
+    await execFileAsync(
       'gemini',
       [
         'mcp', 'add', 'chorus',
@@ -353,7 +356,7 @@ export function connectGemini(opts: { binPath: string; daemonUrl?: string }): Co
         '-t', 'stdio',
         '--trust',
       ],
-      { stdio: 'pipe' },
+      { timeout: 30_000 },
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -451,7 +454,7 @@ function getOpencodeStatus(): OrchestratorStatus {
  * for non-tty use), so we patch the user-scope config directly.
  * Idempotent.
  */
-export function connectOpencode(opts: { binPath: string; daemonUrl?: string }): ConnectResult {
+export async function connectOpencode(opts: { binPath: string; daemonUrl?: string }): Promise<ConnectResult> {
   const { config } = readOpencodeConfig();
   const mcp = (config.mcp ?? {}) as Record<string, unknown>;
 
@@ -556,7 +559,7 @@ function hasKimiMcpServer(expectedBinPath?: string): boolean {
  *
  * Idempotent + path-aware: re-registers if binPath drifted.
  */
-export function connectKimi(opts: { binPath: string; daemonUrl?: string }): ConnectResult {
+export async function connectKimi(opts: { binPath: string; daemonUrl?: string }): Promise<ConnectResult> {
   if (hasKimiMcpServer(opts.binPath)) {
     return {
       added: [],
@@ -569,7 +572,7 @@ export function connectKimi(opts: { binPath: string; daemonUrl?: string }): Conn
 
   if (hasKimiMcpServer()) {
     try {
-      execFileSync('kimi', ['mcp', 'remove', 'chorus'], { stdio: 'pipe' });
+      await execFileAsync('kimi', ['mcp', 'remove', 'chorus'], { timeout: 30_000 });
     } catch {
       // best-effort
     }
@@ -577,7 +580,7 @@ export function connectKimi(opts: { binPath: string; daemonUrl?: string }): Conn
 
   const daemonUrl = opts.daemonUrl ?? DEFAULT_DAEMON_URL;
   try {
-    execFileSync(
+    await execFileAsync(
       'kimi',
       [
         'mcp', 'add',
@@ -586,7 +589,7 @@ export function connectKimi(opts: { binPath: string; daemonUrl?: string }): Conn
         '-e', `CHORUS_DAEMON_URL=${daemonUrl}`,
         '--', 'node', opts.binPath, 'mcp',
       ],
-      { stdio: 'pipe' },
+      { timeout: 30_000 },
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -669,7 +672,7 @@ function getCursorStatus(): OrchestratorStatus {
   };
 }
 
-export function connectCursor(opts: { binPath: string; daemonUrl?: string }): ConnectResult {
+export async function connectCursor(opts: { binPath: string; daemonUrl?: string }): Promise<ConnectResult> {
   if (hasMcpEntry(CURSOR_MCP_PATH, opts.binPath)) {
     return {
       added: [],
@@ -710,7 +713,7 @@ function getWindsurfStatus(): OrchestratorStatus {
   };
 }
 
-export function connectWindsurf(opts: { binPath: string; daemonUrl?: string }): ConnectResult {
+export async function connectWindsurf(opts: { binPath: string; daemonUrl?: string }): Promise<ConnectResult> {
   if (hasMcpEntry(WINDSURF_MCP_PATH, opts.binPath)) {
     return {
       added: [],
@@ -738,25 +741,27 @@ export function connectWindsurf(opts: { binPath: string; daemonUrl?: string }): 
 
 // ─── Dispatch ───────────────────────────────────────────────────────────────
 
-export function connectByName(
+export async function connectByName(
   name: string,
   opts: { binPath: string; daemonUrl?: string } = { binPath: '' },
-): ConnectResult {
+): Promise<ConnectResult> {
   switch (name) {
-    case 'claude':
-      return connectClaude();
+    case 'claude': {
+      await registerClaudeMcpServer(opts);
+      return await connectClaude();
+    }
     case 'codex':
-      return connectCodex(opts);
+      return await connectCodex(opts);
     case 'gemini':
-      return connectGemini(opts);
+      return await connectGemini(opts);
     case 'opencode':
-      return connectOpencode(opts);
+      return await connectOpencode(opts);
     case 'kimi':
-      return connectKimi(opts);
+      return await connectKimi(opts);
     case 'cursor':
-      return connectCursor(opts);
+      return await connectCursor(opts);
     case 'windsurf':
-      return connectWindsurf(opts);
+      return await connectWindsurf(opts);
     default:
       throw new Error(`Unknown orchestrator '${name}'.`);
   }
@@ -769,11 +774,11 @@ export function connectByName(
  * Idempotent: if chorus is already pointing at the same bin path, returns
  * `{ added: false }`.
  */
-export function registerClaudeMcpServer(opts: {
+export async function registerClaudeMcpServer(opts: {
   binPath: string;
   projectDir?: string;
   daemonUrl?: string;
-}): { added: boolean; configPath: string; project: string } {
+}): Promise<{ added: boolean; configPath: string; project: string }> {
   const configPath = path.join(os.homedir(), '.claude.json');
   const project = opts.projectDir ?? os.homedir();
 
@@ -848,11 +853,11 @@ interface OrchestratorDetect {
   name: OrchestratorName;
   label: string;
   detect: () => boolean;
-  connect: (opts: { binPath: string; projectDir?: string; daemonUrl?: string }) => {
+  connect: (opts: { binPath: string; projectDir?: string; daemonUrl?: string }) => Promise<{
     registered: boolean;
     toolsAdded: number;
     slashCommand?: ConnectResult['slashCommand'];
-  };
+  }>;
 }
 
 const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
@@ -860,9 +865,9 @@ const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
     name: 'claude',
     label: 'Claude Code',
     detect: () => fs.existsSync(path.join(os.homedir(), '.claude.json')),
-    connect: (opts) => {
-      const reg = registerClaudeMcpServer(opts);
-      const conn = connectClaude();
+    connect: async (opts) => {
+      const reg = await registerClaudeMcpServer(opts);
+      const conn = await connectClaude();
       return {
         registered: reg.added,
         toolsAdded: conn.added.length,
@@ -874,9 +879,9 @@ const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
     name: 'codex',
     label: 'Codex CLI',
     detect: () => fs.existsSync(CODEX_CONFIG_PATH),
-    connect: (opts) => {
+    connect: async (opts) => {
       const before = hasCodexMcpServer();
-      connectCodex(opts);
+      await connectCodex(opts);
       return { registered: !before, toolsAdded: 0 };
     },
   },
@@ -884,9 +889,9 @@ const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
     name: 'gemini',
     label: 'Gemini CLI',
     detect: () => fs.existsSync(GEMINI_SETTINGS_PATH),
-    connect: (opts) => {
+    connect: async (opts) => {
       const before = hasGeminiMcpServer();
-      connectGemini(opts);
+      await connectGemini(opts);
       return { registered: !before, toolsAdded: 0 };
     },
   },
@@ -896,8 +901,8 @@ const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
     detect: () =>
       fs.existsSync(path.dirname(OPENCODE_USER_CONFIG_PATH)) ||
       fs.existsSync(path.join(os.homedir(), '.opencode')),
-    connect: (opts) => {
-      const result = connectOpencode(opts);
+    connect: async (opts) => {
+      const result = await connectOpencode(opts);
       return { registered: result.added.length > 0, toolsAdded: 0 };
     },
   },
@@ -905,9 +910,9 @@ const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
     name: 'kimi',
     label: 'Kimi CLI',
     detect: () => fs.existsSync(KIMI_CONFIG_DIR),
-    connect: (opts) => {
+    connect: async (opts) => {
       const before = hasKimiMcpServer(opts.binPath);
-      connectKimi(opts);
+      await connectKimi(opts);
       return { registered: !before, toolsAdded: 0 };
     },
   },
@@ -915,9 +920,9 @@ const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
     name: 'cursor',
     label: 'Cursor',
     detect: () => fs.existsSync(CURSOR_CONFIG_DIR),
-    connect: (opts) => {
+    connect: async (opts) => {
       const before = hasMcpEntry(CURSOR_MCP_PATH, opts.binPath);
-      connectCursor(opts);
+      await connectCursor(opts);
       return { registered: !before, toolsAdded: 0 };
     },
   },
@@ -925,9 +930,9 @@ const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
     name: 'windsurf',
     label: 'Windsurf',
     detect: () => fs.existsSync(WINDSURF_CONFIG_DIR),
-    connect: (opts) => {
+    connect: async (opts) => {
       const before = hasMcpEntry(WINDSURF_MCP_PATH, opts.binPath);
-      connectWindsurf(opts);
+      await connectWindsurf(opts);
       return { registered: !before, toolsAdded: 0 };
     },
   },
@@ -937,12 +942,12 @@ const ORCHESTRATOR_DEFS: OrchestratorDetect[] = [
  * Detect every CLI we know about and connect to all that are present.
  * Pass `only` to limit to a subset (e.g. ['claude', 'gemini']).
  */
-export function autoConnectAll(opts: {
+export async function autoConnectAll(opts: {
   binPath: string;
   projectDir?: string;
   daemonUrl?: string;
   only?: OrchestratorName[];
-}): AutoConnectResult {
+}): Promise<AutoConnectResult> {
   const steps: AutoConnectStep[] = [];
   const allowed = opts.only ? new Set(opts.only) : null;
 
@@ -961,7 +966,7 @@ export function autoConnectAll(opts: {
     }
 
     try {
-      const result = def.connect(opts);
+      const result = await def.connect(opts);
       steps.push({
         name: def.name,
         label: def.label,

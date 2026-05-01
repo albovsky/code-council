@@ -45,12 +45,15 @@ export function packAttachedFiles(
   const cwdRoot = path.resolve(repoPath ?? process.cwd());
 
   for (const rel of paths) {
-    const abs = path.resolve(
-      path.isAbsolute(rel) ? rel : path.join(cwdRoot, rel),
-    );
-    const display = path.isAbsolute(rel) ? path.relative(cwdRoot, abs) || abs : rel;
+    if (path.isAbsolute(rel)) {
+      chunks.push(`### \`${rel}\` — _absolute path rejected, skipping_`);
+      continue;
+    }
 
-    if (!path.isAbsolute(rel) && !abs.startsWith(cwdRoot + path.sep) && abs !== cwdRoot) {
+    const abs = path.resolve(path.join(cwdRoot, rel));
+    const display = rel;
+
+    if (!abs.startsWith(cwdRoot + path.sep) && abs !== cwdRoot) {
       chunks.push(`### \`${display}\` — _path traversal rejected, skipping_`);
       continue;
     }
@@ -62,16 +65,43 @@ export function packAttachedFiles(
 
     let body: string;
     try {
-      const lstat = fs.lstatSync(abs);
-      if (lstat.isSymbolicLink()) {
-        chunks.push(`### \`${display}\` — _symlink rejected, skipping_`);
-        continue;
+      let fd = -1;
+      try {
+        // O_NOFOLLOW on Linux/macOS fails with ELOOP if path is a symlink.
+        // On Windows, O_NOFOLLOW is unsupported; fall back to lstat+read.
+        if (process.platform !== 'win32') {
+          try {
+            fd = fs.openSync(abs, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+          } catch (openErr) {
+            // ELOOP = symlink detected via O_NOFOLLOW
+            if (openErr instanceof Error && openErr.message.includes('ELOOP')) {
+              chunks.push(`### \`${display}\` — _symlink rejected, skipping_`);
+              continue;
+            }
+            throw openErr;
+          }
+          const stat = fs.fstatSync(fd);
+          if (!stat.isFile()) {
+            chunks.push(`### \`${display}\` — _not a regular file, skipping_`);
+            continue;
+          }
+          body = fs.readFileSync(abs, 'utf-8');
+        } else {
+          // Windows fallback: lstat + read (not race-proof but best effort)
+          const lstat = fs.lstatSync(abs);
+          if (lstat.isSymbolicLink()) {
+            chunks.push(`### \`${display}\` — _symlink rejected, skipping_`);
+            continue;
+          }
+          if (!lstat.isFile()) {
+            chunks.push(`### \`${display}\` — _not a regular file, skipping_`);
+            continue;
+          }
+          body = fs.readFileSync(abs, 'utf-8');
+        }
+      } finally {
+        if (fd >= 0) fs.closeSync(fd);
       }
-      if (!lstat.isFile()) {
-        chunks.push(`### \`${display}\` — _not a regular file, skipping_`);
-        continue;
-      }
-      body = fs.readFileSync(abs, 'utf-8');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       chunks.push(`### \`${display}\` — _read error: ${msg}_`);

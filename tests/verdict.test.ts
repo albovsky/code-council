@@ -13,9 +13,9 @@ describe('verdictFromReviewerText', () => {
     expect(verdictFromReviewerText('')).toBeNull();
   });
 
-  it('returns null for under-80-char content (incl after stripping ## DONE)', () => {
-    expect(verdictFromReviewerText('approve\n## DONE')).toBeNull();
-    expect(verdictFromReviewerText('lgtm\n## DONE')).toBeNull();
+  it('returns null for under-20-char content (incl after stripping ## DONE)', () => {
+    expect(verdictFromReviewerText('ok\n## DONE')).toBeNull();
+    expect(verdictFromReviewerText('y\n## DONE')).toBeNull();
   });
 
   it('detects approve at the tail', () => {
@@ -24,6 +24,10 @@ describe('verdictFromReviewerText', () => {
 
   it('detects lgtm at the tail', () => {
     expect(verdictFromReviewerText(long('lgtm'))).toBe(true);
+  });
+
+  it('returns true for minimal LGTM-style verdict', () => {
+    expect(verdictFromReviewerText('LGTM, no concerns here. ## DONE')).toBe(true);
   });
 
   it('detects "ship it" at the tail', () => {

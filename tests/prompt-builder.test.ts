@@ -141,6 +141,12 @@ describe('packAttachedFiles', () => {
     expect(out).not.toContain('root:');
   });
 
+  it('rejects absolute paths', () => {
+    const out = packAttachedFiles(['/etc/passwd'], dir);
+    expect(out).toContain('absolute path rejected');
+    expect(out).not.toContain('root:');
+  });
+
   it('rejects symlinks (TOCTOU defence)', () => {
     const target = path.join(dir, 'real.txt');
     const link = path.join(dir, 'link.txt');

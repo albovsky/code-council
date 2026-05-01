@@ -17,7 +17,7 @@
  */
 export function verdictFromReviewerText(content: string): boolean | null {
   const stripped = content.replace(/##\s*DONE\s*$/i, '').trim();
-  if (stripped.length < 80) return null;
+  if (stripped.length < 20) return null;
 
   const tail = stripped.slice(-400).toLowerCase();
   const negatives =

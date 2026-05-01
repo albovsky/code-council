@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getSettings } from "@/lib/api";
 import {
   ArrowDown,
   ArrowUp,
@@ -72,7 +73,73 @@ interface PhaseEditorProps {
   onChange: (next: TemplatePhase[]) => void;
 }
 
+/**
+ * Reactive copy of `opencode.enabled_models` from settings — used to
+ * narrow the model picker when lineage is opencode so users can't pick
+ * a model they didn't authorise during onboarding. One fetch per
+ * PhaseEditor mount is enough; settings updates are rare and a manual
+ * page refresh covers them.
+ */
+function useEnabledOpencodeModels(): string[] {
+  const [models, setModels] = useState<string[]>([]);
+  useEffect(() => {
+    getSettings()
+      .then((s) => {
+        const list = s["opencode.enabled_models"];
+        if (Array.isArray(list)) setModels(list as string[]);
+      })
+      .catch(() => {
+        /* settings load is best-effort; freeform input still works */
+      });
+  }, []);
+  return models;
+}
+
+interface OpencodeModelInputProps {
+  value: string;
+  onChange: (next: string) => void;
+  enabled: string[];
+}
+
+function OpencodeModelInput({ value, onChange, enabled }: OpencodeModelInputProps) {
+  if (enabled.length === 0) {
+    return (
+      <div className="space-y-1">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="opencode-go/kimi-k2.6"
+          className="h-7 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/60 focus:border-primary/60 focus:outline-none"
+        />
+        <p className="text-[10px] text-amber-400/80">
+          No OpenCode models enabled — pick some in <span className="font-medium">Onboarding</span>.
+        </p>
+      </div>
+    );
+  }
+  // Include the current value as an option even if it's not in the
+  // enabled list, so editing an existing template doesn't silently
+  // mutate the model on first save.
+  const options = enabled.includes(value) || !value ? enabled : [value, ...enabled];
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-7 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[11px] text-foreground focus:border-primary/60 focus:outline-none"
+    >
+      {!value && <option value="">— pick a model —</option>}
+      {options.map((m) => (
+        <option key={m} value={m}>
+          {m}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function PhaseEditor({ phases, onChange }: PhaseEditorProps) {
+  const enabledOpencodeModels = useEnabledOpencodeModels();
   function update(idx: number, patch: Partial<TemplatePhase>) {
     onChange(phases.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
   }
@@ -114,6 +181,7 @@ export function PhaseEditor({ phases, onChange }: PhaseEditorProps) {
             index={i}
             total={phases.length}
             allPhaseIds={phaseIds}
+            enabledOpencodeModels={enabledOpencodeModels}
             onUpdate={(patch) => update(i, patch)}
             onMoveUp={() => move(i, -1)}
             onMoveDown={() => move(i, 1)}
@@ -141,6 +209,7 @@ interface PhaseCardProps {
   index: number;
   total: number;
   allPhaseIds: string[];
+  enabledOpencodeModels: string[];
   onUpdate: (patch: Partial<TemplatePhase>) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -152,6 +221,7 @@ function PhaseCard({
   index,
   total,
   allPhaseIds,
+  enabledOpencodeModels,
   onUpdate,
   onMoveUp,
   onMoveDown,
@@ -322,14 +392,20 @@ function PhaseCard({
                 <button
                   key={l.id}
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
+                    // For opencode, prefer an actually-enabled model so the
+                    // template doesn't reference one the user can't reach.
+                    const fallback =
+                      l.id === "opencode" && enabledOpencodeModels.length > 0
+                        ? enabledOpencodeModels[0]
+                        : DEFAULT_MODELS[l.id];
                     onUpdate({
                       doer: {
                         lineage: l.id,
-                        models: [DEFAULT_MODELS[l.id]],
+                        models: [fallback],
                       },
-                    })
-                  }
+                    });
+                  }}
                   className={cn(
                     "flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-left transition",
                     phase.doer.lineage === l.id
@@ -345,17 +421,29 @@ function PhaseCard({
                 </button>
               ))}
             </div>
-            <input
-              type="text"
-              value={phase.doer.models[0] ?? ""}
-              onChange={(e) =>
-                onUpdate({
-                  doer: { ...phase.doer, models: [e.target.value] },
-                })
-              }
-              placeholder="model id (e.g. claude-opus-4-7)"
-              className="mt-2 h-7 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/60 focus:border-primary/60 focus:outline-none"
-            />
+            <div className="mt-2">
+              {phase.doer.lineage === "opencode" ? (
+                <OpencodeModelInput
+                  value={phase.doer.models[0] ?? ""}
+                  onChange={(next) =>
+                    onUpdate({ doer: { ...phase.doer, models: [next] } })
+                  }
+                  enabled={enabledOpencodeModels}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={phase.doer.models[0] ?? ""}
+                  onChange={(e) =>
+                    onUpdate({
+                      doer: { ...phase.doer, models: [e.target.value] },
+                    })
+                  }
+                  placeholder="model id (e.g. claude-opus-4-7)"
+                  className="h-7 w-full rounded-md border border-border bg-background px-2.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/60 focus:border-primary/60 focus:outline-none"
+                />
+              )}
+            </div>
           </SubField>
 
           {/* Reviewer rule */}

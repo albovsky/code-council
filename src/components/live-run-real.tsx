@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { PhaseStepper, type PhaseState } from "@/components/phase-stepper";
 import type { Template, ReviewerLineage } from "@/lib/types";
+import { uiLineageDefaultModel } from "@/lib/lineage-maps";
 import { BriefHeading } from "./run-viewer/brief-heading";
 import { RoundView } from "./run-viewer/round-view";
 import type {
@@ -299,11 +300,15 @@ export function LiveRunReal({
     };
     const toUiLineage = (templateLineage: string): ReviewerLineage =>
       TEMPLATE_TO_UI_LINEAGE[templateLineage] ?? (templateLineage as ReviewerLineage);
+    // Fall back to the per-lineage default when a template's `models: []`
+    // is empty so the card shows the actual model the runner will use.
+    const resolveModel = (lineage: ReviewerLineage, models: string[] | undefined) =>
+      models?.[0] ?? uiLineageDefaultModel(lineage);
     const expectedSlots: Slot[] = [
       {
         role: "doer",
         lineage: toUiLineage(phase.doer.lineage),
-        model: phase.doer.models?.[0],
+        model: resolveModel(toUiLineage(phase.doer.lineage), phase.doer.models),
       },
       // Use the structured candidatesWithModels field added to the parser
       // so we keep the model assignment per slot. The legacy `candidates`
@@ -312,7 +317,7 @@ export function LiveRunReal({
       ...(phase.reviewer?.candidatesWithModels ?? []).map((c, idx) => ({
         role: "reviewer" as const,
         lineage: toUiLineage(c.lineage),
-        model: c.models?.[0],
+        model: resolveModel(toUiLineage(c.lineage), c.models),
         reviewerIdx: idx,
       })),
     ];
@@ -494,10 +499,33 @@ export function LiveRunReal({
             </div>
           )}
 
-          {/* Progress strip — only meaningful for multi-phase templates.
-              For single-phase (code-review, bug-diagnose) the stepper alone
-              already shows ACTIVE / DONE; the bar was visual noise. */}
-          {totalPhases > 1 && (
+          {/* Progress strip — counts phases for multi-phase templates,
+              rounds for single-phase + multi-round (e.g. bug-diagnose).
+              Hidden only when the run is genuinely a single shot. */}
+          {(() => {
+            const maxRounds = template?.maxRounds ?? 1;
+            const isTerminal_ =
+              status === "approved" ||
+              status === "merged" ||
+              status === "no_review" ||
+              status === "blocked" ||
+              status === "failed" ||
+              status === "cancelled";
+            const showByRounds = totalPhases <= 1 && maxRounds > 1;
+            const showByPhases = totalPhases > 1;
+            if (!showByPhases && !showByRounds) return null;
+            const total = showByPhases ? totalPhases : maxRounds;
+            // Phases always run all the way through, so a terminal run pins
+            // the count to total. Rounds finish early on agreement, so the
+            // count must reflect what actually happened (rounds.length).
+            const completed = showByPhases
+              ? Math.min(completedPhaseCount, totalPhases)
+              : Math.min(Math.max(rounds.length, 1), maxRounds);
+            const display = showByPhases && isTerminal_ ? total : completed;
+            const label = showByPhases
+              ? `${display} / ${total} phases`
+              : `Round ${display} / ${total}`;
+            return (
             <div className="flex items-center gap-4">
               <div className="flex flex-1 items-center gap-2">
                 <div className="flex h-1 flex-1 overflow-hidden rounded-full bg-muted">
@@ -506,20 +534,17 @@ export function LiveRunReal({
                       status === "approved" ? "bg-emerald-400" : "bg-primary"
                     }`}
                     style={{
-                      width: `${
-                        (Math.max(completedPhaseCount, status === "approved" ? totalPhases : 0) /
-                          totalPhases) *
-                        100
-                      }%`,
+                      width: `${(display / total) * 100}%`,
                     }}
                   />
                 </div>
                 <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                  {Math.min(completedPhaseCount, totalPhases)} / {totalPhases} phases
+                  {label}
                 </span>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Phase stepper — one button per template phase, centered. */}
           {template?.phases && template.phases.length > 0 && (

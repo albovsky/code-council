@@ -81,3 +81,22 @@ export function uiLineageDot(lineage: string | undefined): string {
   if (!lineage) return "bg-muted";
   return UI_LINEAGE_DOT[lineage as UILineage] ?? "bg-muted";
 }
+
+/**
+ * Default model per UI lineage when a template's `models: []` is empty.
+ * Mirrors the per-lineage defaults used by phase-editor and new-template-dialog;
+ * lifted here so the run page can show the actual model on cards even when
+ * the YAML omits it.
+ */
+export const UI_LINEAGE_DEFAULT_MODEL: Record<UILineage, string> = {
+  claude: "claude-opus-4-7",
+  codex: "gpt-5.5",
+  gemini: "gemini-3.1-pro-preview",
+  opencode: "kimi-k2.6",
+  kimi: "kimi-k2.6",
+};
+
+export function uiLineageDefaultModel(lineage: string | undefined): string | undefined {
+  if (!lineage) return undefined;
+  return UI_LINEAGE_DEFAULT_MODEL[lineage as UILineage];
+}

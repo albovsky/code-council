@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, Check } from "lucide-react";
 import { TriadLogo } from "@/components/triad-logo";
@@ -8,7 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { upsertSecret, updateSettings, DaemonError } from "@/lib/api";
-import { updatePermissions, type SandboxProfile } from "@/lib/api/settings";
+import {
+  updatePermissions,
+  type SandboxProfile,
+  detectInstalledClis,
+  type CliDetection,
+} from "@/lib/api/settings";
 import { cn } from "@/lib/utils";
 
 interface CliRow {
@@ -87,6 +92,25 @@ export default function OnboardingPage() {
   const [sandboxProfile, setSandboxProfile] = useState<SandboxProfile>("workspace");
   const [autoApprovePrompts, setAutoApprovePrompts] = useState<boolean>(true);
   const [networkAccess, setNetworkAccess] = useState<boolean>(false);
+  const [detection, setDetection] = useState<Record<string, CliDetection>>({});
+
+  useEffect(() => {
+    detectInstalledClis()
+      .then((rows) => {
+        const map: Record<string, CliDetection> = {};
+        const preTick = new Set<string>();
+        for (const row of rows) {
+          map[row.id] = row;
+          if (row.found) preTick.add(row.id);
+        }
+        setDetection(map);
+        if (preTick.size > 0) setSelectedClis(preTick);
+      })
+      .catch(() => {
+        // Detection is best-effort; if the daemon probe fails the user can
+        // still tick boxes manually. No need to surface an error.
+      });
+  }, []);
 
   const toggleCli = (id: string) => {
     setSelectedClis((prev) => {
@@ -184,6 +208,7 @@ export default function OnboardingPage() {
           <div className="space-y-2">
             {CLIS.map((cli) => {
               const checked = selectedClis.has(cli.id);
+              const probe = detection[cli.id];
               return (
                 <button
                   key={cli.id}
@@ -207,9 +232,16 @@ export default function OnboardingPage() {
                     {checked && <Check className="h-3 w-3" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">{cli.label}</div>
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <span>{cli.label}</span>
+                      {probe?.found && (
+                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-500">
+                          installed
+                        </span>
+                      )}
+                    </div>
                     <div className="truncate text-xs text-muted-foreground">
-                      {cli.hint}
+                      {probe?.found && probe.path ? probe.path : cli.hint}
                     </div>
                   </div>
                 </button>

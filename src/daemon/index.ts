@@ -577,6 +577,16 @@ async function main() {
     }
   });
 
+  fastify.get<{ Reply: ApiResponse<object[]> }>('/onboard/detect-clis', async () => {
+    try {
+      const { detectAllClis } = await import('../lib/cli-detect.js');
+      return successResponse(detectAllClis());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('internal', message);
+    }
+  });
+
   // ─── Permission settings ────────────────────────────────────────────────
 
   fastify.get<{ Reply: ApiResponse<object> }>('/settings/permissions', async () => {

@@ -15,6 +15,16 @@ export async function getPermissions(): Promise<PermissionSettings> {
   return fetchFromDaemon<PermissionSettings>("/settings/permissions");
 }
 
+export interface CliDetection {
+  id: "claude-code" | "codex-cli" | "gemini-cli" | "opencode-cli" | "kimi-cli";
+  found: boolean;
+  path?: string;
+}
+
+export async function detectInstalledClis(): Promise<CliDetection[]> {
+  return fetchFromDaemon<CliDetection[]>("/onboard/detect-clis");
+}
+
 export async function updatePermissions(
   patch: Partial<Omit<PermissionSettings, "profileDescriptions">>,
 ): Promise<PermissionSettings> {

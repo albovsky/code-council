@@ -59,23 +59,32 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
         const rawAgent = d.name.replace(/^(doer-|reviewer-)/, "").replace(/-\d+$/, "");
         const lineage = AGENT_TO_LINEAGE[rawAgent] ?? rawAgent;
         const answerPath = path.join(roundDir, d.name, "answer.md");
-        // `hasAnswer` MUST mean "non-empty" — the runner pre-creates an
-        // empty answer.md when the spawn starts so live tail can poll the
-        // file mid-stream. If we treat any existing file as completed, the
-        // phase stepper flips to DONE the millisecond the doer starts. See
-        // ROADMAP #15.
+        // `hasAnswer` means "this participant finished" — gated on the
+        // `## DONE` sentinel the runner appends to answer.md when the
+        // shim's message_done fires. Earlier code used `.trim().length > 0`,
+        // which flipped to DONE the moment the buffered StreamFileWriter
+        // flushed its first chunk to disk — so a mid-stream doer rendered
+        // as "DONE · No output yet." until the next poll. The sentinel
+        // is the only durable signal that the participant is actually
+        // finished. See ROADMAP #15.
         let hasAnswer = false;
         let answer: string | undefined;
         let findingsPreview: string[] | undefined;
         if (fs.existsSync(answerPath)) {
           try {
             answer = fs.readFileSync(answerPath, "utf-8");
-            hasAnswer = answer.trim().length > 0;
-            findingsPreview = answer
-              .split("\n")
-              .filter((l) => l.trim().length > 0 && !l.startsWith("##"))
-              .slice(0, 4)
-              .map((l) => (l.length > 90 ? l.slice(0, 90) + "…" : l));
+            hasAnswer = /\n##\s*DONE\s*\n?$/i.test(answer.trimEnd());
+            // Only emit findingsPreview when the participant is actually
+            // done. Mid-stream content here would suppress the liveTail
+            // rendering in the card body, hiding the streaming text from
+            // the user.
+            if (hasAnswer) {
+              findingsPreview = answer
+                .split("\n")
+                .filter((l) => l.trim().length > 0 && !l.startsWith("##"))
+                .slice(0, 4)
+                .map((l) => (l.length > 90 ? l.slice(0, 90) + "…" : l));
+            }
           } catch {
             answer = undefined;
           }

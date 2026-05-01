@@ -31,15 +31,20 @@ export function ParticipantCard({
 }) {
   const [showFull, setShowFull] = useState(false);
 
+  // State precedence: pending (synthesised slot) → done (answer on disk) →
+  // errored (chat terminal but no answer) → working (the implicit
+  // non-terminal mid-flight state). Earlier code gated "working" on isActive
+  // or liveTail bytes, but those signals lag behind phase_start replay and
+  // would briefly flicker the card to "idle" — making it look frozen
+  // between phase_start and the first text_delta. Anchoring on chat status
+  // closes that window.
   const state: ParticipantState = participant.pending
     ? "pending"
     : participant.hasAnswer
       ? "done"
-      : isActive || (liveTail && liveTail.length > 0)
-        ? "working"
-        : chatTerminal
-          ? "errored"
-          : "idle";
+      : chatTerminal
+        ? "errored"
+        : "working";
 
   return (
     <div

@@ -67,18 +67,23 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
         const rawAgent = d.name.replace(/^(doer-|reviewer-)/, "").replace(/-\d+$/, "");
         const lineage = AGENT_TO_LINEAGE[rawAgent] ?? "claude";
         const answerPath = path.join(roundDir, d.name, "answer.md");
+        // hasAnswer must mirror the API route: gated on the `## DONE`
+        // sentinel so a mid-stream doer doesn't render as "done · no
+        // output yet" when the user lands on the page during a live run.
         let hasAnswer = false;
         let answer: string | undefined;
         let findingsPreview: string[] | undefined;
         if (fs.existsSync(answerPath)) {
-          hasAnswer = true;
           try {
             answer = fs.readFileSync(answerPath, "utf-8");
-            findingsPreview = answer
-              .split("\n")
-              .filter((l) => l.trim().length > 0 && !l.startsWith("##"))
-              .slice(0, 4)
-              .map((l) => (l.length > 90 ? l.slice(0, 90) + "…" : l));
+            hasAnswer = /\n##\s*DONE\s*\n?$/i.test(answer.trimEnd());
+            if (hasAnswer) {
+              findingsPreview = answer
+                .split("\n")
+                .filter((l) => l.trim().length > 0 && !l.startsWith("##"))
+                .slice(0, 4)
+                .map((l) => (l.length > 90 ? l.slice(0, 90) + "…" : l));
+            }
           } catch {
             answer = undefined;
           }

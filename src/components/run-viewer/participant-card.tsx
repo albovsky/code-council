@@ -74,11 +74,11 @@ export function ParticipantCard({
           <span className="text-xs uppercase tracking-wider text-muted-foreground">
             {uiLineageLabel(participant.lineage)}
           </span>
-          {participant.model && (
+          {(participant.modelUsed ?? participant.model) && (
             <>
               <span className="text-muted-foreground/60">·</span>
               <span className="truncate font-mono text-xs text-muted-foreground">
-                {participant.model}
+                {participant.modelUsed ?? participant.model}
               </span>
             </>
           )}
@@ -134,8 +134,8 @@ export function ParticipantCard({
       )}
 
       <div className="flex items-center justify-between gap-3 border-t border-border bg-card/60 px-4 py-2 font-mono text-[10px] text-muted-foreground">
-        <span>{participant.agentName}</span>
-        <span>
+        <span className="truncate">{participant.binaryUsed ?? participant.agentName}</span>
+        <span className="shrink-0">
           {participant.hasAnswer
             ? `${(participant.answer?.length ?? 0).toLocaleString()} B`
             : "—"}

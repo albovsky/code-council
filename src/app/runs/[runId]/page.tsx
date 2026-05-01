@@ -38,6 +38,8 @@ interface ParticipantSnapshot {
   hasAnswer: boolean;
   answer?: string;
   findingsPreview?: string[];
+  binaryUsed?: string;
+  modelUsed?: string;
 }
 
 interface RoundSnapshot {
@@ -88,7 +90,32 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
             answer = undefined;
           }
         }
-        return { participant: d.name, role, agentName: rawAgent, lineage, hasAnswer, answer, findingsPreview };
+        let binaryUsed: string | undefined;
+        let modelUsed: string | undefined;
+        const metaPath = path.join(roundDir, d.name, "_meta.json");
+        if (fs.existsSync(metaPath)) {
+          try {
+            const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8")) as {
+              binary?: unknown;
+              model?: unknown;
+            };
+            if (typeof meta.binary === "string") binaryUsed = meta.binary;
+            if (typeof meta.model === "string") modelUsed = meta.model;
+          } catch {
+            /* informational sidecar; ignore parse errors */
+          }
+        }
+        return {
+          participant: d.name,
+          role,
+          agentName: rawAgent,
+          lineage,
+          hasAnswer,
+          answer,
+          findingsPreview,
+          binaryUsed,
+          modelUsed,
+        };
       });
 
     rounds.push({ round: roundNum, participants });

@@ -87,6 +87,26 @@ export function _resetKimiTransportCache(): void {
   cachedTransport = null;
 }
 
+/**
+ * Drop a per-participant `_meta.json` sidecar so the cockpit can show
+ * which binary + model actually ran. Without this the run page would
+ * always say "kimi-cli · kimi-k2.6" even when the underlying transport
+ * is opencode + opencode-go/kimi-k2.6. Best-effort — failures are silent
+ * (the sidecar is purely informational).
+ */
+function writeTransportMeta(cwd: string, binary: string, model: string): void {
+  try {
+    const metaPath = path.join(cwd, '_meta.json');
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({ binary, model, ts: Date.now() }, null, 2),
+      'utf-8',
+    );
+  } catch {
+    /* informational only */
+  }
+}
+
 export const kimiShim: AgentShim = {
   lineage: 'moonshot',
   name: 'kimi-cli',
@@ -149,6 +169,8 @@ export const kimiShim: AgentShim = {
     const transport = detectKimiTransport();
 
     if (transport === 'kimi-cli') {
+      const model = opts.model ?? 'kimi-k2.6';
+      writeTransportMeta(opts.cwd, 'kimi-cli', model);
       const args = ['--print', '--output-format', 'stream-json'];
       if (opts.model) args.push('-m', opts.model);
       const run = spawnHeadless({
@@ -170,6 +192,7 @@ export const kimiShim: AgentShim = {
     const model = rawModel.startsWith('opencode-go/')
       ? rawModel
       : `opencode-go/${rawModel}`;
+    writeTransportMeta(opts.cwd, 'opencode-cli', model);
     const args = ['run', '--format', 'json', '--model', model, opts.promptText];
     const run = spawnHeadless({
       command: 'opencode',

@@ -20,6 +20,17 @@ export interface ParticipantSnapshot {
   /** Model id picked by the template for this slot, e.g. "claude-opus-4-7". */
   model?: string;
   /**
+   * Resolved transport — what the shim ACTUALLY spawned at runtime.
+   * Populated from the per-participant `_meta.json` sidecar the runner
+   * writes. Differs from `agentName` + `model` when a single lineage has
+   * multiple transports (e.g. moonshot/kimi can run via standalone `kimi`
+   * CLI OR via `opencode -m opencode-go/kimi-k2.6`). Cards prefer these
+   * fields over the template-default `model`/`agentName` so the user can
+   * tell at a glance which path is in use.
+   */
+  binaryUsed?: string;
+  modelUsed?: string;
+  /**
    * Synthesised slot — no directory on disk yet. Present so we can render
    * placeholder reviewer cards from template config the moment the chat
    * starts, instead of leaving the user staring at a lone doer card.

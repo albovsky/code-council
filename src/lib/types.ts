@@ -218,6 +218,14 @@ export interface Settings {
    * available reviewers by this list when OpenCode is the lineage.
    */
   "opencode.enabled_models"?: string[];
+  /**
+   * Per-CLI enabled-models lists for the home-page fleet cards.
+   * `<ui-lineage>.enabled_models` (e.g. `claude.enabled_models`,
+   * `codex.enabled_models`, `gemini.enabled_models`,
+   * `kimi.enabled_models`). Index signature kept generic so adding a new
+   * lineage doesn't require a type change.
+   */
+  [key: `${string}.enabled_models`]: string[] | undefined;
 }
 
 export interface Secret {

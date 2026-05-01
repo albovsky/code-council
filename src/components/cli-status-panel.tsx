@@ -19,9 +19,11 @@ import {
   Plug,
 } from "lucide-react";
 import { fetchFromDaemon } from "@/lib/api/client";
-import { lineageDot } from "@/lib/lineage-maps";
+import { lineageDot, UI_LINEAGE_AVAILABLE_MODELS, UI_LINEAGE_DEFAULT_MODEL } from "@/lib/lineage-maps";
+import type { UILineage } from "@/lib/lineage-maps";
 import Link from "next/link";
 import { OpencodeFleetCard } from "./opencode-fleet-card";
+import { LineageFleetCard } from "./lineage-fleet-card";
 
 interface OrchestratorStatus {
   name: string;
@@ -45,6 +47,16 @@ const ORCHESTRATOR_TO_LINEAGE: Record<string, string> = {
   gemini: "google",
   opencode: "opencode",
   kimi: "moonshot",
+};
+
+// Map orchestrator name → UI lineage key for the fleet-card lookup
+// (separate from ORCHESTRATOR_TO_LINEAGE which uses the daemon-side
+// names — UI lineage is what UI_LINEAGE_AVAILABLE_MODELS is keyed by).
+const ORCHESTRATOR_TO_UI_LINEAGE: Record<string, UILineage> = {
+  claude: "claude",
+  codex: "codex",
+  gemini: "gemini",
+  kimi: "kimi",
 };
 
 function formatResetIn(resetAt?: number): string | null {
@@ -109,6 +121,7 @@ export async function CliStatusPanel() {
   let orchestrators: OrchestratorStatus[] = [];
   let healths: CliHealth[] = [];
   let opencodeEnabled: string[] = [];
+  let allSettings: Record<string, unknown> = {};
   try {
     orchestrators = await fetchFromDaemon<OrchestratorStatus[]>("/orchestrators");
   } catch {
@@ -120,11 +133,22 @@ export async function CliStatusPanel() {
     healths = [];
   }
   try {
-    const settings = await fetchFromDaemon<Record<string, unknown>>("/settings");
-    const list = settings["opencode.enabled_models"];
+    allSettings = await fetchFromDaemon<Record<string, unknown>>("/settings");
+    const list = allSettings["opencode.enabled_models"];
     if (Array.isArray(list)) opencodeEnabled = list as string[];
   } catch {
     /* settings load is best-effort */
+  }
+
+  // Pull per-lineage enabled-model lists, defaulting to the canonical
+  // default model from UI_LINEAGE_DEFAULT_MODEL when no setting exists.
+  // First-run UX: every CLI shows "1 model enabled" instead of "0".
+  function readEnabled(uiLineage: UILineage): string[] {
+    const key = `${uiLineage}.enabled_models`;
+    const raw = allSettings[key];
+    if (Array.isArray(raw)) return raw as string[];
+    const def = UI_LINEAGE_DEFAULT_MODEL[uiLineage];
+    return def ? [def] : [];
   }
 
   const healthByLineage: Record<string, CliHealth> = {};
@@ -156,16 +180,34 @@ export async function CliStatusPanel() {
             status: "unknown" as const,
             updatedAt: 0,
           };
-          // OpenCode card is a client component — supports inline expand
-          // for picking which subscription models are enabled, with each
-          // toggle saving immediately. Other CLIs (single-binary,
-          // single-subscription) keep the static card for now.
+          // OpenCode is special — gateway-grouped and discovered via
+          // `opencode models`. Other CLIs use the generic flat-list card
+          // backed by UI_LINEAGE_AVAILABLE_MODELS. Cursor/Windsurf and
+          // anything without a curated list fall through to the static
+          // info card.
           if (o.name === "opencode") {
             return (
               <OpencodeFleetCard
                 key={o.name}
                 health={{ status: health.status, message: health.message }}
                 initialEnabled={opencodeEnabled}
+              />
+            );
+          }
+          const uiLineage = ORCHESTRATOR_TO_UI_LINEAGE[o.name];
+          const available = uiLineage
+            ? UI_LINEAGE_AVAILABLE_MODELS[uiLineage]
+            : undefined;
+          if (uiLineage && available && available.length > 0) {
+            return (
+              <LineageFleetCard
+                key={o.name}
+                lineage={lineage}
+                label={o.label}
+                settingsKey={`${uiLineage}.enabled_models`}
+                available={available}
+                initialEnabled={readEnabled(uiLineage)}
+                health={{ status: health.status, message: health.message }}
               />
             );
           }

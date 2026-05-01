@@ -96,6 +96,49 @@ export const UI_LINEAGE_DEFAULT_MODEL: Record<UILineage, string> = {
   kimi: "kimi-k2.6",
 };
 
+/**
+ * Curated model lists per CLI. Used by the home-page fleet cards so users
+ * can pick which models they want chorus to expose as voices, the same way
+ * the OpenCode card already does (just without gateway grouping — single
+ * subscription per CLI, flat list).
+ *
+ * Update when a new model drops. Order = recommended first; the first
+ * entry in each list is the canonical default and matches
+ * UI_LINEAGE_DEFAULT_MODEL.
+ *
+ * OpenCode is omitted because it's discovered live via `opencode models`
+ * (gateway-aware). Cursor/Windsurf are IDE orchestrators with no model
+ * selection of their own.
+ */
+export const UI_LINEAGE_AVAILABLE_MODELS: Partial<Record<UILineage, string[]>> = {
+  claude: [
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-opus-4-5",
+    "claude-sonnet-4",
+  ],
+  codex: [
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-pro",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex",
+    "gpt-5.2",
+    "gpt-5.1",
+  ],
+  gemini: [
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash",
+    "gemini-2.5-pro",
+  ],
+  kimi: [
+    "kimi-k2.6",
+    "kimi-k2.5",
+  ],
+};
+
 export function uiLineageDefaultModel(lineage: string | undefined): string | undefined {
   if (!lineage) return undefined;
   return UI_LINEAGE_DEFAULT_MODEL[lineage as UILineage];

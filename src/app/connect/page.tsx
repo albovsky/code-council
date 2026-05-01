@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { PageHeader } from "@/components/page-header";
 import {
   listOrchestrators,
   DaemonError,
@@ -64,21 +65,13 @@ export default async function ConnectPage() {
           </div>
         )}
 
-        <section>
-          <div className="mb-4">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              Connect
-            </p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight">
-              CLIs &amp; voices
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Connect chorus to each editor (one-click MCP wiring) and pick
-              which models from each CLI may run as voices. Toggles save
-              automatically.
-            </p>
-          </div>
+        <PageHeader
+          eyebrow="Connect"
+          title="CLIs & voices"
+          subtitle="Connect chorus to each editor (one-click MCP wiring) and pick which models from each CLI may run as voices. Toggles save automatically."
+        />
 
+        <section>
           {orchestrators.length === 0 ? (
             <div className="rounded-lg border border-border bg-card/30 p-6 text-sm text-muted-foreground">
               Daemon unreachable — orchestrator status will appear once it&apos;s up.

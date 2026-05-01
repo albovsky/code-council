@@ -48,7 +48,7 @@ export function ParticipantCard({
 
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-lg border transition-[opacity,border-color,box-shadow] duration-300 ${
+      className={`flex min-h-[300px] flex-col overflow-hidden rounded-lg border transition-[opacity,border-color,box-shadow] duration-300 ${
         LINEAGE_GRADIENT[participant.lineage] ?? "bg-card"
       } ${
         state === "done"

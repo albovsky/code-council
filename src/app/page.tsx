@@ -150,8 +150,8 @@ function ActiveHome({ chats }: ActiveHomeProps) {
   return (
     <>
       <PageHeader
-        eyebrow="Today"
-        title="What should the council look at?"
+        eyebrow="Home"
+        title="Today's runs"
         action={
           <Link
             href="/new"

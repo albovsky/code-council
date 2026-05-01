@@ -16,7 +16,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
-  CircleHelp,
   ChevronDown,
   Check,
 } from "lucide-react";
@@ -145,14 +144,12 @@ export function LineageFleetCard({
 }
 
 function StatusBadge({ status }: { status: LineageFleetCardProps["health"]["status"] }) {
+  // Card is only rendered for already-connected CLIs (panel filters on
+  // orchestrator.connected), so the baseline state is "Connected" rather
+  // than "Untested" — the latter never made sense to surface here. Real
+  // failure states (auth/quota/rate-limit) still override and show their
+  // amber/red badge.
   switch (status) {
-    case "healthy":
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
-          <CheckCircle2 className="h-3 w-3" />
-          Healthy
-        </span>
-      );
     case "auth_invalid":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
@@ -174,11 +171,12 @@ function StatusBadge({ status }: { status: LineageFleetCardProps["health"]["stat
           Rate-limited
         </span>
       );
+    case "healthy":
     default:
       return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-          <CircleHelp className="h-3 w-3" />
-          Untested
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+          <CheckCircle2 className="h-3 w-3" />
+          Connected
         </span>
       );
   }

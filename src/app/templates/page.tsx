@@ -69,7 +69,7 @@ export default function TemplatesPage() {
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
         <PageHeader
           eyebrow="Templates"
-          title="Reusable workflows for the council."
+          title="Reusable review workflows"
           subtitle="Each template defines the driver, reviewers, prompts, and quorum rule for a kind of task. Fork, edit, share."
           action={<NewTemplateDialog />}
         />

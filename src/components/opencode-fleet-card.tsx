@@ -163,14 +163,9 @@ export function OpencodeFleetCard({ health, initialEnabled }: OpencodeFleetCardP
 }
 
 function StatusBadge({ status }: { status: OpencodeFleetCardProps["health"]["status"] }) {
+  // Card only renders for already-connected CLIs — see comment in
+  // LineageFleetCard's StatusBadge for the rationale.
   switch (status) {
-    case "healthy":
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
-          <CheckCircle2 className="h-3 w-3" />
-          Healthy
-        </span>
-      );
     case "auth_invalid":
     case "quota_exhausted":
     case "rate_limited":
@@ -180,10 +175,12 @@ function StatusBadge({ status }: { status: OpencodeFleetCardProps["health"]["sta
           {status === "auth_invalid" ? "Auth broken" : status === "quota_exhausted" ? "Quota out" : "Rate-limited"}
         </span>
       );
+    case "healthy":
     default:
       return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-          Untested
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+          <CheckCircle2 className="h-3 w-3" />
+          Connected
         </span>
       );
   }

@@ -192,7 +192,8 @@ function NewChatPageInner() {
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
         <PageHeader
           eyebrow="New chat"
-          title="Paste a task. Pick a template. Watch the council think."
+          title="Paste a task. Pick a template."
+          subtitle="Chorus runs it past your reviewers and reports consensus."
         />
 
         {createError && (
@@ -239,7 +240,7 @@ function NewChatPageInner() {
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe what you want a council of LLMs to consider. Paste code, errors, design docs — whatever the panel needs to weigh in on."
+            placeholder="Describe what you want chorus to weigh in on. Paste code, errors, design docs — anything the reviewers should see."
             className="block w-full resize-none border-0 bg-transparent px-5 py-4 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
             rows={10}
           />

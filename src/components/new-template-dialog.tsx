@@ -281,7 +281,7 @@ export function NewTemplateDialog() {
               New template
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              A reusable workflow for the council. Edit visually below or paste raw YAML.
+              A reusable review workflow. Edit visually below or paste raw YAML.
             </p>
           </div>
           <button

@@ -192,10 +192,16 @@ program
         }
       }
 
-      // Spawn daemon
-      const daemonPath = require.resolve('../daemon/index.ts');
+      // Spawn daemon. Prefer the compiled JS so a global install (no src/
+      // shipped, no tsx loader registered) works; fall back to the .ts source
+      // when running in dev mode where the user only has src/ on disk.
+      const daemonJs = path.resolve(__dirname, '..', 'daemon', 'index.js');
+      const daemonTs = path.resolve(__dirname, '..', '..', 'src', 'daemon', 'index.ts');
+      const useCompiled = fs.existsSync(daemonJs);
+      const daemonPath = useCompiled ? daemonJs : daemonTs;
+      const spawnArgs = useCompiled ? [daemonPath] : ['-r', 'tsx/cjs', daemonPath];
 
-      const child = spawn('node', ['-r', 'tsx/cjs', daemonPath], {
+      const child = spawn('node', spawnArgs, {
         detached: true,
         stdio: 'ignore',
       });
@@ -207,6 +213,29 @@ program
       // Write PID
       fs.mkdirSync(chorusDir, { recursive: true });
       fs.writeFileSync(pidFile, child.pid.toString());
+
+      // Spawn the cockpit web UI alongside the daemon. The package ships a
+      // built .next directory; run next from the package root so it picks up
+      // the bundled bun_modules. Web PID is tracked separately so `chorus
+      // stop` can clean up both.
+      const packageRoot = useCompiled
+        ? path.resolve(__dirname, '..', '..')
+        : path.resolve(__dirname, '..', '..');
+      const nextEntry = path.resolve(packageRoot, 'node_modules', 'next', 'dist', 'bin', 'next');
+      const webPidFile = path.join(chorusDir, 'web.pid');
+      if (fs.existsSync(nextEntry) && fs.existsSync(path.join(packageRoot, '.next'))) {
+        const webChild = spawn('node', [nextEntry, 'start', '-p', '5050', '-H', '127.0.0.1'], {
+          cwd: packageRoot,
+          detached: true,
+          stdio: 'ignore',
+        });
+        if (webChild.pid) {
+          fs.writeFileSync(webPidFile, webChild.pid.toString());
+          webChild.unref();
+        }
+      } else {
+        console.log('  (cockpit UI build not found — daemon API still available on 7707)');
+      }
 
       // Unref so parent doesn't wait
       child.unref();
@@ -271,25 +300,27 @@ program
   .action(() => {
     try {
       const chorusDir = path.join(os.homedir(), '.chorus');
-      const pidFile = path.join(chorusDir, 'daemon.pid');
-
-      if (!fs.existsSync(pidFile)) {
-        console.log('Daemon is not running');
+      const stopProcess = (label: string, pidFile: string): void => {
+        if (!fs.existsSync(pidFile)) return;
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10);
+        try {
+          process.kill(pid, 'SIGTERM');
+          console.log(`${label} stopped (was PID ${pid})`);
+        } catch {
+          // process already gone
+        }
+        fs.unlinkSync(pidFile);
+      };
+      const daemonPidFile = path.join(chorusDir, 'daemon.pid');
+      const webPidFile = path.join(chorusDir, 'web.pid');
+      if (!fs.existsSync(daemonPidFile) && !fs.existsSync(webPidFile)) {
+        console.log('Chorus is not running');
         return;
       }
-
-      const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10);
-
-      try {
-        process.kill(pid, 'SIGTERM');
-        fs.unlinkSync(pidFile);
-        console.log(`Daemon stopped (was PID ${pid})`);
-      } catch (error) {
-        console.error(`Failed to stop daemon: ${error}`);
-        process.exit(1);
-      }
+      stopProcess('Daemon', daemonPidFile);
+      stopProcess('Cockpit', webPidFile);
     } catch (error) {
-      console.error('Error stopping daemon:', error);
+      console.error('Error stopping chorus:', error);
       process.exit(1);
     }
   });

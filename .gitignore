@@ -28,3 +28,4 @@ Thumbs.db
 # pnpm
 .pnpm-store/
 .claude/
+chorus-*.tgz

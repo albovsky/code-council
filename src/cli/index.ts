@@ -35,7 +35,19 @@ function printCockpitAccessHint(): void {
   console.log('');
 }
 
-const pkg = { version: '0.5.0-dev.0', name: 'chorus' };
+// Read version from the shipped package.json so it can never drift.
+// __dirname is dist/cli (built) or src/cli (tsx dev); ../../package.json
+// resolves to the package root in both layouts.
+const pkg: { version: string; name: string } = (() => {
+  try {
+    const pkgPath = path.resolve(__dirname, '..', '..', 'package.json');
+    const raw = fs.readFileSync(pkgPath, 'utf-8');
+    const parsed = JSON.parse(raw) as { version?: string; name?: string };
+    return { version: parsed.version ?? '0.0.0', name: parsed.name ?? 'chorus' };
+  } catch {
+    return { version: '0.0.0', name: 'chorus' };
+  }
+})();
 
 const program = new Command();
 

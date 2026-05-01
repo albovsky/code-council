@@ -44,17 +44,37 @@ program
   .version(pkg.version);
 
 // Show a quick-start banner before the standard help so first-time users see
-// the two-step setup even when npm's global install hides postinstall stdout.
+// the setup sequence even when npm's global install hides postinstall stdout.
+// State-aware: detects whether init has been run (chorus.db is the marker —
+// dir alone is not enough, an empty ~/.chorus can exist from a prior aborted
+// install) and whether the daemon is currently up.
 program.addHelpText(
   'beforeAll',
   () => {
     const chorusDir = path.join(os.homedir(), '.chorus');
-    if (!fs.existsSync(chorusDir)) {
-      return `\n  Quick start (first run):\n    chorus init    register MCP with your editors, seed templates, detect CLIs\n    chorus start   bring up the daemon + cockpit on http://127.0.0.1:5050\n`;
-    }
+    const dbFile = path.join(chorusDir, 'chorus.db');
     const daemonPid = path.join(chorusDir, 'daemon.pid');
-    if (!fs.existsSync(daemonPid)) {
-      return `\n  Daemon not running. Start it with:\n    chorus start\n`;
+    const initialised = fs.existsSync(dbFile);
+    const running = fs.existsSync(daemonPid);
+
+    if (!initialised) {
+      return [
+        '',
+        '  🚀 Welcome to Chorus — two commands to get going:',
+        '',
+        '    1. chorus init     register MCP with your editors + seed templates + detect CLIs',
+        '    2. chorus start    bring up the daemon and cockpit at http://127.0.0.1:5050',
+        '',
+      ].join('\n');
+    }
+    if (!running) {
+      return [
+        '',
+        '  ▶  Daemon is stopped. Bring it back up:',
+        '',
+        '    chorus start',
+        '',
+      ].join('\n');
     }
     return '';
   }

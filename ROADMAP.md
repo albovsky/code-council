@@ -31,9 +31,10 @@ This is the seed of the **template marketplace**: an asset class that didn't exi
 | Manual CLI path entry UI | 0.6 | ✅ DONE | |
 | Persona registry — table + 10 built-ins + seed loader | 0.7 | ✅ DONE | |
 | MCP `list_personas` + `invoke_persona` | 0.7 | ✅ DONE | 9 MCP tools total |
-| Voices abstraction (table + auto-populate from CLIs) | 0.7 | 📐 PLANNED | |
-| OpenRouter inline flow (validate → fetch models → multi-add) | 0.7 | 📐 PLANNED | |
-| Phase composition UI (drag/reorder, edit prompts) | 0.7 | 📐 PLANNED | |
+| Voices abstraction (table + auto-populate + 6 UI surfaces) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #2 c758e80); 71 voices auto-seed across 5 lineages; vendor_family taxonomy |
+| libsql migration (better-sqlite3 → @libsql/client, no node-gyp) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #1 1441532); fixes `npm install -g` on Windows / locked-down boxes |
+| OpenRouter inline flow (validate → fetch models → multi-add) | 0.7 | ⏳ NEXT | builds on voices table; POST /voices already exists |
+| Phase composition UI (drag/reorder, edit prompts) | 0.7 | 📐 PLANNED | depends on voices + OpenRouter; unlocks per-phase persona binding |
 | Default chorus-on-chorus template (Sentinel + Cartographer + Accountant + Translator) | 0.7 | 📐 PLANNED | bakes meta-fix |
 | Squashed migration push to `chorus-codes/chorus` | 0.7 | ⏳ NEXT | piece-by-piece audit using personas |
 | `npm publish @chorus-codes/chorus` | 0.7 | ⏳ NEXT | rotate token after first publish |
@@ -95,30 +96,11 @@ Each prompt is a *worldview*, not a checklist — single role, list of red flags
 
 > ⚠️ **Current limitation — one persona, all voices.** Today `invoke_persona` prepends a *single* persona's system_prompt to the brief, then runs whatever template is chosen. Every voice in every phase of that template sees the same persona overlay. There is no per-phase persona binding yet. So if a template has 3 voices across Discover/Develop/Decide, all 3 voices speak as e.g. Cartographer — you cannot say "Cartographer drives Discover, Sentinel drives Develop, Accountant drives Decide" until **Phase composition (item 4 below)** lands. This is fine for the v0.7 migration audit (one-persona-per-file is enough for findings) but is the headline gap before the marketplace pitch lands. Don't forget.
 
-### 2. Voices (PLANNED)
+### 2. Voices (DONE 2026-05-02 — PR #2 c758e80)
 
-**Goal:** unify CLI subs and API-routed models into one routable abstraction the template designer can target.
+Shipped: `voices` table with `(id, label, source, provider, model_id, lineage, vendor_family, input_cost_per_mtok, output_cost_per_mtok, enabled)`. Auto-populated on daemon boot — Phase 1 (sync, pre-listen) seeds single-model CLIs with immutable IDs (`claude-code`, `codex-cli`, …); Phase 2 (background, post-listen) shells `opencode models` for multi-model OpenCode voices. First-boot migration from `<lineage>.enabled_models` settings preserves prior toggles. Lineage stays in existing 5-enum; `vendor_family` carries the finer taxonomy (deepseek/meta/mistral/xai). Full GET/POST/PUT/DELETE routes; 6 UI surfaces (home fleet cards, /connect, onboarding, phase-editor) read from `/voices`. See [planning/voices.md](planning/voices.md).
 
-**Storage:** new `voices` table.
-
-```sql
-CREATE TABLE voices (
-  id TEXT PRIMARY KEY,            -- "claude-code" or "openrouter:moonshotai/kimi-k2"
-  label TEXT NOT NULL,
-  source TEXT NOT NULL,           -- "cli" | "api"
-  provider TEXT NOT NULL,         -- "claude-code" | "openrouter" | "anthropic" | ...
-  model_id TEXT,                  -- API: actual model id; CLI: NULL
-  lineage TEXT NOT NULL,          -- "anthropic" | "openai" | "google" | "moonshot" | ...
-  input_cost_per_mtok REAL,       -- $ per 1M input tokens (NULL for flat-rate CLI subs)
-  output_cost_per_mtok REAL,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL
-);
-```
-
-Auto-populated from CLI auto-detect on first run. Lineage tagged for diversity scoring in the template designer ("you have anthropic + openai — consider adding moonshot or deepseek for spread").
-
-### 3. OpenRouter inline (PLANNED — ships with Voices)
+### 3. OpenRouter inline (NEXT — builds on voices)
 
 **UX flow** on the OpenRouter row in onboarding/Settings:
 

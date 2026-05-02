@@ -1,0 +1,43 @@
+id: review-only
+name: Review Only
+description: |
+  Paste a diff, draft, or text blob. Three reviewers (Codex + Gemini + Claude)
+  critique it independently. Single pass — revise yourself and resubmit for
+  another round.
+author: chorus
+agreementThreshold: 0.66
+onThresholdMet: ask
+maxRounds: 1
+yoloDefault: false
+
+# Ship is meaningless without a doer diff. The runner skips it for any
+# review-only template; the explicit `enabled: false` here keeps intent
+# obvious to template-readers.
+ship:
+  enabled: false
+
+phases:
+  - id: review
+    kind: review_only
+    title: External Review
+    description: Three lineages critique the supplied artifact independently.
+    reviewer:
+      require: 2
+      crossLineage: true
+      candidates:
+        - lineage: openai
+          models:
+            - gpt-5.5
+        - lineage: google
+          models:
+            - gemini-3.1-pro-preview
+        - lineage: anthropic
+          models:
+            - claude-opus-4-7
+    artifact:
+      label: "Artifact to review"
+      hint: "Paste a unified diff, a markdown draft, code, or any text blob."
+      maxBytes: 1048576
+    inputs:
+      include: []
+      exclude: []

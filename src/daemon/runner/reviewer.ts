@@ -8,7 +8,7 @@
  * Tested by tests/runner-reviewer.test.ts.
  */
 import * as fs from 'fs';
-import type { Phase } from '../../lib/template-schema.js';
+import type { StandardPhase } from '../../lib/template-schema.js';
 import type { AgentShim } from '../agents/types.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
 import { StreamFileWriter } from './stream-file-writer.js';
@@ -18,7 +18,7 @@ import type { RunnerEvent } from './types.js';
 export async function runReviewerHeadless(args: {
   shim: AgentShim;
   chatId: string;
-  phase: Phase;
+  phase: StandardPhase;
   round: number;
   reviewerIdx: number;
   candidateLineage: string;

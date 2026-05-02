@@ -97,6 +97,8 @@ async function initDb(): Promise<Client> {
   if (!has('repo_path')) await db.execute('ALTER TABLE chats ADD COLUMN repo_path TEXT');
   if (!has('pr_url')) await db.execute('ALTER TABLE chats ADD COLUMN pr_url TEXT');
   if (!has('ship_error')) await db.execute('ALTER TABLE chats ADD COLUMN ship_error TEXT');
+  if (!has('artifact')) await db.execute('ALTER TABLE chats ADD COLUMN artifact TEXT');
+  if (!has('verdict')) await db.execute('ALTER TABLE chats ADD COLUMN verdict TEXT');
 
   // Personas table — added in v0.7. Idempotent CREATE so DBs that
   // pre-date this version pick it up without a manual migration.
@@ -151,6 +153,8 @@ const ChatRowSchema = z.object({
   repo_path: z.string().nullable().default(null),
   pr_url: z.string().nullable().default(null),
   ship_error: z.string().nullable().default(null),
+  artifact: z.string().nullable().default(null),
+  verdict: z.string().nullable().default(null),
   created_at: z.number().int(),
   updated_at: z.number().int(),
   finished_at: z.number().int().nullable(),
@@ -164,6 +168,9 @@ const CreateChatSchema = z.object({
   attached_files: z.string().optional(),
   /** Absolute path to user's repo for Ship phase. Optional. */
   repo_path: z.string().optional(),
+  /** Artifact text for review-only templates. Optional at the DB layer; the
+   *  chat-create endpoint enforces it when the template requires one. */
+  artifact: z.string().optional(),
 });
 
 export type CreateChatInput = z.infer<typeof CreateChatSchema>;
@@ -173,7 +180,7 @@ const PhaseEventSchema = z.object({
   id: z.number().int(),
   chat_id: z.string(),
   phase_idx: z.number().int(),
-  phase_kind: z.enum(['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence']),
+  phase_kind: z.enum(['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence', 'review_only']),
   role: z.enum(['doer', 'reviewer']),
   agent_id: z.string().nullable(),
   state: z.enum(['drafting', 'submitted', 'reviewing', 'approved', 'revising', 'blocked']),
@@ -225,8 +232,8 @@ export const chats = {
 
     await db.execute({
       sql: `
-        INSERT INTO chats (id, work, template_id, status, current_phase_idx, yolo, attached_files, repo_path, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO chats (id, work, template_id, status, current_phase_idx, yolo, attached_files, repo_path, artifact, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         ulid,
@@ -237,6 +244,7 @@ export const chats = {
         0,
         validated.attached_files || null,
         validated.repo_path || null,
+        validated.artifact || null,
         now,
         now,
       ],
@@ -298,7 +306,7 @@ export const chats = {
     await db.execute({
       sql: `
         UPDATE chats
-        SET work = ?, template_id = ?, status = ?, current_phase_idx = ?, yolo = ?, attached_files = ?, repo_path = ?, pr_url = ?, ship_error = ?, updated_at = ?, finished_at = ?
+        SET work = ?, template_id = ?, status = ?, current_phase_idx = ?, yolo = ?, attached_files = ?, repo_path = ?, pr_url = ?, ship_error = ?, artifact = ?, verdict = ?, updated_at = ?, finished_at = ?
         WHERE id = ?
       `,
       args: [
@@ -311,6 +319,8 @@ export const chats = {
         updated.repo_path,
         updated.pr_url,
         updated.ship_error,
+        updated.artifact,
+        updated.verdict,
         updated.updated_at,
         updated.finished_at,
         id,

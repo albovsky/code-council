@@ -216,9 +216,26 @@ export function buildReviewerAsk(
 
   lines.push('## Artifact to review');
   lines.push('```');
-  lines.push(doerOutput.slice(0, 2000));
-  if (doerOutput.length > 2000) {
-    lines.push('... (truncated)');
+  // Truncation cap: 256 KB matches MAX_PHASE_OUTPUT_BYTES in lib/db. The
+  // prior 2000-char cap silently amputated any diff or draft over ~50
+  // lines, which made review-only mode useless and degraded standard
+  // review mode whenever the doer wrote a real implementation. 256 KB
+  // covers ~5000 lines of typical code; bigger artifacts truncate with a
+  // visible marker so reviewers can still flag the gap.
+  const ARTIFACT_PROMPT_CAP_BYTES = 256 * 1024;
+  const byteLen = Buffer.byteLength(doerOutput, 'utf-8');
+  if (byteLen <= ARTIFACT_PROMPT_CAP_BYTES) {
+    lines.push(doerOutput);
+  } else {
+    // Slice on bytes, then walk back to the last valid UTF-8 start byte so
+    // we don't hand the LLM a U+FFFD-laden tail. UTF-8 continuation bytes
+    // start with 0b10xxxxxx — walk left while the cut byte is a
+    // continuation byte; landing on a start byte (or ASCII) is safe.
+    const buf = Buffer.from(doerOutput, 'utf-8');
+    let cut = ARTIFACT_PROMPT_CAP_BYTES;
+    while (cut > 0 && (buf[cut] & 0b1100_0000) === 0b1000_0000) cut--;
+    lines.push(buf.subarray(0, cut).toString('utf-8'));
+    lines.push(`... (truncated — full artifact was ${byteLen} bytes, cap is ${ARTIFACT_PROMPT_CAP_BYTES} bytes)`);
   }
   lines.push('```');
   lines.push('');

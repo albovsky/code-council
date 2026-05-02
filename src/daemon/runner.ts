@@ -7,7 +7,8 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import type { Template, Phase } from '../lib/template-schema.js';
+import type { Template, Phase, StandardPhase, ReviewOnlyPhase } from '../lib/template-schema.js';
+import { isReviewOnlyPhase } from '../lib/template-schema.js';
 import { waitForAnswer } from './output-watcher.js';
 
 import type { TmuxManager } from './tmux-types.js';
@@ -39,6 +40,14 @@ export interface PhaseRunnerOptions {
   chatId: string;
   template: Template;
   work: string;
+  /**
+   * Artifact text for review-only phases. When the template's first phase
+   * has `kind: review_only`, this MUST be supplied (the chat-create endpoint
+   * enforces it). The runner writes it into a synthetic doer-answer slot
+   * and emits synthetic doer phase events so reviewers see the same shape
+   * they always do.
+   */
+  artifact?: string;
   /**
    * Optional absolute path to the user's repo. When set:
    *  - Doer cwd becomes this path (real edits land in the working tree)
@@ -74,7 +83,7 @@ interface ChatMeta {
  * checks consensus, and emits events.
  */
 export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
-  const { chatId, template, work, repoPath, attachedFiles, onEvent, abortSignal, tmuxMgr, errorDetector } = opts;
+  const { chatId, template, work, artifact, repoPath, attachedFiles, onEvent, abortSignal, tmuxMgr, errorDetector } = opts;
   const chatDir = path.join(os.homedir(), '.chorus', 'chats', chatId);
 
   // Pack attached files into a single block once per chat. Both doer + every
@@ -122,6 +131,11 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
   // Track whether any doer failed all rounds (couldn't produce output). If so,
   // the chat must NOT end approved — there was no real implementation to review.
   let anyPhaseDoerFailed = false;
+  // Captures the consensus from the most recent review-only phase. Used to
+  // override the default 'approved' verdict in chat_done — review-only chats
+  // surface what the reviewers actually said rather than auto-approving.
+  // null when no review-only phase ran (standard templates).
+  let reviewOnlyConsensus: { agreed: boolean; summary: string } | null = null;
 
   try {
     // Walk phases
@@ -130,11 +144,66 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
 
       const phase = template.phases[phaseIdx];
 
+      // Review-only phases skip the doer entirely. The artifact supplied at
+      // chat-create time becomes the synthetic doer answer; reviewers run
+      // exactly as in standard phases. Single pass, no iterate loop, no
+      // ship — those are enforced here, not in the schema, so that future
+      // hybrid templates can mix kinds without re-plumbing the validator.
+      if (isReviewOnlyPhase(phase)) {
+        const outcome = await runReviewOnlyPhase({
+          chatDir,
+          chatId,
+          phase,
+          phaseIdx,
+          artifact: artifact ?? '',
+          work,
+          filesBlock,
+          tmuxMgr,
+          errorDetector,
+          onEvent,
+          abortSignal,
+        });
+        if (outcome.allReviewersFailed) {
+          anyPhaseAllReviewersFailed = true;
+        }
+        if (!outcome.completed) {
+          // Aborted (Ctrl-C / cockpit cancel). DO NOT capture consensus —
+          // emitChatDone is racing with the abort listener which fires
+          // status='cancelled', and surfacing 'request_changes' here would
+          // collapse "user hit cancel" with "reviewers said no" if the
+          // abort listener loses the latch race. The break exits the phase
+          // loop; the chat_done branch below trips the standard-flow
+          // 'completed' path which emitChatDone already latched against.
+          break;
+        }
+        // Reviewers actually finished a pass. Capture so chat_done can
+        // surface the real verdict instead of always reporting 'approved'.
+        reviewOnlyConsensus = {
+          agreed: outcome.agreed,
+          summary: outcome.summary,
+        };
+        onEvent({
+          chatId,
+          type: 'phase_done',
+          payload: {
+            phaseId: phase.id,
+            phaseIdx,
+            kind: phase.kind,
+          },
+          ts: Date.now(),
+        });
+        continue;
+      }
+
+      // Standard phase from here on. Narrow the discriminator so the
+      // existing doer/iterate code keeps its types.
+      const stdPhase: StandardPhase = phase;
+
       // Run doer loop with retries
       let doerSucceeded = false;
       for (
         let round = 1;
-        round <= phase.iterate.maxRounds;
+        round <= stdPhase.iterate.maxRounds;
         round++
       ) {
         if (abortSignal.aborted) break;
@@ -143,12 +212,12 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
           chatId,
           type: 'phase_start',
           payload: {
-            phaseId: phase.id,
+            phaseId: stdPhase.id,
             phaseIdx,
-            kind: phase.kind,
+            kind: stdPhase.kind,
             round,
             role: 'doer',
-            agent: phase.doer.lineage,
+            agent: stdPhase.doer.lineage,
           },
           ts: Date.now(),
         });
@@ -157,7 +226,7 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
         const doerAnswer = await runDoer(
           chatDir,
           chatId,
-          phase,
+          stdPhase,
           phaseIdx,
           round,
           work,
@@ -174,9 +243,9 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
             chatId,
             type: 'phase_failed',
             payload: {
-              phaseId: phase.id,
+              phaseId: stdPhase.id,
               phaseIdx,
-              kind: phase.kind,
+              kind: stdPhase.kind,
               role: 'doer',
               reason: 'doer_timeout',
             },
@@ -189,7 +258,7 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
           chatId,
           type: 'phase_progress',
           payload: {
-            phaseId: phase.id,
+            phaseId: stdPhase.id,
             round,
             role: 'doer',
             output: doerAnswer.content.slice(0, 500),
@@ -198,11 +267,11 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
         });
 
         // Run reviewers if present
-        if (phase.reviewer && phase.reviewer.candidates.length > 0) {
+        if (stdPhase.reviewer && stdPhase.reviewer.candidates.length > 0) {
           const consensus = await runReviewers(
             chatDir,
             chatId,
-            phase,
+            stdPhase,
             phaseIdx,
             round,
             doerAnswer.content,
@@ -224,12 +293,12 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
           }
 
           // Disagreement: feed back for next round if more rounds available
-          if (round < phase.iterate.maxRounds) {
+          if (round < stdPhase.iterate.maxRounds) {
             onEvent({
               chatId,
               type: 'phase_progress',
               payload: {
-                phaseId: phase.id,
+                phaseId: stdPhase.id,
                 round,
                 role: 'reviewer',
                 disagreement: consensus.summary,
@@ -250,9 +319,9 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
           chatId,
           type: 'phase_failed',
           payload: {
-            phaseId: phase.id,
+            phaseId: stdPhase.id,
             phaseIdx,
-            kind: phase.kind,
+            kind: stdPhase.kind,
             role: 'doer',
             reason: 'max_rounds_exhausted',
           },
@@ -269,9 +338,9 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
         chatId,
         type: 'phase_done',
         payload: {
-          phaseId: phase.id,
+          phaseId: stdPhase.id,
           phaseIdx,
-          kind: phase.kind,
+          kind: stdPhase.kind,
         },
         ts: Date.now(),
       });
@@ -287,7 +356,19 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
       | { kind: 'blocked'; error: string }
       = { kind: 'skipped' };
 
-    if (!anyPhaseAllReviewersFailed && !anyPhaseDoerFailed && template.ship?.enabled && repoPath) {
+    // Ship is forcibly skipped when any phase is review_only — there's no
+    // doer diff to commit and a template author who set ship.enabled=true on
+    // a review-only template would otherwise hit gh-cli with an empty stage.
+    // The schema docs claim the runner enforces this; this is the
+    // enforcement point.
+    const templateHasReviewOnly = template.phases.some(isReviewOnlyPhase);
+    if (
+      !anyPhaseAllReviewersFailed &&
+      !anyPhaseDoerFailed &&
+      !templateHasReviewOnly &&
+      template.ship?.enabled &&
+      repoPath
+    ) {
       const ctx = detectGitContext(repoPath, template.ship.baseBranch);
       if (!ctx.ok) {
         // Surface as a skip with reason — chat still ends approved (we
@@ -356,6 +437,18 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
       });
     } else if (shipOutcome.kind === 'blocked') {
       emitChatDone({ status: 'blocked', verdict: 'approved', shipError: shipOutcome.error });
+    } else if (reviewOnlyConsensus !== null) {
+      // Review-only chats surface the actual reviewer consensus rather than
+      // auto-approving. The chat itself completed (artifact reviewed,
+      // findings written) regardless of agreement — that's the design — but
+      // verdict reflects what reviewers said so the cockpit/CLI can render
+      // a meaningful "agreed / requested changes" state instead of always
+      // showing green.
+      emitChatDone({
+        status: 'completed',
+        verdict: reviewOnlyConsensus.agreed ? 'approved' : 'request_changes',
+        reviewerSummary: reviewOnlyConsensus.summary,
+      });
     } else {
       // Either no ship phase or ship was skipped — chat ends approved.
       emitChatDone({
@@ -377,7 +470,7 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
 async function runDoer(
   chatDir: string,
   chatId: string,
-  phase: Phase,
+  phase: StandardPhase,
   phaseIdx: number,
   round: number,
   work: string,
@@ -610,7 +703,7 @@ function sanitizeName(name: string): string {
 async function runReviewers(
   chatDir: string,
   chatId: string,
-  phase: Phase,
+  phase: StandardPhase,
   phaseIdx: number,
   round: number,
   doerOutput: string,
@@ -735,7 +828,7 @@ export { verdictFromReviewerText };
 async function runReviewer(
   chatDir: string,
   chatId: string,
-  phase: Phase,
+  phase: StandardPhase,
   phaseIdx: number,
   round: number,
   reviewerIdx: number,
@@ -935,6 +1028,151 @@ async function runReviewer(
   } finally {
     clearInterval(pollHandle);
   }
+}
+
+/**
+ * Run a review-only phase. The artifact (supplied at chat-create time) is
+ * written to a synthetic doer answer slot; reviewers then critique it just
+ * like a real doer's answer. Single pass — no iterate, no retry. Reviewer
+ * agreement/disagreement is reported via outcome.allReviewersFailed; the
+ * verdict itself doesn't gate further phases (review-only is the whole
+ * point of the chat).
+ *
+ * Synthetic doer events make the cockpit + replay code paths Just Work
+ * without special-casing the missing doer card.
+ */
+async function runReviewOnlyPhase(args: {
+  chatDir: string;
+  chatId: string;
+  phase: ReviewOnlyPhase;
+  phaseIdx: number;
+  artifact: string;
+  work: string;
+  filesBlock: string;
+  tmuxMgr: TmuxManager;
+  errorDetector: ErrorDetector;
+  onEvent: (e: RunnerEvent) => void;
+  abortSignal: AbortSignal;
+}): Promise<{
+  completed: boolean;
+  allReviewersFailed: boolean;
+  /** True iff reviewer agreement met phase.reviewer.require threshold. */
+  agreed: boolean;
+  /** Human-readable summary line ('2/3 reviewers agreed' etc.). */
+  summary: string;
+}> {
+  const {
+    chatDir,
+    chatId,
+    phase,
+    phaseIdx,
+    artifact,
+    work,
+    filesBlock,
+    tmuxMgr,
+    errorDetector,
+    onEvent,
+    abortSignal,
+  } = args;
+
+  if (abortSignal.aborted) {
+    return { completed: false, allReviewersFailed: false, agreed: false, summary: 'aborted' };
+  }
+
+  const round = 1; // review-only is always single-pass
+  const roundDir = path.join(chatDir, `round-${round}`);
+  if (!fs.existsSync(roundDir)) {
+    fs.mkdirSync(roundDir, { recursive: true });
+  }
+  // Synthetic doer dir holds the artifact as answer.md so the cockpit's
+  // existing replay code finds it under the same path shape it expects.
+  const syntheticDoerDir = path.join(roundDir, 'doer-artifact');
+  if (!fs.existsSync(syntheticDoerDir)) {
+    fs.mkdirSync(syntheticDoerDir, { recursive: true });
+  }
+  const answerFile = path.join(syntheticDoerDir, 'answer.md');
+  // Strip trailing whitespace before the sentinel check so an artifact
+  // ending with "## DONE\n" or "## DONE  " doesn't produce a duplicate
+  // sentinel after we append. Idempotent: artifacts without the sentinel
+  // get a clean "\n\n## DONE\n" tail.
+  const trimmed = artifact.replace(/\s+$/, '');
+  const artifactWithSentinel = /##\s*DONE$/i.test(trimmed)
+    ? `${trimmed}\n`
+    : `${trimmed}\n\n## DONE\n`;
+  fs.writeFileSync(answerFile, artifactWithSentinel);
+
+  // Synthetic doer phase events. agent='artifact' is a sentinel value the
+  // cockpit can render as "user-supplied" rather than as a real CLI run.
+  onEvent({
+    chatId,
+    type: 'phase_start',
+    payload: {
+      phaseId: phase.id,
+      phaseIdx,
+      kind: phase.kind,
+      round,
+      role: 'doer',
+      agent: 'artifact',
+      synthetic: true,
+    },
+    ts: Date.now(),
+  });
+  onEvent({
+    chatId,
+    type: 'phase_progress',
+    payload: {
+      phaseId: phase.id,
+      round,
+      role: 'doer',
+      agent: 'artifact',
+      output: artifact.slice(0, 500),
+      synthetic: true,
+    },
+    ts: Date.now(),
+  });
+
+  // Run reviewers exactly as standard phases do, but only for round 1.
+  // The runReviewers helper expects a StandardPhase shape — we synthesise
+  // one that carries the same reviewer block + a no-op iterate config.
+  // The synthetic shape is local to this call; it never escapes back into
+  // the template.
+  const syntheticStandardPhase: StandardPhase = {
+    id: phase.id,
+    kind: 'review',
+    title: phase.title,
+    description: phase.description,
+    doer: { lineage: 'any' },
+    reviewer: phase.reviewer,
+    inputs: phase.inputs,
+    iterate: {
+      maxRounds: 1,
+      onDisagreement: 'continue',
+      shareSessionAcrossRounds: false,
+      shareSessionAcrossPhases: false,
+    },
+  };
+
+  const consensus = await runReviewers(
+    chatDir,
+    chatId,
+    syntheticStandardPhase,
+    phaseIdx,
+    round,
+    artifact,
+    work,
+    filesBlock,
+    tmuxMgr,
+    errorDetector,
+    onEvent,
+    abortSignal,
+  );
+
+  return {
+    completed: !abortSignal.aborted,
+    allReviewersFailed: consensus.allFailed,
+    agreed: consensus.agreed,
+    summary: consensus.summary,
+  };
 }
 
 // Pure prompt-construction helpers live in ./runner/prompt-builder.ts so

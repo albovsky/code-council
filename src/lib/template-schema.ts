@@ -3,57 +3,133 @@ import { z } from 'zod';
 /**
  * Single phase within a template.
  *
- * Unified doer/reviewer primitive:
- * - doer: the LLM producing an artifact (plan, spec, tests, implementation, etc.)
- * - reviewer: optional cross-lineage peer reviewer(s) that gate the phase
- * - inputs: control what the doer can see (include/exclude for information asymmetry)
- * - iterate: configure retry/loopback behavior on disagreement
+ * Two phase shapes share the schema:
+ *
+ *   - Standard phases (kind: plan | spec | tests | implement | review |
+ *     verify | divergence): doer required, optional reviewer, iterate
+ *     loop with rounds. The runner spawns the doer, then any reviewers,
+ *     then loops on disagreement up to maxRounds.
+ *
+ *   - Review-only phase (kind: review_only): NO doer block. The artifact
+ *     is supplied at chat-create time and written into the doer answer
+ *     slot synthetically. iterate is ignored — review-only is always one
+ *     pass. ship is also auto-skipped (no doer diff to commit).
+ *
+ * The two are unified into one PhaseSchema via a discriminated union on
+ * `kind`. Templates pick exactly one shape per phase and the runner
+ * branches on the discriminator.
  */
-export const PhaseSchema = z.object({
+const lineageEnum = z.enum(['anthropic', 'openai', 'google', 'opencode', 'moonshot', 'any']);
+const reviewerLineageEnum = z.enum(['anthropic', 'openai', 'google', 'opencode', 'moonshot']);
+
+const ReviewerSchema = z.object({
+  require: z.number().int().min(0).default(1),
+  crossLineage: z.boolean().default(true),
+  candidates: z.array(z.object({
+    lineage: reviewerLineageEnum,
+    models: z.array(z.string()).optional(),
+  })),
+});
+
+const InputsSchema = z.object({
+  include: z.array(z.string()).default([]),
+  exclude: z.array(z.string()).default([]),
+}).default({ include: [], exclude: [] });
+
+const IterateSchema = z.object({
+  maxRounds: z.number().int().min(1).default(2),
+  onDisagreement: z.enum(['continue', 'escalate', 'accept-doer']).default('continue'),
+  // Reuse the same tmux session across rounds 1..N of THIS phase.
+  // Default true = save tokens (LLM keeps context in its session).
+  // Set false when a fresh perspective per round matters more than cost.
+  shareSessionAcrossRounds: z.boolean().default(true),
+  // Reuse this phase's tmux session for the NEXT phase too.
+  // Default false = fresh session per phase boundary (different artifacts).
+  // Rare to enable; only when phases are tightly coupled and context-sharing helps.
+  shareSessionAcrossPhases: z.boolean().default(false),
+}).default({
+  maxRounds: 2,
+  onDisagreement: 'continue',
+  shareSessionAcrossRounds: true,
+  shareSessionAcrossPhases: false,
+});
+
+/**
+ * Standard phase: doer + optional reviewers + iterate loop.
+ */
+const StandardPhaseSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence']),
   title: z.string().min(1),
   description: z.string().optional(),
 
   doer: z.object({
-    lineage: z.enum(['anthropic', 'openai', 'google', 'opencode', 'moonshot', 'any']),
+    lineage: lineageEnum,
     models: z.array(z.string()).optional(),
   }),
 
-  reviewer: z.object({
-    require: z.number().int().min(0).default(1),
-    crossLineage: z.boolean().default(true),
-    candidates: z.array(z.object({
-      lineage: z.enum(['anthropic', 'openai', 'google', 'opencode', 'moonshot']),
-      models: z.array(z.string()).optional(),
-    })),
-  }).optional(),
+  reviewer: ReviewerSchema.optional(),
 
-  inputs: z.object({
-    include: z.array(z.string()).default([]),
-    exclude: z.array(z.string()).default([]),
-  }).default({ include: [], exclude: [] }),
+  inputs: InputsSchema,
 
-  iterate: z.object({
-    maxRounds: z.number().int().min(1).default(2),
-    onDisagreement: z.enum(['continue', 'escalate', 'accept-doer']).default('continue'),
-    // Reuse the same tmux session across rounds 1..N of THIS phase.
-    // Default true = save tokens (LLM keeps context in its session).
-    // Set false when a fresh perspective per round matters more than cost.
-    shareSessionAcrossRounds: z.boolean().default(true),
-    // Reuse this phase's tmux session for the NEXT phase too.
-    // Default false = fresh session per phase boundary (different artifacts).
-    // Rare to enable; only when phases are tightly coupled and context-sharing helps.
-    shareSessionAcrossPhases: z.boolean().default(false),
-  }).default({
-    maxRounds: 2,
-    onDisagreement: 'continue',
-    shareSessionAcrossRounds: true,
-    shareSessionAcrossPhases: false,
-  }),
+  iterate: IterateSchema,
 });
 
+/**
+ * Review-only phase: artifact supplied at runtime, no doer, single pass.
+ *
+ * The `artifact` block carries cockpit hints (label, hint placeholder) and
+ * a hard size cap that the chat-create endpoint enforces. iterate is
+ * deliberately omitted — review-only is always one round, and surfacing
+ * iterate would imply the runner could loop, which it can't.
+ */
+const ReviewOnlyPhaseSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal('review_only'),
+  title: z.string().min(1),
+  description: z.string().optional(),
+
+  reviewer: ReviewerSchema,
+
+  artifact: z.object({
+    label: z.string().min(1).default('Artifact to review'),
+    hint: z.string().default('Paste a unified diff, a markdown draft, code, or any text blob.'),
+    // 1 MiB default cap. Anything larger is rejected at chat-create time.
+    maxBytes: z.number().int().min(1).default(1024 * 1024),
+  }).default({
+    label: 'Artifact to review',
+    hint: 'Paste a unified diff, a markdown draft, code, or any text blob.',
+    maxBytes: 1024 * 1024,
+  }),
+
+  inputs: InputsSchema,
+});
+
+export const PhaseSchema = z.discriminatedUnion('kind', [
+  StandardPhaseSchema.extend({ kind: z.literal('plan') }),
+  StandardPhaseSchema.extend({ kind: z.literal('spec') }),
+  StandardPhaseSchema.extend({ kind: z.literal('tests') }),
+  StandardPhaseSchema.extend({ kind: z.literal('implement') }),
+  StandardPhaseSchema.extend({ kind: z.literal('review') }),
+  StandardPhaseSchema.extend({ kind: z.literal('verify') }),
+  StandardPhaseSchema.extend({ kind: z.literal('divergence') }),
+  ReviewOnlyPhaseSchema,
+]);
+
 export type Phase = z.infer<typeof PhaseSchema>;
+export type StandardPhase = z.infer<typeof StandardPhaseSchema> & { kind: Exclude<Phase['kind'], 'review_only'> };
+export type ReviewOnlyPhase = z.infer<typeof ReviewOnlyPhaseSchema>;
+
+/**
+ * Type guard: is this phase a review-only phase?
+ *
+ * Centralised so callers don't repeat the literal check. Also gives the
+ * compiler a narrowing hook so `phase.artifact` is type-safe inside the
+ * branch (and `phase.doer` is type-safe outside it).
+ */
+export function isReviewOnlyPhase(phase: Phase): phase is ReviewOnlyPhase {
+  return phase.kind === 'review_only';
+}
 
 /**
  * A built-in or user-authored template.
@@ -73,8 +149,29 @@ export const TemplateSchema = z.object({
   // Runtime defaults
   yoloDefault: z.boolean().default(false),
 
-  // The workflow phases
-  phases: z.array(PhaseSchema).min(1),
+  // The workflow phases.
+  //
+  // Hybrid templates (review_only mixed with standard phases) are explicitly
+  // out of scope for v0.5 — the chat-create endpoint only checks phases[0]
+  // when deciding whether `artifact` is required, so a non-first review_only
+  // phase would silently run with an empty artifact. Reject the shape at
+  // parse time instead of accepting it and producing garbage reviews.
+  phases: z
+    .array(PhaseSchema)
+    .min(1)
+    .refine(
+      (phases) => {
+        const reviewOnlyCount = phases.filter((p) => p.kind === 'review_only').length;
+        // Either all standard, or exactly one review_only that occupies the
+        // entire phase list. (No partial mix; no two review_only phases —
+        // multi-pass review-only is also out of scope.)
+        return reviewOnlyCount === 0 || (reviewOnlyCount === 1 && phases.length === 1);
+      },
+      {
+        message:
+          'review_only phases cannot be mixed with other phase kinds and only one is allowed (hybrid templates are out of scope)',
+      },
+    ),
 
   /**
    * Optional Ship phase — runs after all phases pass + reviewers agree.
@@ -92,6 +189,12 @@ export const TemplateSchema = z.object({
    *
    * On any failure (gh missing, push reject, dirty working tree, etc.):
    * chat ends with status=blocked and the failure mode in the meta.
+   *
+   * Note: a template whose first phase is `review_only` cannot ship — the
+   * runner skips ship for those regardless of this flag (no doer diff
+   * exists). The flag is allowed in the YAML so a template author can
+   * write the field without the validator rejecting it; the runner is
+   * the enforcement point.
    */
   ship: z
     .object({
@@ -107,3 +210,18 @@ export const TemplateSchema = z.object({
 });
 
 export type Template = z.infer<typeof TemplateSchema>;
+
+/**
+ * Convenience: does the template's first phase require a runtime artifact?
+ *
+ * Used by the chat-create endpoint to gate the `artifact` body field and by
+ * cockpit/CLI surfaces to swap UI between "task" and "artifact" affordances.
+ *
+ * NOTE: only the first phase is consulted. Hybrid templates (some phases
+ * review_only, some not) are out of scope for v0.5 and would need a richer
+ * answer.
+ */
+export function templateRequiresArtifact(template: Template): boolean {
+  const first = template.phases[0];
+  return first ? isReviewOnlyPhase(first) : false;
+}

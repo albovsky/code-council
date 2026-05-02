@@ -5,7 +5,7 @@ import { TmuxManagerImpl } from './tmux.js';
 import { startReaper } from './reaper.js';
 import { runChat } from './runner.js';
 import { ErrorDetector } from './error-detector.js';
-import { TemplateSchema } from '../lib/template-schema.js';
+import { TemplateSchema, isReviewOnlyPhase, templateRequiresArtifact } from '../lib/template-schema.js';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'yaml';
@@ -244,9 +244,9 @@ function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
     ) {
       const payload = event.payload as Record<string, unknown>;
       const kind = payload.kind as string;
-      const validKinds = ['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence'];
+      const validKinds = ['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence', 'review_only'];
       const phaseKind = validKinds.includes(kind)
-        ? (kind as 'plan' | 'spec' | 'tests' | 'implement' | 'review' | 'verify' | 'divergence')
+        ? (kind as 'plan' | 'spec' | 'tests' | 'implement' | 'review' | 'verify' | 'divergence' | 'review_only')
         : 'plan';
       // Fire-and-forget the DB write. onEvent is typed `(e) => void` and is
       // called synchronously from the runner — awaiting here would block the
@@ -291,6 +291,17 @@ function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
     if (event.type === 'chat_done') {
       const payload = event.payload as Record<string, unknown>;
       const status = (payload.status as string) ?? 'completed';
+      // verdict is the reviewer-level outcome (separate from system-level
+      // status). Always persist when present so review-only chats with
+      // verdict='request_changes' are distinguishable in list views from
+      // standard chats whose status='approved' implicitly means
+      // verdict='approved'. Cap defensively at 32 chars — verdicts are
+      // enum-shaped strings; anything longer is bogus.
+      const rawVerdict = payload.verdict;
+      const verdict =
+        typeof rawVerdict === 'string' && rawVerdict.length > 0 && rawVerdict.length <= 32
+          ? rawVerdict
+          : null;
       void trackWrite(
         chats
           .update(chatId, {
@@ -303,6 +314,7 @@ function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
               | 'cancelled'
               | 'failed'
               | 'no_review',
+            ...(verdict !== null ? { verdict } : {}),
             ...(typeof payload.prUrl === 'string' && payload.prUrl.length > 0
               ? { pr_url: payload.prUrl }
               : {}),
@@ -322,6 +334,7 @@ function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
     chatId,
     template,
     work: chat.work,
+    artifact: chat.artifact ?? undefined,
     repoPath: chat.repo_path ?? undefined,
     attachedFiles: parseAttachedFiles(chat.attached_files),
     abortSignal: abortController.signal,
@@ -460,11 +473,11 @@ async function main() {
 
   // Create chat
   fastify.post<{
-    Body: { work: string; templateId: string; files?: string[]; repoPath?: string };
+    Body: { work: string; templateId: string; files?: string[]; repoPath?: string; artifact?: string };
     Reply: ApiResponse<object>;
   }>('/chats', async (request) => {
     try {
-      const { work, templateId, files, repoPath } = request.body;
+      const { work, templateId, files, repoPath, artifact } = request.body;
 
       if (!work || !templateId) {
         return errorResponse('validation', 'work and templateId are required');
@@ -486,24 +499,67 @@ async function main() {
         }
       }
 
-      // Read the template's first phase kind so the initial drafting event
-      // reflects the actual pipeline (review / plan / spec / etc.) instead
-      // of always claiming 'plan'. Falls back to 'plan' on any read/parse
-      // error — initial event is informational, not load-bearing for the
-      // runner.
-      let initialPhaseKind: 'plan' | 'spec' | 'tests' | 'implement' | 'review' | 'verify' | 'divergence' = 'plan';
+      // Parse the template up-front so we can branch on review-only vs
+      // standard. Two reads of the same template are tolerable (this path
+      // is request-scoped, not hot); the alternative is hand-rolling YAML
+      // parsing twice in the same handler.
+      const validKinds = ['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence'] as const;
+      let initialPhaseKind: typeof validKinds[number] | 'review_only' = 'plan';
+      let parsedTemplateForArtifactCheck: ReturnType<typeof TemplateSchema.parse> | null = null;
       try {
         const tmpl = await templates.getById(templateId);
         if (tmpl) {
-          const parsed = yaml.parse(tmpl.yaml) as { phases?: Array<{ kind?: string }> } | undefined;
-          const firstKind = parsed?.phases?.[0]?.kind;
-          const validKinds = ['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence'] as const;
-          if (typeof firstKind === 'string' && (validKinds as readonly string[]).includes(firstKind)) {
+          const rawParsed = yaml.parse(tmpl.yaml);
+          // Use the schema to enforce the discriminated-union shape so we
+          // know at this point whether kind === 'review_only'.
+          const safe = TemplateSchema.safeParse(rawParsed);
+          if (safe.success) {
+            parsedTemplateForArtifactCheck = safe.data;
+            const firstKind = safe.data.phases[0]?.kind;
             initialPhaseKind = firstKind as typeof initialPhaseKind;
+          } else {
+            // Fall back to a loose read so older malformed templates still
+            // produce an initial event with their declared kind.
+            const loose = rawParsed as { phases?: Array<{ kind?: string }> } | undefined;
+            const firstKind = loose?.phases?.[0]?.kind;
+            if (firstKind === 'review_only') initialPhaseKind = 'review_only';
+            else if (typeof firstKind === 'string' && (validKinds as readonly string[]).includes(firstKind)) {
+              initialPhaseKind = firstKind as typeof validKinds[number];
+            }
           }
         }
       } catch {
         /* fall through with 'plan' default */
+      }
+
+      // Artifact validation — only meaningful for review-only templates.
+      // Required-when-template-says-so, capped by phase.artifact.maxBytes.
+      if (parsedTemplateForArtifactCheck && templateRequiresArtifact(parsedTemplateForArtifactCheck)) {
+        if (typeof artifact !== 'string' || artifact.trim().length === 0) {
+          return errorResponse(
+            'validation',
+            'artifact is required for review-only templates',
+          );
+        }
+        const firstPhase = parsedTemplateForArtifactCheck.phases[0];
+        if (firstPhase && isReviewOnlyPhase(firstPhase)) {
+          const maxBytes = firstPhase.artifact.maxBytes;
+          const byteLen = Buffer.byteLength(artifact, 'utf-8');
+          if (byteLen > maxBytes) {
+            return errorResponse(
+              'validation',
+              `artifact exceeds template limit (${byteLen} bytes > ${maxBytes} bytes)`,
+            );
+          }
+        }
+      } else if (artifact !== undefined && artifact !== null && artifact !== '') {
+        // Non-review-only templates: artifact is meaningless. Reject loudly
+        // so callers don't silently lose payload (e.g. mistyped templateId
+        // pointing at a full-pipeline template).
+        return errorResponse(
+          'validation',
+          'artifact is only valid for review-only templates',
+        );
       }
 
       const chat = await chats.create({
@@ -511,6 +567,7 @@ async function main() {
         template_id: templateId,
         attached_files: files ? JSON.stringify(files) : undefined,
         repo_path: repoPath,
+        artifact: artifact ?? undefined,
       });
 
       // Note: tmux sessions are created on-demand via tmuxMgr.acquire() when phases run.

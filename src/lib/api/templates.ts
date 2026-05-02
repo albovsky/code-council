@@ -32,6 +32,7 @@ interface ParsedPhase {
   reviewer?: ParsedReviewer;
   inputs?: { include?: string[]; exclude?: string[] };
   iterate?: { maxRounds?: number; onDisagreement?: string };
+  artifact?: { label?: string; hint?: string; maxBytes?: number };
 }
 
 interface ParsedTemplateYaml {
@@ -91,6 +92,9 @@ function mapPhase(p: ParsedPhase): Template["phases"][number] {
     description: p.description ?? "",
     kind,
     gate: "auto",
+    // review_only phases have no doer in the YAML. Synthesise a placeholder
+    // so the legacy DoerSlot type is satisfied; isReviewOnlyTemplate gates
+    // the UI from rendering it.
     doer: {
       lineage: mapLineage(p.doer?.lineage),
       models: p.doer?.models ?? [],
@@ -121,6 +125,17 @@ function mapPhase(p: ParsedPhase): Template["phases"][number] {
     blindSpots: [],
     execution: "parallel",
     builtin: true,
+    ...(kind === "review_only"
+      ? {
+          artifact: {
+            label: p.artifact?.label ?? "Artifact to review",
+            hint:
+              p.artifact?.hint ??
+              "Paste a unified diff, a markdown draft, code, or any text blob.",
+            maxBytes: p.artifact?.maxBytes ?? 1024 * 1024,
+          },
+        }
+      : {}),
   };
 }
 

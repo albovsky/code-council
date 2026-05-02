@@ -16,25 +16,38 @@ export function RoundView({
   activeFor,
   liveTails,
   chatTerminal,
+  reviewOnly,
 }: {
   round: RoundSnapshot;
   isLatest?: boolean;
   activeFor: (p: ParticipantSnapshot) => boolean;
   liveTails: Record<string, string>;
   chatTerminal: boolean;
+  /** Review-only chats hide the doer card and the "Round N" header — there
+   *  is no doer to render, and the chat is single-pass. The participants
+   *  list still arrives with a synthetic doer-artifact slot; we filter it
+   *  out so the cockpit doesn't show "doer · pending" for the user's own
+   *  artifact. */
+  reviewOnly?: boolean;
 }) {
+  const visibleParticipants = reviewOnly
+    ? round.participants.filter((p) => p.role !== "doer")
+    : round.participants;
+
   return (
     <section>
-      <h2 className="mb-3 text-xs uppercase tracking-wider text-muted-foreground">
-        Round {round.round}
-        {isLatest && (
-          <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-            current
-          </span>
-        )}
-      </h2>
+      {!reviewOnly && (
+        <h2 className="mb-3 text-xs uppercase tracking-wider text-muted-foreground">
+          Round {round.round}
+          {isLatest && (
+            <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              current
+            </span>
+          )}
+        </h2>
+      )}
       <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {round.participants.map((p) => (
+        {visibleParticipants.map((p) => (
           <ParticipantCard
             key={p.participant}
             participant={p}

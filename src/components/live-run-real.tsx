@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { PhaseStepper, type PhaseState } from "@/components/phase-stepper";
 import type { Template, ReviewerLineage } from "@/lib/types";
+import { isReviewOnlyTemplate } from "@/lib/types";
 import { uiLineageDefaultModel } from "@/lib/lineage-maps";
 import { BriefHeading } from "./run-viewer/brief-heading";
 import { RoundView } from "./run-viewer/round-view";
@@ -288,10 +289,12 @@ export function LiveRunReal({
   // runner has spawned their dirs — leaving the doer card alone in the
   // viewport for the first 30-60s of a run with no hint that 2 reviewers
   // are about to chime in. Now we render placeholder cards from the start.
+  const reviewOnly = useMemo(() => isReviewOnlyTemplate(template), [template]);
   const enrichedRounds = useMemo<RoundSnapshot[]>(() => {
     if (!template?.phases?.length) return rounds;
     const phase = template.phases[0];
     // Build expected slots from template config: 1 doer + N reviewers.
+    // Review-only chats skip the doer slot — the artifact replaces it.
     type Slot = {
       role: "doer" | "reviewer";
       lineage: ReviewerLineage;
@@ -305,11 +308,15 @@ export function LiveRunReal({
     const resolveModel = (lineage: ReviewerLineage, models: string[] | undefined) =>
       models?.[0] ?? uiLineageDefaultModel(lineage);
     const expectedSlots: Slot[] = [
-      {
-        role: "doer",
-        lineage: toUiLineage(phase.doer.lineage),
-        model: resolveModel(toUiLineage(phase.doer.lineage), phase.doer.models),
-      },
+      ...(reviewOnly
+        ? []
+        : [
+            {
+              role: "doer" as const,
+              lineage: toUiLineage(phase.doer.lineage),
+              model: resolveModel(toUiLineage(phase.doer.lineage), phase.doer.models),
+            },
+          ]),
       // Use the structured candidatesWithModels field added to the parser
       // so we keep the model assignment per slot. The legacy `candidates`
       // string array is still emitted for connection-status grids that
@@ -602,10 +609,14 @@ export function LiveRunReal({
               activeFor={lineageMatchActive}
               liveTails={liveTails}
               chatTerminal={isTerminal}
+              reviewOnly={reviewOnly}
             />
           )}
 
-          {olderRounds.length > 0 && (
+          {/* Review-only chats are single-pass by design — there is never an
+              "earlier rounds" panel because there's exactly one round. Hide
+              the affordance to avoid the empty <details> showing up. */}
+          {!reviewOnly && olderRounds.length > 0 && (
             <details className="rounded-lg border border-border bg-card">
               <summary className="cursor-pointer px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground">
                 Earlier rounds ({olderRounds.length})

@@ -16,7 +16,7 @@
  *   - StreamFileWriter buffer is flushed in the finally block on every path
  */
 import * as fs from 'fs';
-import type { Phase } from '../../lib/template-schema.js';
+import type { StandardPhase } from '../../lib/template-schema.js';
 import type { AgentShim } from '../agents/types.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
 import { StreamFileWriter } from './stream-file-writer.js';
@@ -25,7 +25,7 @@ import type { RunnerEvent } from './types.js';
 export async function runDoerHeadless(args: {
   shim: AgentShim;
   chatId: string;
-  phase: Phase;
+  phase: StandardPhase;
   round: number;
   agentName: string;
   askContent: string;

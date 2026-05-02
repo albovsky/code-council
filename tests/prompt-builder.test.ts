@@ -81,8 +81,11 @@ describe('buildAsk', () => {
 });
 
 describe('buildReviewerAsk', () => {
-  it('truncates doerOutput beyond 2000 chars and marks it', () => {
-    const big = 'x'.repeat(3000);
+  it('preserves outputs under the 256 KB cap verbatim', () => {
+    // 50 KB — well above the legacy 2 KB cap, well under the new 256 KB cap.
+    // Pins the regression: review-only mode + standard review with real
+    // implementation diffs were unusable while the cap was 2000 chars.
+    const big = 'x'.repeat(50 * 1024);
     const out = buildReviewerAsk(
       fixturePhase(),
       0,
@@ -92,11 +95,27 @@ describe('buildReviewerAsk', () => {
       '',
     );
     expect(out).toContain('## Artifact to review');
-    expect(out).toContain('... (truncated)');
+    expect(out).toContain(big);
+    expect(out).not.toContain('truncated');
     expect(out).toContain('## Your verdict');
   });
 
-  it('does not truncate output under 2000 chars', () => {
+  it('truncates beyond 256 KB and reports the byte counts', () => {
+    const huge = 'x'.repeat(300 * 1024);
+    const out = buildReviewerAsk(
+      fixturePhase(),
+      0,
+      1,
+      'work',
+      huge,
+      '',
+    );
+    expect(out).toContain('## Artifact to review');
+    expect(out).toContain('truncated');
+    expect(out).toMatch(/full artifact was \d+ bytes, cap is \d+ bytes/);
+  });
+
+  it('does not truncate short output', () => {
     const out = buildReviewerAsk(
       fixturePhase(),
       0,
@@ -105,8 +124,28 @@ describe('buildReviewerAsk', () => {
       'short doer answer',
       '',
     );
-    expect(out).not.toContain('... (truncated)');
+    expect(out).not.toContain('truncated');
     expect(out).toContain('short doer answer');
+  });
+
+  it('truncation walks back to a UTF-8 start byte (no U+FFFD tails)', () => {
+    // 256 KB cap means we want a string just over 256 KB whose 256 KB byte
+    // boundary lands inside a multi-byte rune. The € sign is 3 bytes
+    // (0xE2 0x82 0xAC); padding ASCII to 262143 bytes then writing € makes
+    // the cut land on the 0x82 (continuation) byte at index 262144.
+    const PAD_BYTES = 256 * 1024 - 1;
+    const big = 'a'.repeat(PAD_BYTES) + '€' + 'tail';
+    const out = buildReviewerAsk(
+      fixturePhase(),
+      0,
+      1,
+      'work',
+      big,
+      '',
+    );
+    expect(out).toContain('truncated');
+    // No stray U+FFFD replacement chars from a mid-codepoint cut.
+    expect(out).not.toContain('�');
   });
 });
 

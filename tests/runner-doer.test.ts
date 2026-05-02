@@ -18,7 +18,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { runDoerHeadless } from '../src/daemon/runner';
-import type { Phase } from '../src/lib/template-schema';
+import type { StandardPhase } from '../src/lib/template-schema';
 import type { RunnerEvent } from '../src/daemon/runner';
 import { makeFakeShim, happyPathEvents } from './helpers/fake-agent-shim';
 
@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-const fixturePhase: Phase = {
+const fixturePhase: StandardPhase = {
   id: 'review',
   kind: 'review',
   title: 'Code Review',
@@ -51,7 +51,7 @@ const fixturePhase: Phase = {
     shareSessionAcrossRounds: false,
     shareSessionAcrossPhases: false,
   },
-} as unknown as Phase;
+} as unknown as StandardPhase;
 
 const callDoer = (shimHandle: ReturnType<typeof makeFakeShim>) =>
   runDoerHeadless({

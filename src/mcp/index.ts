@@ -42,7 +42,8 @@ mcpServer.registerTool(
   "create_chat",
   {
     description:
-      "Create a new chat. Returns immediately with chatId, status, and URL. Reviewers run async.",
+      "Create a new chat. Returns immediately with chatId, status, and URL. Reviewers run async. " +
+      "For review-only templates (e.g. template='review-only'), supply `artifact` with the text/diff to review — `work` becomes the framing brief.",
     inputSchema: CreateChatSchema,
   },
   async (input) => {

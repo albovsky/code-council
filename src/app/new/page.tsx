@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { listTemplates, createChat, DaemonError } from "@/lib/api";
 import { getBillingMode, type BillingMode } from "@/lib/api/settings";
-import { Template } from "@/lib/types";
+import { Template, isReviewOnlyTemplate } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 
 export default function NewChatPage() {
@@ -142,18 +142,43 @@ function NewChatPageInner() {
   const [yoloMode, setYoloMode] = useState(false);
   const [repoPath, setRepoPath] = useState("");
 
+  const reviewOnly = isReviewOnlyTemplate(template);
+  const artifactSpec = reviewOnly ? template?.phases?.[0]?.artifact : undefined;
+
   async function handleStartRun() {
     if (!template || !prompt) return;
+
+    // Pre-flight artifact size check so users hit a clear error before the
+    // network round-trip. The daemon enforces this too — this is just a
+    // nicer error path. Falls back to the schema default (1 MiB) when the
+    // template doesn't declare its own cap.
+    if (reviewOnly && artifactSpec) {
+      const byteLen = new TextEncoder().encode(prompt).length;
+      if (byteLen > artifactSpec.maxBytes) {
+        setCreateError(
+          `Artifact is ${byteLen.toLocaleString()} bytes; this template caps at ${artifactSpec.maxBytes.toLocaleString()}. Trim it down.`,
+        );
+        return;
+      }
+    }
 
     setCreateError(null);
     startTransition(async () => {
       try {
         const trimmedRepo = repoPath.trim();
         const chat = await createChat({
-          work: prompt,
+          // For review-only templates, `prompt` IS the artifact. work is a
+          // static framing brief — reviewers see it but it doesn't drive
+          // their critique. For standard templates, prompt becomes work as
+          // before.
+          work: reviewOnly ? "Review the supplied artifact independently." : prompt,
           templateId: template.id,
           files: attachments.length > 0 ? attachments.map((a) => a.name) : undefined,
-          ...(trimmedRepo.length > 0 ? { repoPath: trimmedRepo } : {}),
+          ...(reviewOnly ? { artifact: prompt } : {}),
+          // Ship phase is meaningless for review-only — runner enforces this
+          // too, but skip wiring the repoPath so the cockpit doesn't pretend
+          // it'll open a PR.
+          ...(!reviewOnly && trimmedRepo.length > 0 ? { repoPath: trimmedRepo } : {}),
         });
         router.push(`/runs/${chat.id}`);
       } catch (err) {
@@ -192,8 +217,12 @@ function NewChatPageInner() {
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
         <PageHeader
           eyebrow="New chat"
-          title="Paste a task. Pick a template."
-          subtitle="Chorus runs it past your reviewers and reports consensus."
+          title={reviewOnly ? "Paste an artifact. Get reviews." : "Paste a task. Pick a template."}
+          subtitle={
+            reviewOnly
+              ? "Chorus skips the doer and runs your text past three reviewers. Single pass — revise yourself and resubmit for another round."
+              : "Chorus runs it past your reviewers and reports consensus."
+          }
         />
 
         {createError && (
@@ -224,7 +253,17 @@ function NewChatPageInner() {
                       t.id === templateId ? "bg-accent" : "hover:bg-accent/50"
                     }`}
                   >
-                    <div className="text-sm font-medium">{t.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{t.name}</span>
+                      {isReviewOnlyTemplate(t) && (
+                        <Badge
+                          variant="outline"
+                          className="border-blue-500/30 bg-blue-500/10 font-mono text-[9px] uppercase text-blue-300"
+                        >
+                          review only
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground line-clamp-1">
                       {t.description}
                     </div>
@@ -235,14 +274,29 @@ function NewChatPageInner() {
           </Picker>
         </div>
 
-        {/* Prompt textarea */}
+        {/* Prompt textarea — for review-only templates, this becomes the
+            artifact field directly: monospace, taller, explicit label. */}
+        {reviewOnly && artifactSpec && (
+          <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{artifactSpec.label}</span>
+            <span className="text-muted-foreground/60">·</span>
+            <span>cap {(artifactSpec.maxBytes / 1024).toLocaleString()} KB</span>
+          </div>
+        )}
         <Card className="overflow-hidden p-0 mb-4">
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe what you want chorus to weigh in on. Paste code, errors, design docs — anything the reviewers should see."
-            className="block w-full resize-none border-0 bg-transparent px-5 py-4 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
-            rows={10}
+            placeholder={
+              reviewOnly && artifactSpec
+                ? artifactSpec.hint
+                : "Describe what you want chorus to weigh in on. Paste code, errors, design docs — anything the reviewers should see."
+            }
+            className={`block w-full resize-none border-0 bg-transparent px-5 py-4 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none ${
+              reviewOnly ? "font-mono text-[12px] leading-relaxed" : ""
+            }`}
+            rows={reviewOnly ? 16 : 10}
+            spellCheck={!reviewOnly}
           />
 
           {/* Attachments row */}
@@ -298,11 +352,18 @@ function NewChatPageInner() {
 
           <div className="flex flex-col gap-3 border-t border-border bg-card/40 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                Doer: {template.phases[0]?.doer.lineage}
-              </span>
-              <span className="text-muted-foreground/50">·</span>
+              {/* No doer card for review-only — there's no spawned doer; the
+                  artifact IS the input. The reviewers row carries all the
+                  information the user needs about who'll critique it. */}
+              {!reviewOnly && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    Doer: {template.phases[0]?.doer.lineage}
+                  </span>
+                  <span className="text-muted-foreground/50">·</span>
+                </>
+              )}
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
                 Reviewers:
@@ -375,7 +436,7 @@ function NewChatPageInner() {
                     : "bg-primary text-primary-foreground hover:bg-primary/90"
                 }`}
               >
-                {isPending ? "Starting..." : "Start the run"}
+                {isPending ? "Starting..." : reviewOnly ? "Send for review" : "Start the run"}
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>
@@ -396,7 +457,10 @@ function NewChatPageInner() {
 
         {/* Optional Target repo for the Ship phase. When set, the doer's
             cwd is this path and on success chorus opens a PR. Skip to run
-            chorus on the prompt alone (no PR, just a verdict). */}
+            chorus on the prompt alone (no PR, just a verdict).
+            Hidden for review-only templates — no doer means no diff to
+            commit and the runner force-skips ship anyway. */}
+        {!reviewOnly && (
         <div className="mb-4 rounded-lg border border-dashed border-border bg-card/30 p-4">
           <div className="mb-2 flex items-center gap-2">
             <span className="text-sm font-medium text-foreground">
@@ -424,6 +488,7 @@ function NewChatPageInner() {
             Leave blank to skip the Ship phase.
           </p>
         </div>
+        )}
 
         {/* Yolo mode toggle */}
         <button

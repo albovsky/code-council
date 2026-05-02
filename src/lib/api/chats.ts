@@ -13,6 +13,8 @@ interface RawChatRow {
   repo_path?: string | null;
   pr_url?: string | null;
   ship_error?: string | null;
+  artifact?: string | null;
+  verdict?: string | null;
   created_at: number;
   updated_at: number;
   finished_at?: number | null;
@@ -43,6 +45,8 @@ function fromRow(row: RawChatRow): Chat {
     repoPath: row.repo_path ?? undefined,
     prUrl: row.pr_url ?? undefined,
     shipError: row.ship_error ?? undefined,
+    artifact: row.artifact ?? undefined,
+    verdict: row.verdict ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     finishedAt: row.finished_at ?? undefined,
@@ -77,6 +81,10 @@ export async function createChat(options: {
   files?: string[];
   /** Optional absolute path to user's repo. Enables Ship phase. */
   repoPath?: string;
+  /** Required when the chosen template's first phase is review_only.
+   *  Capped at the template's phase.artifact.maxBytes (default 1 MiB) by
+   *  the daemon — caller is expected to pre-check that. */
+  artifact?: string;
 }): Promise<Chat> {
   const row = await fetchFromDaemon<RawChatRow>("/chats", {
     method: "POST",

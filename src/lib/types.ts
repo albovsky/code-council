@@ -69,6 +69,11 @@ export interface Chat {
   prUrl?: string;
   /** Failure context written when Ship blocks (status=blocked). */
   shipError?: string;
+  /** Artifact text supplied at chat creation for review-only templates.
+   *  Undefined for full-pipeline templates. */
+  artifact?: string;
+  /** Final reviewer verdict from chat_done. Undefined until terminal. */
+  verdict?: string;
   createdAt: number;
   updatedAt: number;
   finishedAt?: number;
@@ -76,6 +81,7 @@ export interface Chat {
 
 export type PhaseKind =
   | "review"
+  | "review_only"
   | "plan"
   | "spec"
   | "tests"
@@ -149,6 +155,13 @@ export interface TemplatePhase {
   blindSpots: BlindSpotPack[];
   execution: ExecutionMode;
   builtin: boolean;
+  /** Artifact spec — only meaningful when kind === 'review_only'. Drives
+   *  the cockpit textarea label/placeholder and the size cap. */
+  artifact?: {
+    label: string;
+    hint: string;
+    maxBytes: number;
+  };
 }
 
 export type AgreementThreshold = "unanimous" | "majority" | "any";
@@ -251,6 +264,16 @@ export interface PhaseEvent {
   tokensOut?: number;
   startedAt: number;
   finishedAt?: number;
+}
+
+/**
+ * UI-side helper: does the template's first phase require a runtime artifact?
+ * Mirrors the daemon-side templateRequiresArtifact() so the new-chat form
+ * can swap "Task" for "Artifact" without re-parsing YAML.
+ */
+export function isReviewOnlyTemplate(template: Pick<Template, "phases"> | null | undefined): boolean {
+  if (!template) return false;
+  return template.phases[0]?.kind === "review_only";
 }
 
 // API response envelope

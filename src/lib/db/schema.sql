@@ -14,6 +14,18 @@ CREATE TABLE IF NOT EXISTS chats (
   pr_url TEXT,
   -- Failure context written when ship fails (status=blocked).
   ship_error TEXT,
+  -- Artifact text supplied at chat creation for review-only templates.
+  -- NULL for full-pipeline templates (the doer produces the artifact).
+  -- Capped at the template's phase.artifact.maxBytes (default 1 MiB) by
+  -- the chat-create endpoint; SQLite TEXT itself has no useful limit.
+  artifact TEXT,
+  -- Final reviewer verdict from chat_done. NULL until terminal. Carries the
+  -- actual consensus ('approved' / 'request_changes' / 'failed' /
+  -- 'no_review' / 'cancelled') independently of `status` — `status='approved'`
+  -- means "the chat ran cleanly", while `verdict` is what the reviewers
+  -- said. Cockpit + CLI list views colour by verdict; status is the
+  -- system-level outcome.
+  verdict TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   finished_at INTEGER

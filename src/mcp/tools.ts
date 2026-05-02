@@ -83,6 +83,13 @@ export const CreateChatSchema = z.object({
   work: z.string().min(1, "work prompt is required"),
   template: z.string().optional().default("code-review"),
   files: z.array(z.string()).optional(),
+  /**
+   * Artifact text for review-only templates (e.g. `template: "review-only"`).
+   * Required when the chosen template's first phase has `kind: review_only`.
+   * Ignored for full-pipeline templates. Capped by the template's
+   * artifact.maxBytes (default 1 MiB).
+   */
+  artifact: z.string().optional(),
 });
 
 export const WaitForChatSchema = z.object({
@@ -196,6 +203,7 @@ export async function createChat(input: unknown) {
       work: parsed.work,
       templateId: parsed.template,
       files: parsed.files,
+      ...(parsed.artifact !== undefined ? { artifact: parsed.artifact } : {}),
     }),
   });
 

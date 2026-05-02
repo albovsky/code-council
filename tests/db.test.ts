@@ -98,6 +98,8 @@ describe('chats', () => {
     expect(created.repo_path).toBeNull();
     expect(created.pr_url).toBeNull();
     expect(created.ship_error).toBeNull();
+    expect(created.artifact).toBeNull();
+    expect(created.verdict).toBeNull();
     expect(created.created_at).toBeGreaterThan(0);
 
     const fetched = await chats.getById(created.id);
@@ -108,6 +110,30 @@ describe('chats', () => {
 
   it('getById returns null for unknown id', async () => {
     expect(await chats.getById('nope')).toBeNull();
+  });
+
+  it('artifact column round-trips for review-only chats', async () => {
+    const artifact = '--- a/foo\n+++ b/foo\n@@ -1 +1 @@\n-old\n+new\n';
+    const created = await chats.create({
+      work: 'review the diff',
+      template_id: 'review-only',
+      artifact,
+    });
+    expect(created.artifact).toBe(artifact);
+
+    const fetched = await chats.getById(created.id);
+    expect(fetched?.artifact).toBe(artifact);
+  });
+
+  it('verdict column starts null and persists update', async () => {
+    const created = await chats.create({ work: 'w', template_id: 't' });
+    expect(created.verdict).toBeNull();
+
+    const updated = await chats.update(created.id, { verdict: 'request_changes' });
+    expect(updated.verdict).toBe('request_changes');
+
+    const refetched = await chats.getById(created.id);
+    expect(refetched?.verdict).toBe('request_changes');
   });
 
   it('list filters by status + orders by updated_at DESC', async () => {

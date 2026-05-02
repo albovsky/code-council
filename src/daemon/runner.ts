@@ -15,6 +15,7 @@ import type { TmuxManager } from './tmux-types.js';
 import { registry } from './agents/index.js';
 import { ErrorDetector } from './error-detector.js';
 import { getPermissions } from '../lib/settings/permissions.js';
+import { personas } from '../lib/db/index.js';
 import { getTransport } from '../lib/settings/transport.js';
 import { recordHealth, kindToStatus, type CliLineage } from '../lib/cli-health.js';
 import { precheckLineage } from '../lib/cli-precheck.js';
@@ -519,8 +520,29 @@ async function runDoer(
   const askFile = path.join(doerDir, 'ask.md');
   const answerFile = path.join(doerDir, 'answer.md');
 
+  // Resolve doer persona (if any) — silent fallback when the id is
+  // missing from the personas table so an out-of-sync template can't
+  // hard-fail a chat. Cockpit-side validation covers the happy path.
+  let doerPersonaPrompt: string | undefined;
+  if ('persona' in phase.doer && phase.doer.persona) {
+    try {
+      const row = await personas.getById(phase.doer.persona);
+      if (row) doerPersonaPrompt = row.system_prompt;
+    } catch {
+      /* persona lookup is best-effort */
+    }
+  }
+
   // Write ask.md (the prompt body the CLI reads).
-  const ask = buildAsk(phase, phaseIdx, round, work, phase.inputs, filesBlock);
+  const ask = buildAsk(
+    phase,
+    phaseIdx,
+    round,
+    work,
+    phase.inputs,
+    filesBlock,
+    doerPersonaPrompt,
+  );
   fs.writeFileSync(askFile, ask);
 
   // When the chat was created with a repoPath, the doer's working tree
@@ -886,7 +908,27 @@ async function runReviewer(
   const askFile = path.join(reviewerDir, 'ask.md');
   const answerFile = path.join(reviewerDir, 'answer.md');
 
-  const ask = buildReviewerAsk(phase, phaseIdx, round, work, doerOutput, filesBlock);
+  // Resolve reviewer persona — see runDoer for rationale on the silent
+  // fallback. `candidate.persona` is optional in the schema.
+  let reviewerPersonaPrompt: string | undefined;
+  if (candidate.persona) {
+    try {
+      const row = await personas.getById(candidate.persona);
+      if (row) reviewerPersonaPrompt = row.system_prompt;
+    } catch {
+      /* persona lookup is best-effort */
+    }
+  }
+
+  const ask = buildReviewerAsk(
+    phase,
+    phaseIdx,
+    round,
+    work,
+    doerOutput,
+    filesBlock,
+    reviewerPersonaPrompt,
+  );
   fs.writeFileSync(askFile, ask);
 
   // Headless branch — same pattern as runDoer. Mixed-mode is fine: doer can

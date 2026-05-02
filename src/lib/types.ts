@@ -113,6 +113,8 @@ export type PhaseState =
 export interface DoerSlot {
   lineage: ReviewerLineage;
   models: string[];
+  /** Optional persona id — the runner prepends persona.system_prompt to the doer's ask. */
+  persona?: string;
 }
 
 /**
@@ -123,6 +125,8 @@ export interface DoerSlot {
 export interface ReviewerCandidate {
   lineage: ReviewerLineage;
   models: string[];
+  /** Optional persona id — the runner prepends persona.system_prompt to the reviewer's ask. */
+  persona?: string;
 }
 
 export interface ReviewerRule {

@@ -60,6 +60,19 @@ const ReviewerSchema = z.object({
   candidates: z.array(z.object({
     lineage: reviewerLineageEnum,
     models: z.array(z.string()).optional(),
+    /**
+     * Optional persona id. When set, the runner prepends the persona's
+     * `system_prompt` (looked up from the personas table at runtime) to
+     * the reviewer's ask.md so this slot reviews from a specific
+     * worldview — e.g. `sentinel` (security), `cartographer`
+     * (cross-platform), `translator` (UX).
+     *
+     * Lookup is lazy: an unknown id parses fine here but the runner
+     * silently falls back to the no-persona prompt rather than failing
+     * the run. Validation that a personaId resolves is the cockpit's
+     * job (the picker only offers ids that exist).
+     */
+    persona: z.string().optional(),
   })),
 });
 
@@ -98,6 +111,13 @@ const StandardPhaseSchema = z.object({
   doer: z.object({
     lineage: lineageEnum,
     models: z.array(z.string()).optional(),
+    /**
+     * Optional persona id. Same semantics as on reviewer candidates —
+     * persona.system_prompt prepends the doer's ask. Lets a template
+     * say "build this with a security-first worldview" instead of
+     * leaving worldview implicit in the doer model.
+     */
+    persona: z.string().optional(),
   }),
 
   reviewer: ReviewerSchema.optional(),

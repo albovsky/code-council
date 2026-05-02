@@ -64,6 +64,35 @@ describe('buildAsk', () => {
     expect(out).toContain(filesBlock);
   });
 
+  it('prepends a ## Persona block above the task header when given', () => {
+    const out = buildAsk(
+      fixturePhase(),
+      0,
+      1,
+      'work',
+      { include: [], exclude: [] },
+      '',
+      'You are Architect — bias toward maintainability over cleverness.',
+    );
+    expect(out).toContain('## Persona');
+    expect(out).toContain('You are Architect');
+    const personaIdx = out.indexOf('## Persona');
+    const headerIdx = out.indexOf('# Chorus task');
+    expect(headerIdx).toBeGreaterThan(personaIdx);
+  });
+
+  it('omits the persona block when no system prompt is provided', () => {
+    const out = buildAsk(
+      fixturePhase(),
+      0,
+      1,
+      'work',
+      { include: [], exclude: [] },
+      '',
+    );
+    expect(out).not.toContain('## Persona');
+  });
+
   it('lists includes / excludes when present', () => {
     const out = buildAsk(
       fixturePhase(),
@@ -126,6 +155,51 @@ describe('buildReviewerAsk', () => {
     );
     expect(out).not.toContain('truncated');
     expect(out).toContain('short doer answer');
+  });
+
+  it('prepends the persona system prompt as a ## Persona block when provided', () => {
+    const out = buildReviewerAsk(
+      fixturePhase(),
+      0,
+      1,
+      'work',
+      'doer answer',
+      '',
+      'You are Sentinel — a security-first reviewer. Audit for OWASP Top 10.',
+    );
+    expect(out).toContain('## Persona');
+    expect(out).toContain('You are Sentinel');
+    // Persona block must come before the chorus header so the LLM reads
+    // the worldview before the task framing.
+    const personaIdx = out.indexOf('## Persona');
+    const headerIdx = out.indexOf('# Chorus review');
+    expect(personaIdx).toBeGreaterThanOrEqual(0);
+    expect(headerIdx).toBeGreaterThan(personaIdx);
+  });
+
+  it('omits the ## Persona block when no system prompt is provided', () => {
+    const out = buildReviewerAsk(
+      fixturePhase(),
+      0,
+      1,
+      'work',
+      'doer answer',
+      '',
+    );
+    expect(out).not.toContain('## Persona');
+  });
+
+  it('omits the ## Persona block when the system prompt is empty / whitespace', () => {
+    const out = buildReviewerAsk(
+      fixturePhase(),
+      0,
+      1,
+      'work',
+      'doer answer',
+      '',
+      '   \n\n  ',
+    );
+    expect(out).not.toContain('## Persona');
   });
 
   it('truncation walks back to a UTF-8 start byte (no U+FFFD tails)', () => {

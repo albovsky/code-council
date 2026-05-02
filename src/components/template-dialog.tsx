@@ -197,11 +197,11 @@ interface DaemonPhaseYaml {
   kind: string;
   title: string;
   description?: string;
-  doer?: { lineage: string; models?: string[] };
+  doer?: { lineage: string; models?: string[]; persona?: string };
   reviewer?: {
     require: number;
     crossLineage: boolean;
-    candidates: { lineage: string; models?: string[] }[];
+    candidates: { lineage: string; models?: string[]; persona?: string }[];
   };
   inputs: { include: string[]; exclude: string[] };
   /** Standard phases only — review_only is single-pass and has no iterate. */
@@ -346,11 +346,11 @@ interface ParsedDaemonTemplate {
     title?: string;
     name?: string;
     description?: string;
-    doer?: { lineage?: string; models?: string[] };
+    doer?: { lineage?: string; models?: string[]; persona?: string };
     reviewer?: {
       require?: number;
       crossLineage?: boolean;
-      candidates?: Array<{ lineage?: string; models?: string[] }>;
+      candidates?: Array<{ lineage?: string; models?: string[]; persona?: string }>;
     };
     inputs?: { include?: string[]; exclude?: string[] };
     iterate?: { maxRounds?: number; onDisagreement?: string };
@@ -402,6 +402,7 @@ function parseYamlToForm(yamlText: string, existingId: string): ParseResult {
     const candidateModels: Partial<Record<ReviewerLineage, string[]>> = {};
     const seenLineages = new Set<ReviewerLineage>();
     const candidates: ReviewerLineage[] = [];
+    let reviewerHasPersona = false;
     for (const c of p.reviewer?.candidates ?? []) {
       const cockpitLineage = DAEMON_TO_COCKPIT[c.lineage ?? ""];
       if (!cockpitLineage) continue;
@@ -417,6 +418,25 @@ function parseYamlToForm(yamlText: string, existingId: string): ParseResult {
         if (!trimmed) continue;
         (candidateModels[cockpitLineage] ??= []).push(trimmed);
       }
+      // Form mode doesn't yet model per-slot personas. Flag lossy so the
+      // user gets pushed to YAML mode and can't accidentally drop the
+      // persona binding by saving from Form mode.
+      if (typeof c.persona === "string" && c.persona.trim().length > 0) {
+        reviewerHasPersona = true;
+      }
+    }
+    if (reviewerHasPersona) {
+      reasons.push(
+        `Phase ${p.id ?? "?"} has a reviewer with a persona — form mode doesn't expose per-slot personas yet, edit in YAML mode.`,
+      );
+    }
+    if (
+      typeof p.doer?.persona === "string" &&
+      p.doer.persona.trim().length > 0
+    ) {
+      reasons.push(
+        `Phase ${p.id ?? "?"} has a doer persona — form mode doesn't expose doer personas yet, edit in YAML mode.`,
+      );
     }
 
     const KNOWN_KINDS = [

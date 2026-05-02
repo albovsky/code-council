@@ -14,12 +14,13 @@ interface RawTemplateRow {
 interface ParsedDoer {
   lineage?: string;
   models?: string[];
+  persona?: string;
 }
 
 interface ParsedReviewer {
   require?: number;
   crossLineage?: boolean;
-  candidates?: Array<{ lineage?: string; models?: string[] }>;
+  candidates?: Array<{ lineage?: string; models?: string[]; persona?: string }>;
 }
 
 interface ParsedPhase {
@@ -98,6 +99,7 @@ function mapPhase(p: ParsedPhase): Template["phases"][number] {
     doer: {
       lineage: mapLineage(p.doer?.lineage),
       models: p.doer?.models ?? [],
+      ...(p.doer?.persona ? { persona: p.doer.persona } : {}),
     },
     reviewer: {
       require: p.reviewer?.require ?? 1,
@@ -112,6 +114,7 @@ function mapPhase(p: ParsedPhase): Template["phases"][number] {
       candidatesWithModels: (p.reviewer?.candidates ?? []).map((c) => ({
         lineage: mapLineage(c.lineage),
         models: c.models ?? [],
+        ...(c.persona ? { persona: c.persona } : {}),
       })),
     },
     inputs: {

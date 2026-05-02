@@ -130,6 +130,21 @@ export function packAttachedFiles(
   return ['## Attached files', '', ...chunks, ''].join('\n');
 }
 
+/**
+ * Wrap a persona system_prompt in a header block for ask.md. Returns
+ * empty string when no persona prompt is provided so call sites can do
+ * `[personaBlock(...), ...rest].join('\n')` without conditionals.
+ *
+ * Format kept deliberately minimal — the system prompt itself sets the
+ * worldview; we just give it a header the reviewer can scan past. Don't
+ * add markdown-fence the system prompt itself or it inherits whatever
+ * fence-quoting rules the LLM applies to fenced content.
+ */
+export function personaPromptBlock(systemPrompt: string | undefined): string {
+  if (!systemPrompt || systemPrompt.trim().length === 0) return '';
+  return ['## Persona', systemPrompt.trim(), ''].join('\n');
+}
+
 /** Build the doer ask.md prompt for one phase iteration. */
 export function buildAsk(
   phase: Phase,
@@ -138,9 +153,14 @@ export function buildAsk(
   work: string,
   inputs: Phase['inputs'],
   filesBlock: string,
+  personaSystemPrompt?: string,
 ): string {
   const lines: string[] = [];
 
+  const personaBlock = personaPromptBlock(personaSystemPrompt);
+  if (personaBlock) {
+    lines.push(personaBlock);
+  }
   lines.push(`# Chorus task — round ${round}, phase ${phase.id}`);
   lines.push('');
   lines.push('## Your role');
@@ -191,9 +211,14 @@ export function buildReviewerAsk(
   work: string,
   doerOutput: string,
   filesBlock: string,
+  personaSystemPrompt?: string,
 ): string {
   const lines: string[] = [];
 
+  const personaBlock = personaPromptBlock(personaSystemPrompt);
+  if (personaBlock) {
+    lines.push(personaBlock);
+  }
   lines.push(`# Chorus review — round ${round}, phase ${phase.id}`);
   lines.push('');
   lines.push('## Your role');

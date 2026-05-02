@@ -38,6 +38,7 @@ This is the seed of the **template marketplace**: an asset class that didn't exi
 | Token-capture rails (round-2-deferred §1) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #8 3910607); `AgentEvent.message_done.usage` + capture in doer return shape — per-lineage parser updates + DB persistence + cost math are follow-ups |
 | Opt-out telemetry heartbeat (round-2-deferred §4) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #6 bac7445); daemon-side ping to chorus.codes once on boot + every 24h; three opt-out paths; server endpoint deploy + privacy notice are separate infra tasks |
 | Structured JSON-line logger substrate (round-2-deferred §3) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #7 7ce6b46); pino-shaped wire format (level/time/pid/hostname); 5 first-class call sites; mechanical migration of remaining ~50 console sites is a follow-up |
+| Codex quota_exhausted detection + `CHORUS_CODEX_HOME` override | 0.7 | ⏳ IN REVIEW | PR #9 (08d2202); discovered post-merge — codex emits `ERROR: hit your usage limit` to stderr and exits 1, parseCodexExit only read stdout → 0-byte answer.md every reviewer run. Now surfaces `error{kind:'quota_exhausted'}`. Env override is a stopgap; proper UX is multi-account-per-CLI in v0.8. |
 | OpenRouter inline flow (validate → fetch models → multi-add) | 0.7 | ⏳ NEXT | builds on voices table; POST /voices already exists |
 | Phase composition UI (drag/reorder, edit prompts) | 0.7 | 📐 PLANNED | depends on voices + OpenRouter; unlocks per-phase persona binding |
 | Default chorus-on-chorus template (Sentinel + Cartographer + Accountant + Translator) | 0.7 | 📐 PLANNED | bakes meta-fix |
@@ -49,6 +50,7 @@ This is the seed of the **template marketplace**: an asset class that didn't exi
 | Cockpit edit UI for builtin templates | 0.8 | ⏳ TODO | POST /templates upsert is now safe (preserves source=builtin); editor itself still missing — designed not built |
 | Runner decoupling from SSE — background runChat + event bus replay | 0.8 | ⏳ TODO | surgical fix landed for v0.7 (no auto-abort + chat_done latch); proper fix is fire-on-POST so MCP flows don't sit drafting until a human opens the page |
 | Home dashboard (CLI status, usage, reset windows, cost) | 0.8 | 📐 PLANNED | |
+| Multi-account per CLI (add N codex / claude / gemini accounts of same vendor) | 0.8 | 📐 PLANNED | first-class UX for what `CHORUS_CODEX_HOME` env hack achieves today; auto-rotate to a non-rate-limited account when one hits quota_exhausted; surfaces in home dashboard alongside reset-window per-account |
 | Run history + cost aggregates | 0.8 | 📐 PLANNED | |
 | Template marketplace (Stripe + revenue share) | 0.9 | 📐 PLANNED | |
 | Local LLM voices (Ollama, llama.cpp) | 1.0+ | 💭 IDEA | |
@@ -264,9 +266,10 @@ A live overview of your model fleet. Answers "what do I have, what am I burning,
   - API usage shown in real $
   - Aggregate dashboard with breakdown by voice, by template, by phase
 - **Health pings** — heartbeat per CLI every N minutes, surfaces "claude is unhealthy" before a run fails
+- **Multi-account per CLI** — power users hit weekly/daily plan limits and want to round-robin across multiple ChatGPT/Claude/Gemini accounts. Today the `CHORUS_CODEX_HOME` env override (PR #9) is a single-account stopgap. v0.8 brings: a `cli_account` table `(id, cli, label, home_path, enabled, priority)`, an Add Account UI on `/connect` that scaffolds `~/.codex-<label>/` and runs `codex login` in a tmux side-pane, automatic rotation when a voice's active account emits `quota_exhausted` (the in-flight PR #9 already surfaces this event), and per-account reset-window display in the dashboard above. Same shape extends to claude (`~/.claude-<label>/`) and gemini (`~/.gemini-<label>/`).
 - **Run history** — last 50 chats with status, voices used, total cost, duration
 
-**Storage:** new tables `voice_usage`, `cost_event`, `cli_health_ping`.
+**Storage:** new tables `voice_usage`, `cost_event`, `cli_health_ping`, `cli_account`.
 
 **Effort:** ~1 week.
 

@@ -4,6 +4,9 @@ import { fetchFromDaemon } from "./client";
 
 interface RawChatRow {
   id: string;
+  /** URL-friendly slug — present on chats created after the slug
+   *  migration, null on legacy rows the daemon couldn't backfill. */
+  slug?: string | null;
   work: string;
   template_id: string;
   status: Chat["status"];
@@ -36,6 +39,7 @@ function fromRow(row: RawChatRow): Chat {
   }
   return {
     id: row.id,
+    slug: row.slug ?? undefined,
     work: row.work,
     templateId: row.template_id,
     status: row.status,

@@ -15,13 +15,19 @@ interface DaemonChatRow {
   status: string;
   current_phase_idx?: number;
   updated_at?: number;
+  /** Optional slug — present on chats created after the slug migration. */
+  slug?: string | null;
 }
 function chatRowToRef(row: DaemonChatRow) {
   const webBase = process.env.CHORUS_WEB_URL || "http://127.0.0.1:5050";
+  // Prefer slug for the user-visible URL (it's what the cockpit uses
+  // too). Falls back to ULID for legacy rows the daemon couldn't
+  // backfill — both forms resolve identically server-side.
+  const segment = row.slug || row.id;
   return {
     chatId: row.id,
     status: row.status,
-    url: `${webBase}/runs/${row.id}`,
+    url: `${webBase}/runs/${segment}`,
   };
 }
 function chatRowToStatus(row: DaemonChatRow) {

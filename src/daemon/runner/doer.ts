@@ -73,6 +73,11 @@ export async function runDoerHeadless(args: {
   let accumulated = '';
   let finalText: string | undefined;
   let errored = false;
+  // Captured from the first error event so we can write it to
+  // answer.md when the subprocess dies before producing any content.
+  // Mirrors the reviewer-side handling so chat dirs are self-
+  // explanatory after a silent-failure crash.
+  let errorSummary: { kind: string; message: string } | undefined;
   let capturedUsage: {
     inputTokens?: number;
     outputTokens?: number;
@@ -164,11 +169,16 @@ export async function runDoerHeadless(args: {
         }
       } else if (event.type === 'error') {
         errored = true;
+        if (!errorSummary) {
+          errorSummary = { kind: event.kind, message: event.message };
+        }
         onEvent({
           chatId,
           type: 'cli_error',
           payload: {
             phaseId: phase.id,
+            phaseKind: phase.kind,
+            phaseIdx: 0,
             round,
             role: 'doer',
             agent: agentName,
@@ -184,17 +194,23 @@ export async function runDoerHeadless(args: {
     }
   } catch (err) {
     errored = true;
+    const message = err instanceof Error ? err.message : String(err);
+    if (!errorSummary) {
+      errorSummary = { kind: 'stream_failure', message };
+    }
     onEvent({
       chatId,
       type: 'cli_error',
       payload: {
         phaseId: phase.id,
+        phaseKind: phase.kind,
+        phaseIdx: 0,
         round,
         role: 'doer',
         agent: agentName,
         error: {
           kind: 'stream_failure',
-          message: err instanceof Error ? err.message : String(err),
+          message,
           lineage: phase.doer.lineage,
         },
       },
@@ -202,6 +218,23 @@ export async function runDoerHeadless(args: {
     });
   } finally {
     writer.flushNow();
+    // When the subprocess died without producing any content, write the
+    // error summary to answer.md so the chat dir is self-explanatory.
+    // Same pattern as runReviewerHeadless — see comment there.
+    if (errored && accumulated.length === 0 && (!finalText || finalText.length === 0) && errorSummary) {
+      try {
+        fs.writeFileSync(
+          answerFile,
+          `## DOER FAILED\n\n` +
+            `**Kind:** ${errorSummary.kind}\n` +
+            `**Lineage:** ${phase.doer.lineage}\n` +
+            `**Model:** ${phase.doer.models?.[0] ?? '(default)'}\n\n` +
+            `${errorSummary.message}\n`,
+        );
+      } catch {
+        /* best-effort — don't fail the runner because of a write error */
+      }
+    }
     // If the StreamFileWriter went dead (FS ENOSPC, EACCES, etc.) it
     // dropped the failing chunk to avoid retrying the same sync write
     // forever. Surface this so the user sees "stream stopped writing"

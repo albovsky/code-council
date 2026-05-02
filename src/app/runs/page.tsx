@@ -50,7 +50,7 @@ export default async function RunsListPage() {
             chats.map((chat) => (
               <Link
                 key={chat.id}
-                href={`/runs/${chat.id}`}
+                href={`/runs/${chat.slug || chat.id}`}
                 className="group flex items-start justify-between gap-4 rounded-lg border border-border bg-card p-4 transition hover:border-muted-foreground/30 hover:bg-card/80"
               >
                 <div className="flex-1 min-w-0">

@@ -53,6 +53,12 @@ export async function runReviewerHeadless(args: {
   let accumulated = '';
   let finalText: string | undefined;
   let errored = false;
+  // Captured from the first error event so we can write it to
+  // answer.md when the subprocess dies before producing any content.
+  // Without this, callers reading ~/.chorus/chats/<id>/round-N/
+  // reviewer-<agent>/answer.md see a 0-byte file with no clue what
+  // went wrong (opencode lock contention, codex quota, etc.).
+  let errorSummary: { kind: string; message: string } | undefined;
 
   fs.writeFileSync(answerFile, '');
   const writer = new StreamFileWriter(answerFile);
@@ -133,11 +139,16 @@ export async function runReviewerHeadless(args: {
         }
       } else if (event.type === 'error') {
         errored = true;
+        if (!errorSummary) {
+          errorSummary = { kind: event.kind, message: event.message };
+        }
         onEvent({
           chatId,
           type: 'cli_error',
           payload: {
             phaseId: phase.id,
+            phaseKind: phase.kind,
+            phaseIdx: 0,
             round,
             role: 'reviewer',
             agent: `${agentName}-${reviewerIdx}`,
@@ -153,17 +164,23 @@ export async function runReviewerHeadless(args: {
     }
   } catch (err) {
     errored = true;
+    const message = err instanceof Error ? err.message : String(err);
+    if (!errorSummary) {
+      errorSummary = { kind: 'stream_failure', message };
+    }
     onEvent({
       chatId,
       type: 'cli_error',
       payload: {
         phaseId: phase.id,
+        phaseKind: phase.kind,
+        phaseIdx: 0,
         round,
         role: 'reviewer',
         agent: `${agentName}-${reviewerIdx}`,
         error: {
           kind: 'stream_failure',
-          message: err instanceof Error ? err.message : String(err),
+          message,
           lineage: candidateLineage,
         },
       },
@@ -171,6 +188,25 @@ export async function runReviewerHeadless(args: {
     });
   } finally {
     writer.flushNow();
+    // When the subprocess died without producing any content, write the
+    // error summary to answer.md so the chat dir is self-explanatory.
+    // Otherwise post-mortem inspection sees an empty file with no
+    // signal — exactly the silent-failure that hid opencode-cli-2's
+    // failure on the PR #10 review chat.
+    if (errored && accumulated.length === 0 && (!finalText || finalText.length === 0) && errorSummary) {
+      try {
+        fs.writeFileSync(
+          answerFile,
+          `## REVIEWER FAILED\n\n` +
+            `**Kind:** ${errorSummary.kind}\n` +
+            `**Lineage:** ${candidateLineage}\n` +
+            `**Model:** ${candidateModel ?? '(default)'}\n\n` +
+            `${errorSummary.message}\n`,
+        );
+      } catch {
+        /* best-effort — don't fail the runner because of a write error */
+      }
+    }
     // Mirror runDoerHeadless: surface answer.md write failures as a
     // cli_warning so the user sees "stream stopped writing" instead of
     // a quietly truncated reviewer transcript that the verdict parser

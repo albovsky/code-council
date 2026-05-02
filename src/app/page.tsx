@@ -179,7 +179,7 @@ function ActiveHome({ chats }: ActiveHomeProps) {
           {chats.slice(0, 3).map((chat) => (
             <Link
               key={chat.id}
-              href={`/runs/${chat.id}`}
+              href={`/runs/${chat.slug || chat.id}`}
               className="group flex items-start gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-muted-foreground/30"
             >
               <span

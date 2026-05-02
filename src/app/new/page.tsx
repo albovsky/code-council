@@ -180,7 +180,7 @@ function NewChatPageInner() {
           // it'll open a PR.
           ...(!reviewOnly && trimmedRepo.length > 0 ? { repoPath: trimmedRepo } : {}),
         });
-        router.push(`/runs/${chat.id}`);
+        router.push(`/runs/${chat.slug || chat.id}`);
       } catch (err) {
         setCreateError(
           err instanceof DaemonError ? err.message : "Failed to create chat",

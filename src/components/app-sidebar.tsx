@@ -278,7 +278,7 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
           ) : (
             <ul className="flex flex-col gap-0.5">
               {chats.map((c) => {
-                const href = `/runs/${c.id}`;
+                const href = `/runs/${c.slug || c.id}`;
                 const active = pathname === href;
                 const display = chatDisplayTitle(c.work);
                 const title = display.length > 60 ? `${display.slice(0, 60)}…` : display;

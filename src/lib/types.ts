@@ -49,6 +49,14 @@ export interface SynthesizedAnswer {
 
 export interface Chat {
   id: string;
+  /**
+   * URL-friendly slug derived from `work` on creation. Present on
+   * chats created after the slug migration; absent on legacy rows that
+   * the daemon's backfill missed (or DBs older than the migration).
+   * Use `chatHref(chat)` to build a URL that prefers slug → falls back
+   * to id, so links keep working in both cases.
+   */
+  slug?: string;
   work: string;
   templateId: string;
   status:

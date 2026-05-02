@@ -99,6 +99,12 @@ async function initDb(): Promise<Client> {
   if (!has('ship_error')) await db.execute('ALTER TABLE chats ADD COLUMN ship_error TEXT');
   if (!has('artifact')) await db.execute('ALTER TABLE chats ADD COLUMN artifact TEXT');
   if (!has('verdict')) await db.execute('ALTER TABLE chats ADD COLUMN verdict TEXT');
+  // User-friendly URL slug, derived from `work` on chat creation.
+  // Nullable for legacy rows; backfilled on first list-load below.
+  // UNIQUE index added separately so we can resolve /runs/<slug> in O(1).
+  if (!has('slug')) await db.execute('ALTER TABLE chats ADD COLUMN slug TEXT');
+  await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_slug ON chats(slug) WHERE slug IS NOT NULL');
+  await backfillChatSlugs(db);
 
   // Personas table — added in v0.7. Idempotent CREATE so DBs that
   // pre-date this version pick it up without a manual migration.
@@ -141,9 +147,51 @@ async function initDb(): Promise<Client> {
   return db;
 }
 
+/**
+ * One-shot pre-existing-row backfill: any chat row with NULL slug gets
+ * one generated from its `work` text. Idempotent — second run finds no
+ * NULL rows and exits cheaply. Runs inside getDb() so it happens before
+ * any route handler can SELECT a chat with a missing slug.
+ *
+ * Uniqueness is guaranteed by `slugExists` walking the same DB. We do
+ * the existsFn closure manually here to avoid a circular import on
+ * `chats` (which depends on getDb being done).
+ */
+async function backfillChatSlugs(db: Client): Promise<void> {
+  const result = await db.execute(
+    'SELECT id, work, template_id FROM chats WHERE slug IS NULL ORDER BY created_at ASC',
+  );
+  if (result.rows.length === 0) return;
+
+  const { generateChatSlug } = await import('../chat-slug.js');
+  for (const row of result.rows as unknown as { id: string; work: string; template_id: string }[]) {
+    const slug = await generateChatSlug({
+      work: row.work,
+      templateId: row.template_id,
+      existsFn: async (s) => {
+        const r = await db.execute({
+          sql: 'SELECT 1 FROM chats WHERE slug = ? LIMIT 1',
+          args: [s],
+        });
+        return r.rows.length > 0;
+      },
+    });
+    await db.execute({
+      sql: 'UPDATE chats SET slug = ? WHERE id = ?',
+      args: [slug, row.id],
+    });
+  }
+}
+
 // Chat schemas and types
 const ChatRowSchema = z.object({
   id: z.string(),
+  /**
+   * Optional URL-friendly slug derived from `work` on chat creation.
+   * Nullable for legacy rows; the daemon backfills these lazily on
+   * first list-load. UNIQUE index lets us resolve /runs/<slug> in O(1).
+   */
+  slug: z.string().nullable().default(null),
   work: z.string(),
   template_id: z.string(),
   status: z.enum(['drafting', 'reviewing', 'approved', 'merged', 'blocked', 'cancelled', 'failed', 'no_review']),
@@ -183,7 +231,7 @@ const PhaseEventSchema = z.object({
   phase_kind: z.enum(['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence', 'review_only']),
   role: z.enum(['doer', 'reviewer']),
   agent_id: z.string().nullable(),
-  state: z.enum(['drafting', 'submitted', 'reviewing', 'approved', 'revising', 'blocked']),
+  state: z.enum(['drafting', 'submitted', 'reviewing', 'approved', 'revising', 'blocked', 'errored']),
   output: z.string().nullable(),
   cost_usd: z.number().default(0),
   tokens_in: z.number().int().default(0),
@@ -230,13 +278,26 @@ export const chats = {
     const ulid = generateUlid();
     const now = Date.now();
 
+    // Generate a unique URL slug from the work brief BEFORE insert so the
+    // returned row is complete (no second SELECT/UPDATE round trip). The
+    // collision check uses chats.slugExists which tolerates an in-flight
+    // partner row (same slug requested concurrently) — the UNIQUE index
+    // catches any race during INSERT below.
+    const { generateChatSlug } = await import('../chat-slug.js');
+    const slug = await generateChatSlug({
+      work: validated.work,
+      templateId: validated.template_id,
+      existsFn: chats.slugExists,
+    });
+
     await db.execute({
       sql: `
-        INSERT INTO chats (id, work, template_id, status, current_phase_idx, yolo, attached_files, repo_path, artifact, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO chats (id, slug, work, template_id, status, current_phase_idx, yolo, attached_files, repo_path, artifact, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         ulid,
+        slug,
         validated.work,
         validated.template_id,
         'drafting',
@@ -253,6 +314,40 @@ export const chats = {
     const row = await chats.getById(ulid);
     if (!row) throw new Error(`chats.create: row vanished after insert: ${ulid}`);
     return row;
+  },
+
+  /** Used by generateChatSlug — does any chat already use this slug? */
+  async slugExists(slug: string): Promise<boolean> {
+    const db = await getDb();
+    const result = await db.execute({
+      sql: 'SELECT 1 FROM chats WHERE slug = ? LIMIT 1',
+      args: [slug],
+    });
+    return result.rows.length > 0;
+  },
+
+  /** Resolve a chat by slug. Returns null when not found. */
+  async getBySlug(slug: string): Promise<ChatRow | null> {
+    const db = await getDb();
+    const result = await db.execute({
+      sql: 'SELECT * FROM chats WHERE slug = ?',
+      args: [slug],
+    });
+    if (result.rows.length === 0) return null;
+    return ChatRowSchema.parse(result.rows[0]);
+  },
+
+  /**
+   * Resolve by slug OR id. Falls back to id lookup when the slug query
+   * misses, so legacy URLs (`/runs/<ULID>`) keep working forever.
+   */
+  async getBySlugOrId(slugOrId: string): Promise<ChatRow | null> {
+    const { looksLikeSlug } = await import('../chat-slug.js');
+    if (looksLikeSlug(slugOrId)) {
+      const bySlug = await chats.getBySlug(slugOrId);
+      if (bySlug) return bySlug;
+    }
+    return chats.getById(slugOrId);
   },
 
   async list(opts?: { status?: string; limit?: number; offset?: number }): Promise<ChatRow[]> {

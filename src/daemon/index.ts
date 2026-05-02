@@ -287,6 +287,60 @@ function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
       );
     }
 
+    // Persist per-CLI failure events (cli_error / cli_warning) to
+    // phase_events so the cockpit can surface "this reviewer failed
+    // with <reason>" on the per-card UI AND so post-mortem inspection
+    // (sqlite, /chats/:id) shows the failure even after chat-done has
+    // fired. Without this, transient subprocess crashes (opencode lock
+    // contention, codex quota, gemini rate-limit-with-empty-stdout)
+    // wrote 0-byte answer.md files and disappeared from the DB —
+    // exactly the silent-failure bug the user hit on the PR #10 review
+    // chat where opencode-cli-2 never showed why it died. Generic at
+    // this layer means every shim benefits without per-CLI parser
+    // changes; spawnHeadless already emits cli_failed on non-zero
+    // exit and the per-shim parser detection (codex's quota_exhausted,
+    // future opencode contention detection) builds on top.
+    if (event.type === 'cli_error' || event.type === 'cli_warning') {
+      const payload = event.payload as Record<string, unknown>;
+      const kind = payload.phaseKind as string | undefined;
+      const validKinds = ['plan', 'spec', 'tests', 'implement', 'review', 'verify', 'divergence', 'review_only'];
+      const phaseKind = (kind && validKinds.includes(kind))
+        ? (kind as 'plan' | 'spec' | 'tests' | 'implement' | 'review' | 'verify' | 'divergence' | 'review_only')
+        : 'review';
+      const errorObj = (payload.error as Record<string, unknown> | undefined) ?? {};
+      const message =
+        (errorObj.message as string | undefined) ??
+        (payload.message as string | undefined) ??
+        'unknown error';
+      const errorKind = (errorObj.kind as string | undefined) ?? 'cli_error';
+      void trackWrite(
+        phaseEvents
+          .create({
+            chat_id: chatId,
+            phase_idx: (payload.phaseIdx as number) ?? 0,
+            phase_kind: phaseKind,
+            role: (payload.role as 'doer' | 'reviewer') ?? 'reviewer',
+            agent_id: (payload.agent as string) ?? null,
+            state: 'errored',
+            // Pack the error context into output so the cockpit's
+            // existing event-list rendering (which already shows
+            // `output`) surfaces the message without a schema change.
+            output: `[${errorKind}] ${message}`,
+            cost_usd: 0,
+            tokens_in: 0,
+            tokens_out: 0,
+            started_at: event.ts,
+            finished_at: event.ts,
+          })
+          .catch((err: unknown) => {
+            chatLogger(chatId).error(
+              { err: err instanceof Error ? err.message : String(err) },
+              'phaseEvents.create (cli_error) failed',
+            );
+          }),
+      );
+    }
+
     // Update chats.status on terminal event. Same translation as before:
     // runner emits status='completed' for the happy path; we map to
     // 'approved' to fit the chats.status enum. Tracked so .finally drains
@@ -463,13 +517,15 @@ async function main() {
       if (!isValidChatId(request.params.id)) {
         return errorResponse('validation', 'invalid chat id');
       }
-      const chat = await chats.getById(request.params.id);
+      const chat = await chats.getBySlugOrId(request.params.id);
 
       if (!chat) {
         return errorResponse('not_found', `Chat ${request.params.id} not found`);
       }
 
-      const events = await phaseEvents.list(request.params.id);
+      // phaseEvents.list keys by ULID, not slug. Use the resolved row's
+      // id so a /chats/<slug> request returns events correctly.
+      const events = await phaseEvents.list(chat.id);
 
       return successResponse({ ...chat, events });
     } catch (error) {
@@ -625,10 +681,16 @@ async function main() {
     Reply: ApiResponse<object>;
   }>('/chats/:id/cancel', async (request) => {
     try {
-      const chatId = request.params.id;
-      if (!isValidChatId(chatId)) {
+      const param = request.params.id;
+      if (!isValidChatId(param)) {
         return errorResponse('validation', 'invalid chat id');
       }
+      // Resolve slug → ULID first. Cancel/abort/tmux all key by ULID.
+      const existing = await chats.getBySlugOrId(param);
+      if (!existing) {
+        return errorResponse('not_found', `Chat ${param} not found`);
+      }
+      const chatId = existing.id;
       const chat = await chats.cancel(chatId);
 
       // Abort the active runner if there is one. This propagates into the
@@ -670,10 +732,15 @@ async function main() {
       if (!isValidChatId(id)) {
         return errorResponse('validation', 'invalid chat id');
       }
-      const existing = await chats.getById(id);
+      const existing = await chats.getBySlugOrId(id);
       if (!existing) {
         return successResponse({ id, deleted: false, reason: 'not_found' });
       }
+      // Resolve to the row's authoritative ULID — every downstream key
+      // (activeRuns, tmux sessions, phase_events, chat dir on disk) uses
+      // the ULID, not the slug. Without this the route partly worked
+      // when called by slug but failed to abort the runner / kill tmux.
+      const ulid = existing.id;
 
       // 1. Cancel first if still active — flips status, signals abort.
       if (
@@ -681,7 +748,7 @@ async function main() {
         existing.status === 'reviewing'
       ) {
         try {
-          await chats.cancel(id);
+          await chats.cancel(ulid);
         } catch {
           /* best-effort */
         }
@@ -690,7 +757,7 @@ async function main() {
       // 1b. Abort the in-memory runner if one is active for this chat.
       // Otherwise the runner could keep streaming events and write to a chat
       // dir that we're about to rm -rf, plus it would re-create the row.
-      const active = activeRuns.get(id);
+      const active = activeRuns.get(ulid);
       if (active) {
         active.abortController.abort();
         // Wait for the runner to settle before proceeding with the delete.
@@ -709,20 +776,20 @@ async function main() {
       try {
         const allSessions = tmuxMgr.list();
         for (const session of allSessions) {
-          if (session.chatId === id) tmuxMgr.kill(session.name);
+          if (session.chatId === ulid) tmuxMgr.kill(session.name);
         }
       } catch {
         /* tmuxMgr may not be ready in test paths */
       }
 
       // 3. Drop DB row + phase events.
-      await chats.delete(id);
+      await chats.delete(ulid);
 
       // 4. Nuke chat artifacts directory.
       const fsModule = await import('fs');
       const pathModule = await import('path');
       const osModule = await import('os');
-      const chatDir = pathModule.join(osModule.homedir(), '.chorus', 'chats', id);
+      const chatDir = pathModule.join(osModule.homedir(), '.chorus', 'chats', ulid);
       if (fsModule.existsSync(chatDir)) {
         try {
           fsModule.rmSync(chatDir, { recursive: true, force: true });
@@ -733,7 +800,7 @@ async function main() {
         }
       }
 
-      return successResponse({ id, deleted: true });
+      return successResponse({ id: ulid, deleted: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);
@@ -770,20 +837,24 @@ async function main() {
   fastify.get<{
     Params: { id: string };
   }>('/chats/:id/stream', async (request, reply) => {
-    const chatId = request.params.id;
+    const param = request.params.id;
 
-    if (!isValidChatId(chatId)) {
+    if (!isValidChatId(param)) {
       reply.code(400);
       return { error: 'invalid chat id' };
     }
 
     try {
-      const chat = await chats.getById(chatId);
+      const chat = await chats.getBySlugOrId(param);
 
       if (!chat) {
         reply.code(404);
         return { error: 'not found' };
       }
+      // From here on, `chatId` is the row's authoritative ULID — every
+      // downstream key (activeRuns, subscribers, runWithMultiplex) uses
+      // the ULID, never the slug.
+      const chatId = chat.id;
 
       const tmplRow = await templates.getById(chat.template_id);
       if (!tmplRow) {

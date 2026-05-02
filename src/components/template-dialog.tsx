@@ -55,6 +55,7 @@ import {
   validateTemplateYaml,
   type TemplateValidationIssue,
 } from "@/lib/template-validation";
+import { selectLiveYaml } from "@/lib/template-live-yaml";
 
 // ─── Lineage translation (cockpit ↔ daemon schema) ──────────────────────
 
@@ -658,21 +659,18 @@ export function TemplateDialog({
   const initialRef = useRef(initial);
   initialRef.current = initial;
 
-  // Live validation. Source-of-truth precedence:
-  //   1. yamlDirty → user typed in YAML pane → that wins
-  //   2. tab=yaml → YAML pane is the surface, even if untouched (user is
-  //      reading raw YAML)
-  //   3. formDirty → user changed a form field → emit from form
-  //   4. otherwise → preserve the original yaml verbatim (comments + all)
-  // Step 4 is what prevents builtin templates from being silently
-  // promoted to 'user' source via stringify-induced byte drift.
-  const liveYaml = yamlDirty
-    ? yamlText
-    : tab === "yaml"
-      ? yamlText
-      : formDirty
-        ? buildYamlFromForm(form)
-        : initial.yaml;
+  // Source-of-truth precedence — see selectLiveYaml docstring. Step 4
+  // (return original yaml verbatim) is what prevents builtin templates
+  // from being silently promoted to 'user' source via stringify-induced
+  // byte drift.
+  const liveYaml = selectLiveYaml({
+    yamlDirty,
+    tab,
+    formDirty,
+    yamlText,
+    formYaml: buildYamlFromForm(form),
+    initialYaml: initial.yaml,
+  });
   const validation = useMemo(() => validateTemplateYaml(liveYaml), [liveYaml]);
 
   function setFormField<K extends keyof FormState>(k: K, v: FormState[K]) {

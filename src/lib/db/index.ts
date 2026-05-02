@@ -34,7 +34,7 @@ let dbInitPromise: Promise<Client> | null = null;
  *   2. Tests need to swap DBs between cases without restarting the
  *      process — see `_resetDbForTests()`.
  */
-function resolveDbPath(): string {
+export function resolveDbPath(): string {
   const override = process.env.CHORUS_DB_PATH;
   if (override) return override;
   return path.join(os.homedir(), '.chorus', 'chorus.db');

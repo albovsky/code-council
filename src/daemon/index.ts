@@ -878,6 +878,15 @@ async function main() {
         };
       }
 
+      // Take ownership of the underlying socket. Without `reply.hijack()`
+      // Fastify would auto-end the response when this async handler returns
+      // (line 987 / 1004) — the SSE would close immediately after the
+      // initial replay even though we still want to keep streaming live
+      // events. Hijack tells Fastify "I own this socket, do not touch it
+      // again." The response is closed manually in the request 'close'
+      // handler below or via subscriber.close() on chat termination.
+      reply.hijack();
+
       // Set SSE headers.
       //
       // Do NOT add Content-Encoding: gzip here, and do not stick a buffering
@@ -955,17 +964,24 @@ async function main() {
         return;
       }
 
-      // Set up drain listener for backpressure recovery
+      // Set up drain listener for backpressure recovery.
+      //
+      // CRITICAL: clear `paused` unconditionally on drain even if the queue
+      // is empty. Race fix from cdx-1 round-2: a write that returns false
+      // with no queued follow-up at drain time would otherwise leave the
+      // subscriber permanently paused — every later event would funnel into
+      // the queue (because dispatch in onEvent only queues when paused),
+      // and no further drain ever fires (the kernel buffer is already
+      // empty). Order: unpause first, then flush whatever queued up.
       const onDrain = () => {
-        if (subscriber.paused && subscriber.queue.length > 0) {
-          subscriber.paused = false;
-          const queued = subscriber.queue.splice(0);
-          for (const queuedLine of queued) {
-            const canContinue = subscriber.write(queuedLine);
-            if (!canContinue) {
-              subscriber.paused = true;
-              break;
-            }
+        if (!subscriber.paused) return;
+        subscriber.paused = false;
+        while (subscriber.queue.length > 0) {
+          const queuedLine = subscriber.queue.shift() as string;
+          const canContinue = subscriber.write(queuedLine);
+          if (!canContinue) {
+            subscriber.paused = true;
+            break;
           }
         }
       };

@@ -4,7 +4,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import open from 'open';
-import { templates, getDb } from '../lib/db';
+import { templates, getDb, resolveDbPath } from '../lib/db';
 import { detectRuntimeEnv, shouldAutoOpenBrowser } from './runtime-env.js';
 import { c, sym, header, kv, tip } from './ui.js';
 
@@ -145,7 +145,10 @@ program
 
       // Initialize DB (this will seed schema)
       await getDb();
-      console.log(`  ${sym.ok} ${c.dim('database ready at')} ${path.join(chorusDir, 'chorus.db')}`);
+      // Honour CHORUS_DB_PATH override — print the path the daemon will
+      // actually use, not the default. Hardcoding ~/.chorus/chorus.db here
+      // misled users who'd set the env var and then "where's my DB?".
+      console.log(`  ${sym.ok} ${c.dim('database ready at')} ${resolveDbPath()}`);
 
       // Copy built-in templates
       const templatesDir = path.join(__dirname, '..', '..', 'templates');

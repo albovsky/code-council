@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import open from 'open';
+import net from 'net';
 import { templates, getDb, resolveDbPath } from '../lib/db';
 import { detectRuntimeEnv, shouldAutoOpenBrowser } from './runtime-env.js';
 import { c, sym, header, kv, tip } from './ui.js';
@@ -23,6 +24,103 @@ const DAEMON_URL = 'http://127.0.0.1:7707';
  * dev mode it points at the .ts file which `node` can't execute directly.
  */
 const CHORUS_BIN_PATH = path.resolve(__dirname, '..', '..', 'bin', 'chorus.mjs');
+
+/**
+ * Probe whether anything is listening on a TCP port on 127.0.0.1.
+ *
+ * Used by the start-path orphan reaper: if a previous `next-server` from
+ * an earlier `chorus start` survived a `chorus stop` (because the pidfile
+ * was lost or the SIGTERM was ignored), the next start would silently
+ * race against it on :5050 and leave the user stuck on stale chunks
+ * after a rebuild.
+ */
+function isPortInUse(port: number, host = '127.0.0.1', timeoutMs = 500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = new net.Socket();
+    let settled = false;
+    const finish = (inUse: boolean): void => {
+      if (settled) return;
+      settled = true;
+      try { sock.destroy(); } catch { /* ignore */ }
+      resolve(inUse);
+    };
+    sock.setTimeout(timeoutMs);
+    sock.once('connect', () => finish(true));
+    sock.once('timeout', () => finish(false));
+    sock.once('error', () => finish(false));
+    sock.connect(port, host);
+  });
+}
+
+/**
+ * Find any process holding a TCP listener on `port` on 127.0.0.1.
+ * Returns the PIDs found via `ss`/`lsof`. Best-effort — returns [] on
+ * platforms where neither tool is available.
+ *
+ * Why: pidfile-based tracking is fragile (file deleted on a partial
+ * stop, PID reused by an unrelated process, etc). Port-based reaping
+ * is the source of truth — if something's bound to :5050, we want it
+ * gone before we spawn our own.
+ */
+function findPidsOnPort(port: number): number[] {
+  const candidates: { cmd: string; parse: (out: string) => number[] }[] = [
+    {
+      cmd: `ss -ltnp 'sport = :${port}' 2>/dev/null`,
+      parse: (out) => {
+        const pids: number[] = [];
+        for (const m of out.matchAll(/pid=(\d+)/g)) {
+          const pid = parseInt(m[1], 10);
+          if (Number.isFinite(pid) && pid > 0) pids.push(pid);
+        }
+        return pids;
+      },
+    },
+    {
+      cmd: `lsof -nP -iTCP:${port} -sTCP:LISTEN -t 2>/dev/null`,
+      parse: (out) => out
+        .split(/\s+/)
+        .map((s) => parseInt(s, 10))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    },
+  ];
+  for (const { cmd, parse } of candidates) {
+    try {
+      const out = execSync(cmd, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const pids = parse(out);
+      if (pids.length > 0) return Array.from(new Set(pids));
+    } catch {
+      /* tool not present or no match — try next */
+    }
+  }
+  return [];
+}
+
+/**
+ * Send a signal to a PID and wait up to `gracefulMs` for it to die. If
+ * still alive, escalate to SIGKILL. Returns true if the process is gone
+ * by the time we return (or never existed in the first place), false if
+ * SIGKILL also failed (shouldn't happen on a normal user process).
+ */
+async function killAndVerify(pid: number, label: string, gracefulMs = 1500): Promise<boolean> {
+  const isAlive = (): boolean => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+  if (!isAlive()) return true;
+  try { process.kill(pid, 'SIGTERM'); } catch { /* gone already */ }
+
+  const deadline = Date.now() + gracefulMs;
+  while (Date.now() < deadline) {
+    if (!isAlive()) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  // Stubborn — escalate.
+  try { process.kill(pid, 'SIGKILL'); } catch { /* may already be dead */ }
+  // Brief grace for kernel to reap.
+  await new Promise((r) => setTimeout(r, 200));
+  if (!isAlive()) return true;
+  console.warn(`  ${sym.err} ${label} PID ${pid} survived SIGKILL — manual cleanup needed`);
+  return false;
+}
 
 function printCockpitAccessHint(): void {
   const env = detectRuntimeEnv();
@@ -276,7 +374,7 @@ program
   .command('start')
   .option('--ui', 'Open browser UI after starting daemon')
   .description('Start the Chorus daemon (PM2-style fork)')
-  .action((options) => {
+  .action(async (options) => {
     try {
       const chorusDir = path.join(os.homedir(), '.chorus');
       const pidFile = path.join(chorusDir, 'daemon.pid');
@@ -306,6 +404,27 @@ program
         } catch {
           // Process doesn't exist, clean up
           fs.unlinkSync(pidFile);
+        }
+      }
+
+      // Pre-spawn orphan reap. Pidfile-based liveness above only catches
+      // the recorded daemon PID — it misses a stale next-server (cockpit)
+      // or daemon that survived a previous `chorus stop` because the
+      // SIGTERM was ignored or the pidfile got out of sync. Without this
+      // sweep, a fresh `chorus start` would race against the orphan on
+      // :5050 / :7707, the new spawn would lose, and the user would see
+      // 500s served by the ghost (incident 2026-05-03).
+      for (const [port, label] of [[7707, 'daemon'], [5050, 'cockpit']] as const) {
+        if (await isPortInUse(port)) {
+          const pids = findPidsOnPort(port);
+          for (const pid of pids) {
+            const dead = await killAndVerify(pid, `${label} orphan`);
+            if (dead) {
+              console.log(
+                `  ${sym.ok} reaped ${label} orphan on :${port} ${c.dim(`(PID ${pid})`)}`,
+              );
+            }
+          }
         }
       }
 
@@ -438,36 +557,82 @@ program
   });
 
 // Command: chorus stop
+//
+// Two-stage shutdown per managed process: SIGTERM, wait up to 1.5s, escalate
+// to SIGKILL if still alive. Don't unlink the pidfile until the process is
+// confirmed dead — otherwise an orphan that ignores SIGTERM keeps running
+// while we forget about it (the bug behind the "stale next-server serving
+// 500s" incident on 2026-05-03).
+//
+// Belt-and-braces: after pidfile-based shutdown, also sweep ports :7707
+// (daemon) and :5050 (cockpit). Catches the case where the pidfile was lost
+// or pointed at a recycled PID but a real chorus process still owns the port.
 program
   .command('stop')
-  .description('Stop the Chorus daemon')
-  .action(() => {
+  .description('Stop the Chorus daemon and cockpit')
+  .action(async () => {
     try {
       const chorusDir = path.join(os.homedir(), '.chorus');
-      const stopProcess = (label: string, pidFile: string): void => {
-        if (!fs.existsSync(pidFile)) return;
-        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10);
-        try {
-          process.kill(pid, 'SIGTERM');
-          console.log(`  ${sym.ok} ${label.padEnd(7)} ${c.dim(`(PID ${pid})`)}`);
-        } catch {
-          // process already gone
-        }
-        fs.unlinkSync(pidFile);
-      };
       const daemonPidFile = path.join(chorusDir, 'daemon.pid');
       const webPidFile = path.join(chorusDir, 'web.pid');
-      if (!fs.existsSync(daemonPidFile) && !fs.existsSync(webPidFile)) {
+
+      const daemonPidfileExists = fs.existsSync(daemonPidFile);
+      const webPidfileExists = fs.existsSync(webPidFile);
+      const daemonPortInUse = await isPortInUse(7707);
+      const cockpitPortInUse = await isPortInUse(5050);
+
+      if (
+        !daemonPidfileExists &&
+        !webPidfileExists &&
+        !daemonPortInUse &&
+        !cockpitPortInUse
+      ) {
         console.log('');
         console.log(header(sym.info, 'Chorus is not running', 'nothing to stop'));
         console.log('');
         return;
       }
+
       console.log('');
       console.log(header(sym.pointer, 'Stopping Chorus...'));
       console.log('');
-      stopProcess('Daemon', daemonPidFile);
-      stopProcess('Cockpit', webPidFile);
+
+      const stopProcess = async (label: string, pidFile: string): Promise<void> => {
+        if (!fs.existsSync(pidFile)) return;
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10);
+        if (!Number.isFinite(pid) || pid <= 0) {
+          fs.unlinkSync(pidFile);
+          return;
+        }
+        const dead = await killAndVerify(pid, label);
+        if (dead) {
+          console.log(`  ${sym.ok} ${label.padEnd(7)} ${c.dim(`(PID ${pid})`)}`);
+          // Only unlink once we've confirmed the process is gone. Earlier
+          // code unconditionally unlinked, which orphaned any process that
+          // ignored SIGTERM — its successor `chorus start` couldn't see the
+          // ghost owner of the port.
+          try { fs.unlinkSync(pidFile); } catch { /* already gone */ }
+        }
+      };
+
+      await stopProcess('Daemon', daemonPidFile);
+      await stopProcess('Cockpit', webPidFile);
+
+      // Port-based sweep — kills any chorus-owned listener that escaped the
+      // pidfile path. Errs on the side of cleanup; running a non-chorus
+      // service on these ports while invoking `chorus stop` is unsupported.
+      const sweepPort = async (port: number, label: string): Promise<void> => {
+        const pids = findPidsOnPort(port);
+        for (const pid of pids) {
+          const dead = await killAndVerify(pid, `${label} orphan`);
+          if (dead) {
+            console.log(`  ${sym.ok} ${label.padEnd(7)} ${c.dim(`(orphan PID ${pid} on :${port})`)}`);
+          }
+        }
+      };
+      await sweepPort(7707, 'Daemon');
+      await sweepPort(5050, 'Cockpit');
+
       console.log('');
     } catch (error) {
       console.error(`${sym.err} ${c.red('Error stopping chorus:')}`, error);

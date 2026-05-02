@@ -231,13 +231,73 @@ export function parseOpencodeExit(fullStdout: string): AgentEvent[] {
 // the run (heartbeat keeps UI alive), then on exit emit one `message_done`
 // with the full stdout. Some Codex versions interleave thinking/tool-use
 // markers in stdout; we don't try to parse those for v0.5.
+//
+// Quota / failure handling: when the user's ChatGPT-subscription Codex
+// account is rate-limited, codex prints "ERROR: You've hit your usage limit"
+// to STDERR (not stdout) and exits 1. Without detection we silently wrote a
+// 0-byte answer.md and the reviewer phase looked like it produced nothing.
+// Now: detect the quota line + non-zero exit and surface a `quota_exhausted`
+// error event so the runner emits cli_error, the cockpit shows it, and the
+// user can swap accounts (CHORUS_CODEX_HOME) instead of staring at silence.
 export function parseCodex(_line: string): AgentEvent[] {
   return [];
 }
 
-export function parseCodexExit(fullStdout: string): AgentEvent[] {
-  if (fullStdout.trim().length === 0) return [];
-  return [{ type: 'message_done', finalText: fullStdout }];
+// Anchored to the literal `ERROR:` prefix codex emits — the loose
+// alternation /upgrade to plus/i / /try again at/i without an anchor would
+// false-match on prompts that legitimately echo those phrases (codex `exec`
+// echoes the user prompt back into stderr, so a code review brief mentioning
+// "try again at midnight" was a real hazard). Recall on the real quota line
+// is unchanged; round-1 review-only dogfood (PR #9) flagged this.
+const CODEX_QUOTA_LINE = /ERROR:[^\n]*(usage limit|upgrade to plus|try again at)/i;
+
+function looksLikeCodexQuota(text: string): boolean {
+  return CODEX_QUOTA_LINE.test(text);
+}
+
+export function parseCodexExit(
+  fullStdout: string,
+  fullStderr = '',
+  code: number | null = 0,
+): AgentEvent[] {
+  const stdoutTrimmed = fullStdout.trim();
+
+  // Happy path — codex wrote a normal completion.
+  if (code === 0 && stdoutTrimmed.length > 0) {
+    return [{ type: 'message_done', finalText: fullStdout }];
+  }
+
+  // Non-zero exit OR empty stdout — surface what we can.
+  if (looksLikeCodexQuota(fullStderr) || looksLikeCodexQuota(fullStdout)) {
+    // Pull the literal ERROR line for a usable message; fall back to a
+    // truncated tail so we never lose the signal.
+    const errorLine =
+      [fullStderr, fullStdout]
+        .flatMap((s) => s.split('\n'))
+        .find((l) => /ERROR:.*usage limit/i.test(l))
+        ?.trim() ?? 'codex usage limit reached';
+    return [
+      {
+        type: 'error',
+        kind: 'quota_exhausted',
+        message: errorLine,
+      },
+    ];
+  }
+
+  if (code !== null && code !== 0) {
+    const tail = (fullStderr.trim() || fullStdout.trim()).slice(-300);
+    return [
+      {
+        type: 'error',
+        kind: 'cli_error',
+        message: tail.length > 0 ? tail : `codex exited ${code} with no output`,
+      },
+    ];
+  }
+
+  // code===0 + empty stdout — preserve old "emit nothing" behavior.
+  return [];
 }
 
 // ============================================================================
@@ -345,10 +405,69 @@ export function runTests(): void {
   console.log('✓ Test 6 (parseOpencodeExit — raw text fallback): PASS');
 
   // ─── Codex on-exit ─────────────────────────────────────────────────────
-  const codexEvents = parseCodexExit('Code reviewed.\nVerdict: approve.');
+  const codexEvents = parseCodexExit('Code reviewed.\nVerdict: approve.', '', 0);
   assertEq(codexEvents.length, 1, 'Test 7: codex exit → 1 event');
   assertEq(codexEvents[0].type, 'message_done', 'Test 7: kind is message_done');
   console.log('✓ Test 7 (parseCodexExit): PASS');
+
+  // ─── Codex quota-exhausted detection (real stderr, captured 2026-05-02) ──
+  // ChatGPT-plan codex emits to STDERR and exits 1 — fullStdout is empty.
+  // Without detection we wrote 0-byte answer.md and the reviewer phase
+  // looked silent. Now: emit error{kind:'quota_exhausted'} so the runner
+  // surfaces it as cli_error.
+  const quotaStderr =
+    "OpenAI Codex v0.128.0 (research preview)\n" +
+    "session id: 019de827-...\n" +
+    "user\nsay hello\n" +
+    "ERROR: You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at May 8th, 2026 9:05 PM.\n";
+  const quotaEvents = parseCodexExit('', quotaStderr, 1);
+  assertEq(quotaEvents.length, 1, 'Test 7b: quota exit → 1 event');
+  assertEq(quotaEvents[0].type, 'error', 'Test 7b: type is error');
+  assertEq(
+    (quotaEvents[0] as { type: 'error'; kind: string }).kind,
+    'quota_exhausted',
+    'Test 7b: kind is quota_exhausted',
+  );
+  assert(
+    /usage limit/i.test((quotaEvents[0] as { message: string }).message),
+    'Test 7b: error message preserves the literal ERROR line',
+  );
+  console.log('✓ Test 7b (parseCodexExit quota detection): PASS');
+
+  // ─── Codex generic non-zero exit ───────────────────────────────────────
+  const crashEvents = parseCodexExit('', 'panic: something\nbye\n', 134);
+  assertEq(crashEvents.length, 1, 'Test 7c: crash exit → 1 event');
+  assertEq(crashEvents[0].type, 'error', 'Test 7c: type is error');
+  assertEq(
+    (crashEvents[0] as { type: 'error'; kind: string }).kind,
+    'cli_error',
+    'Test 7c: kind is cli_error (not quota)',
+  );
+  console.log('✓ Test 7c (parseCodexExit generic failure): PASS');
+
+  // ─── Codex empty-stdout-zero-exit (legacy "no output" no-op) ───────────
+  const silentEvents = parseCodexExit('', '', 0);
+  assertEq(silentEvents.length, 0, 'Test 7d: silent zero-exit → 0 events');
+  console.log('✓ Test 7d (parseCodexExit silent zero-exit): PASS');
+
+  // ─── Codex anchored regex — echoed prompt phrases must NOT misclassify ──
+  // Round-1 review (PR #9) caught the unanchored alternation. Codex `exec`
+  // echoes the user prompt back into stderr; a legitimate review brief
+  // containing "try again at midnight" or "upgrade to Plus" used to false-
+  // positive into quota_exhausted, dropping the real crash diagnostic.
+  // Now: gate is anchored on the literal ERROR: prefix.
+  const echoedStderr =
+    "user\nReview the doc that says 'try again at midnight' and 'upgrade to Plus'.\n" +
+    "panic: codex worker crashed\n";
+  const echoedEvents = parseCodexExit('', echoedStderr, 1);
+  assertEq(echoedEvents.length, 1, 'Test 7e: echoed phrases → 1 event');
+  assertEq(echoedEvents[0].type, 'error', 'Test 7e: type is error');
+  assertEq(
+    (echoedEvents[0] as { type: 'error'; kind: string }).kind,
+    'cli_error',
+    'Test 7e: kind is cli_error (NOT quota_exhausted) — the literal ERROR: prefix was missing',
+  );
+  console.log('✓ Test 7e (parseCodexExit anchored regex — no echo false-positive): PASS');
 
   // ─── Gemini parser — real fixture captured 2026-04-30 ──────────────────
   const geminiFixture = [

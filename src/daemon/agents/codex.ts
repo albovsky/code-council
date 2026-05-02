@@ -22,8 +22,13 @@ import os from 'os';
 /**
  * Resolve CODEX_HOME for this spawn.
  *
- * - When `accountId` is undefined/empty: reuse the user's existing `~/.codex/`
- *   (their primary login). v0.5 single-user default — no isolation needed.
+ * - `CHORUS_CODEX_HOME` env var (when set) wins on the single-user path.
+ *   Lets users point chorus at a non-rate-limited codex account
+ *   (e.g. `~/.codex-cdx-2`) without forking the shim or wiring multi-account
+ *   isolation. Ignored when `accountId` is explicit — that path already owns
+ *   account selection.
+ * - When `accountId` is undefined/empty AND no env override: reuse the user's
+ *   existing `~/.codex/` (their primary login). v0.5 single-user default.
  * - When `accountId` is explicit: create/reuse `~/.codex-<accountId>/` for
  *   parallel multi-account isolation. Copies config.toml from the primary
  *   home; NEVER copies auth.json (each account must have its own login).
@@ -33,6 +38,13 @@ function ensureCodexHome(accountId: string | undefined): string {
   const primary = path.join(homeDir, '.codex');
 
   if (!accountId) {
+    const override = process.env.CHORUS_CODEX_HOME?.trim();
+    if (override && override.length > 0) {
+      // Trust the user — if the dir doesn't exist or has no auth.json, codex
+      // exec will fail loudly (which is now surfaced via quota_exhausted /
+      // cli_error). Better than silently picking the rate-limited primary.
+      return override;
+    }
     // Single-user fast path — use the user's existing login.
     return primary;
   }
@@ -159,7 +171,8 @@ export const codexShim: AgentShim = {
       cwd: opts.cwd,
       env: { CODEX_HOME: codexHome },
       parseLine: parseCodex,
-      onExit: (fullStdout) => parseCodexExit(fullStdout),
+      onExit: (fullStdout, fullStderr, code) =>
+        parseCodexExit(fullStdout, fullStderr, code),
       cli: 'codex',
       timeoutMs: opts.timeoutMs,
       abortSignal: opts.abortSignal,

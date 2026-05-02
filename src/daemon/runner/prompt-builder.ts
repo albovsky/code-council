@@ -131,18 +131,37 @@ export function packAttachedFiles(
 }
 
 /**
- * Wrap a persona system_prompt in a header block for ask.md. Returns
+ * Wrap a persona system_prompt in a fenced block for ask.md. Returns
  * empty string when no persona prompt is provided so call sites can do
  * `[personaBlock(...), ...rest].join('\n')` without conditionals.
  *
- * Format kept deliberately minimal — the system prompt itself sets the
- * worldview; we just give it a header the reviewer can scan past. Don't
- * add markdown-fence the system prompt itself or it inherits whatever
- * fence-quoting rules the LLM applies to fenced content.
+ * **Fence rationale (retroactive PR #17 review, all 3 reviewers flagged):**
+ * persona.system_prompt is user-editable text from the personas table.
+ * Without delimiters a malicious or just typo'd persona can ship markdown
+ * structure (`# heading`, `---` HR, ``` code fences) that bleeds into the
+ * task framing — at best confusing the LLM about heading hierarchy, at
+ * worst overriding "Your role" / "How to respond" sections downstream.
+ *
+ * We use HTML/XML-style tags rather than markdown fences because:
+ *   - Markdown fences would force the LLM to read the persona AS code,
+ *     not instructions.
+ *   - HTML tags are widely understood by current LLMs as semantic
+ *     boundaries (Anthropic + OpenAI both document this pattern).
+ *   - A persona that contains the literal `</persona_instructions>` to
+ *     try to break out is the only escape vector, and we strip it.
  */
 export function personaPromptBlock(systemPrompt: string | undefined): string {
   if (!systemPrompt || systemPrompt.trim().length === 0) return '';
-  return ['## Persona', systemPrompt.trim(), ''].join('\n');
+  // Defensive escape: strip any closing tag that would break out of our
+  // fence. Keeps the worst case (a malicious persona) from rewriting the
+  // task framing. Open tags are harmless; only the closer matters.
+  const sanitized = systemPrompt.trim().replace(/<\/persona_instructions>/gi, '');
+  return [
+    '<persona_instructions>',
+    sanitized,
+    '</persona_instructions>',
+    '',
+  ].join('\n');
 }
 
 /** Build the doer ask.md prompt for one phase iteration. */

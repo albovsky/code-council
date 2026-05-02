@@ -520,16 +520,51 @@ async function runDoer(
   const askFile = path.join(doerDir, 'ask.md');
   const answerFile = path.join(doerDir, 'answer.md');
 
-  // Resolve doer persona (if any) — silent fallback when the id is
-  // missing from the personas table so an out-of-sync template can't
-  // hard-fail a chat. Cockpit-side validation covers the happy path.
+  // Resolve doer persona (if any). Falls back to no-persona prompt when
+  // the id can't be resolved — but emits cli_warning so the cockpit can
+  // surface the misconfiguration. Without the warning, retroactive PR #17
+  // review (gemini + opencode-deepseek + opencode-kimi) flagged that a
+  // user typoing a persona id silently runs the chat with a generic
+  // prompt and no UX signal.
   let doerPersonaPrompt: string | undefined;
   if ('persona' in phase.doer && phase.doer.persona) {
+    const personaId = phase.doer.persona;
     try {
-      const row = await personas.getById(phase.doer.persona);
-      if (row) doerPersonaPrompt = row.system_prompt;
-    } catch {
-      /* persona lookup is best-effort */
+      const row = await personas.getById(personaId);
+      if (row) {
+        doerPersonaPrompt = row.system_prompt;
+      } else {
+        onEvent({
+          chatId,
+          type: 'cli_warning',
+          payload: {
+            phaseId: phase.id,
+            phaseIdx,
+            round,
+            role: 'doer',
+            agent: agentName,
+            kind: 'persona_missing',
+            message: `Doer persona "${personaId}" not found in personas table — running with generic prompt. Check the template's doer.persona field.`,
+          },
+          ts: Date.now(),
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onEvent({
+        chatId,
+        type: 'cli_warning',
+        payload: {
+          phaseId: phase.id,
+          phaseIdx,
+          round,
+          role: 'doer',
+          agent: agentName,
+          kind: 'persona_lookup_failed',
+          message: `Doer persona lookup for "${personaId}" failed: ${message} — running with generic prompt.`,
+        },
+        ts: Date.now(),
+      });
     }
   }
 
@@ -908,15 +943,46 @@ async function runReviewer(
   const askFile = path.join(reviewerDir, 'ask.md');
   const answerFile = path.join(reviewerDir, 'answer.md');
 
-  // Resolve reviewer persona — see runDoer for rationale on the silent
-  // fallback. `candidate.persona` is optional in the schema.
+  // Resolve reviewer persona — same fallback + warning pattern as runDoer.
   let reviewerPersonaPrompt: string | undefined;
   if (candidate.persona) {
+    const personaId = candidate.persona;
     try {
-      const row = await personas.getById(candidate.persona);
-      if (row) reviewerPersonaPrompt = row.system_prompt;
-    } catch {
-      /* persona lookup is best-effort */
+      const row = await personas.getById(personaId);
+      if (row) {
+        reviewerPersonaPrompt = row.system_prompt;
+      } else {
+        onEvent({
+          chatId,
+          type: 'cli_warning',
+          payload: {
+            phaseId: phase.id,
+            phaseIdx,
+            round,
+            role: 'reviewer',
+            agent: `${agentName}-${reviewerIdx}`,
+            kind: 'persona_missing',
+            message: `Reviewer persona "${personaId}" not found in personas table — running with generic prompt. Check the template's reviewer candidate persona field.`,
+          },
+          ts: Date.now(),
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onEvent({
+        chatId,
+        type: 'cli_warning',
+        payload: {
+          phaseId: phase.id,
+          phaseIdx,
+          round,
+          role: 'reviewer',
+          agent: `${agentName}-${reviewerIdx}`,
+          kind: 'persona_lookup_failed',
+          message: `Reviewer persona lookup for "${personaId}" failed: ${message} — running with generic prompt.`,
+        },
+        ts: Date.now(),
+      });
     }
   }
 

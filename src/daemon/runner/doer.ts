@@ -16,6 +16,7 @@
  *   - StreamFileWriter buffer is flushed in the finally block on every path
  */
 import * as fs from 'fs';
+import * as path from 'path';
 import type { StandardPhase } from '../../lib/template-schema.js';
 import { DEFAULT_PHASE_TIMEOUT_MS } from '../../lib/template-schema.js';
 import type { AgentShim } from '../agents/types.js';
@@ -172,10 +173,10 @@ export async function runDoerHeadless(args: {
         // flip the card immediately rather than wait for the 8s polling
         // tick. Mirrored in reviewer.ts.
         // Persist runtime stats next to answer.md — see reviewer.ts for
-        // rationale. answerFile is at <doerDir>/answer.md so the sidecar
-        // path drops `answer.md` and appends `_stats.json`.
+        // rationale. Use path.dirname + path.join (clearer than the
+        // anchored regex; flagged in retroactive PR #16 review).
         try {
-          const statsPath = answerFile.replace(/answer\.md$/, '_stats.json');
+          const statsPath = path.join(path.dirname(answerFile), '_stats.json');
           fs.writeFileSync(
             statsPath,
             JSON.stringify({
@@ -187,6 +188,12 @@ export async function runDoerHeadless(args: {
         } catch {
           /* sidecar is informational; ignore write errors */
         }
+        // participant_done payload carries identity only — the cockpit
+        // refetches /api/run-artifacts on this event to pick up the
+        // sidecar-backed stats. Earlier diff also embedded durationMs
+        // and usage in the SSE payload; retroactive PR #16 review by
+        // both opencode reviewers flagged those as dead bytes never
+        // consumed on the cockpit side.
         onEvent({
           chatId,
           type: 'participant_done',
@@ -195,8 +202,6 @@ export async function runDoerHeadless(args: {
             round,
             role: 'doer',
             agent: agentName,
-            durationMs: Date.now() - startedAt,
-            ...(capturedUsage ? { usage: capturedUsage } : {}),
           },
           ts: Date.now(),
         });

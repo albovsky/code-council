@@ -8,6 +8,7 @@
  * Tested by tests/runner-reviewer.test.ts.
  */
 import * as fs from 'fs';
+import * as path from 'path';
 import type { StandardPhase } from '../../lib/template-schema.js';
 import { DEFAULT_PHASE_TIMEOUT_MS } from '../../lib/template-schema.js';
 import type { AgentShim } from '../agents/types.js';
@@ -149,7 +150,7 @@ export async function runReviewerHeadless(args: {
         // effort, ignore errors.
         try {
           fs.writeFileSync(
-            `${reviewerDir}/_stats.json`,
+            path.join(reviewerDir, '_stats.json'),
             JSON.stringify({
               durationMs: Date.now() - startedAt,
               ...(capturedUsage ? { usage: capturedUsage } : {}),
@@ -159,9 +160,10 @@ export async function runReviewerHeadless(args: {
         } catch {
           /* sidecar is informational; ignore write errors */
         }
-        // Tell the cockpit this reviewer is fully on disk so it can
-        // flip the card immediately rather than wait for the 8s polling
-        // tick. Mirrored in doer.ts.
+        // participant_done payload carries identity only. The cockpit
+        // refetches /api/run-artifacts on this event to pick up the
+        // sidecar-backed stats — see retroactive PR #16 review for why
+        // duplicating durationMs/usage in the SSE payload was dead bytes.
         onEvent({
           chatId,
           type: 'participant_done',
@@ -170,8 +172,6 @@ export async function runReviewerHeadless(args: {
             round,
             role: 'reviewer',
             agent: `${agentName}-${reviewerIdx}`,
-            durationMs: Date.now() - startedAt,
-            ...(capturedUsage ? { usage: capturedUsage } : {}),
           },
           ts: Date.now(),
         });

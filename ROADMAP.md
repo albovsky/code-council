@@ -33,6 +33,7 @@ This is the seed of the **template marketplace**: an asset class that didn't exi
 | MCP `list_personas` + `invoke_persona` | 0.7 | ✅ DONE | 9 MCP tools total |
 | Voices abstraction (table + auto-populate + 6 UI surfaces) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #2 c758e80); 71 voices auto-seed across 5 lineages; vendor_family taxonomy |
 | libsql migration (better-sqlite3 → @libsql/client, no node-gyp) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #1 1441532); fixes `npm install -g` on Windows / locked-down boxes |
+| Review-only mode (artifact in, no doer; substrate + cockpit + verdict persistence) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #4 b21a4b8); unlocks `/work` & MCP harnesses calling chorus as a pure review service |
 | OpenRouter inline flow (validate → fetch models → multi-add) | 0.7 | ⏳ NEXT | builds on voices table; POST /voices already exists |
 | Phase composition UI (drag/reorder, edit prompts) | 0.7 | 📐 PLANNED | depends on voices + OpenRouter; unlocks per-phase persona binding |
 | Default chorus-on-chorus template (Sentinel + Cartographer + Accountant + Translator) | 0.7 | 📐 PLANNED | bakes meta-fix |
@@ -94,13 +95,34 @@ Each prompt is a *worldview*, not a checklist — single role, list of red flags
 - `list_personas()` → `{ personas: [{id, label, oneLiner, recommendedLineage, builtin}] }`
 - `invoke_persona({personaId, brief, repoPath?, files?, template?})` → `{chatId, status, url}` — fires a real chat with the persona's system_prompt prepended to the user's brief.
 
-> ⚠️ **Current limitation — one persona, all voices.** Today `invoke_persona` prepends a *single* persona's system_prompt to the brief, then runs whatever template is chosen. Every voice in every phase of that template sees the same persona overlay. There is no per-phase persona binding yet. So if a template has 3 voices across Discover/Develop/Decide, all 3 voices speak as e.g. Cartographer — you cannot say "Cartographer drives Discover, Sentinel drives Develop, Accountant drives Decide" until **Phase composition (item 4 below)** lands. This is fine for the v0.7 migration audit (one-persona-per-file is enough for findings) but is the headline gap before the marketplace pitch lands. Don't forget.
+> ⚠️ **Current limitation — one persona, all voices.** Today `invoke_persona` prepends a *single* persona's system_prompt to the brief, then runs whatever template is chosen. Every voice in every phase of that template sees the same persona overlay. There is no per-phase persona binding yet. So if a template has 3 voices across Discover/Develop/Decide, all 3 voices speak as e.g. Cartographer — you cannot say "Cartographer drives Discover, Sentinel drives Develop, Accountant drives Decide" until **Phase composition (item 5 below)** lands. This is fine for the v0.7 migration audit (one-persona-per-file is enough for findings) but is the headline gap before the marketplace pitch lands. Don't forget.
 
 ### 2. Voices (DONE 2026-05-02 — PR #2 c758e80)
 
 Shipped: `voices` table with `(id, label, source, provider, model_id, lineage, vendor_family, input_cost_per_mtok, output_cost_per_mtok, enabled)`. Auto-populated on daemon boot — Phase 1 (sync, pre-listen) seeds single-model CLIs with immutable IDs (`claude-code`, `codex-cli`, …); Phase 2 (background, post-listen) shells `opencode models` for multi-model OpenCode voices. First-boot migration from `<lineage>.enabled_models` settings preserves prior toggles. Lineage stays in existing 5-enum; `vendor_family` carries the finer taxonomy (deepseek/meta/mistral/xai). Full GET/POST/PUT/DELETE routes; 6 UI surfaces (home fleet cards, /connect, onboarding, phase-editor) read from `/voices`. See [planning/voices.md](planning/voices.md).
 
-### 3. OpenRouter inline (NEXT — builds on voices)
+### 3. Review-only mode (DONE 2026-05-02 — PR #4 b21a4b8)
+
+A new phase kind, `review_only`, that takes the artifact as runtime input and skips doer spawn entirely. The unlock for `/work` and other harnesses to call chorus as a pure review service: `MCP create_chat({template: "review-only", artifact: <diff/draft/blob>})`.
+
+Shipped:
+- **Schema** — `PhaseSchema` is now a discriminated union by `kind`. `review_only` variant requires `reviewer` + `artifact { label, hint, maxBytes (default 1 MiB) }` instead of a doer block. `.refine` rejects hybrid templates (review_only mixed with standard) at parse time.
+- **Runner** — `runReviewOnlyPhase` writes the artifact synthetically as the doer answer, emits synthetic `phase_start`/`phase_progress` events with `agent: 'artifact'`, then runs reviewers via the existing pool with `iterate.maxRounds = 1`. Single pass — no retry. Ship phase force-skipped (no doer diff to commit).
+- **DB** — `chats.artifact TEXT` (nullable; capped by template) + `chats.verdict TEXT` (nullable; persisted from `chat_done` so list views can distinguish `verdict='request_changes'` from `verdict='approved'`). Both via idempotent `ADD COLUMN`.
+- **Endpoint** — `POST /chats` validates artifact: required when first phase is `review_only`, rejected for non-review-only templates, capped at the template's `maxBytes`.
+- **MCP** — `create_chat` gains optional `artifact` param.
+- **Cockpit** — "Review only" pill in the template picker. Form swaps task ↔ artifact textarea (monospace, taller, hint placeholder, byte-cap badge). Doer indicator + repo-path block hidden. Run page hides the doer card and round indicators (single pass — no rounds to disambiguate).
+- **`buildReviewerAsk` cap raised 2 KB → 256 KB** byte-aware (walks back UTF-8 continuation bytes so multi-byte runes aren't split into U+FFFD). Pre-existing legacy cap was silently truncating any review > ~50 lines; review-only mode just made it impossible to ignore.
+- **Verdict surfacing** — `chat_done` now reports the real reviewer consensus (`approved` vs `request_changes`) instead of always `approved`. Standard templates untouched (verdict-tracking only kicks in when a review-only phase ran).
+- **Built-in template** — `templates/review-only.yaml` (codex + gemini + claude reviewers, `require: 2`, `crossLineage: true`, `ship.enabled: false`).
+
+Built using its own substrate as the dogfood gate — each commit was reviewed by the new template before the next built on it. Round-2 triage caught 4 real bugs (abort race, ship-skip enforcement, UTF-8 boundary, hybrid validation) all fixed in-branch. 18 new tests; 216/216 passing.
+
+Out of scope (deferred):
+- Multi-pass review-only with cockpit-driven revision loop. Today: revise yourself, resubmit a fresh chat.
+- `chorus run` / `chorus review` CLI subcommands. Substrate ready; CLI wiring tracked separately in [`planning/cli-task-surface.md`](planning/cli-task-surface.md).
+
+### 4. OpenRouter inline (NEXT — builds on voices)
 
 **UX flow** on the OpenRouter row in onboarding/Settings:
 
@@ -142,7 +164,7 @@ Shipped: `voices` table with `(id, label, source, provider, model_id, lineage, v
 
 **Cost surfacing** — per-1M-token costs shown in picker. Template designer later shows "this template will cost ~$X per run" (sum of expected tokens × per-model cost). Avoids the bill-shock failure mode.
 
-### 4. Phase composition (PLANNED) — **unlocks per-phase persona binding**
+### 5. Phase composition (PLANNED) — **unlocks per-phase persona binding**
 
 This is what removes the §1 limitation. Until this ships, `invoke_persona` is a one-persona-overlay-on-all-voices coarse hammer. After this ships, each phase row owns its own `(voice_id, persona_id)` pair, so a template can route Cartographer → Discover, Sentinel → Develop, Accountant → Decide.
 
@@ -160,11 +182,11 @@ phase {
 
 UI: drag-to-reorder, add/remove phases, fork from existing template. Token inserts in prompts: `{{user_brief}}`, `{{prior_phase_outputs}}`, `{{repo_diff}}`, `{{file_path}}`.
 
-### 5. Default chorus-on-chorus template (PLANNED)
+### 6. Default chorus-on-chorus template (PLANNED)
 
 Hard-codes Sentinel + Cartographer + Accountant + Translator as the four reviewer slots in chorus's own audit template. The next person reviewing chorus *can't* skip those four lenses — bakes the meta-lessons into the product.
 
-### 6. Migration to chorus-codes (NEXT)
+### 7. Migration to chorus-codes (NEXT)
 
 After v0.7 ships:
 
@@ -328,6 +350,8 @@ Migration of pre-v0.7 templates: convert each existing phase to a row with `pers
 // LIVE
 list_personas() → { personas: Persona[] }
 invoke_persona({personaId, brief, repoPath?, files?, template?}) → ChatRef
+create_chat({work, template?, files?, artifact?}) → ChatRef
+   // artifact required when template's first phase is review_only
 
 // PLANNED
 list_voices() → { voices: Voice[] }

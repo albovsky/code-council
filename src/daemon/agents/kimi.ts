@@ -193,7 +193,15 @@ export const kimiShim: AgentShim = {
       ? rawModel
       : `opencode-go/${rawModel}`;
     writeTransportMeta(opts.cwd, 'opencode-cli', model);
-    const args = ['run', '--format', 'json', '--model', model, opts.promptText];
+    // Argv-overflow guard: stash the prompt on disk and pass a tiny argv
+    // directive instead of the full prompt. Mirrors opencodeShim — see its
+    // runHeadless for why (opencode `run` only takes a positional argv).
+    const promptPath = path.join(opts.cwd, 'prompt.md');
+    fs.writeFileSync(promptPath, opts.promptText, 'utf-8');
+    const directive =
+      `Open the file at this absolute path using your read tool: ${promptPath} ` +
+      `— follow the instructions inside exactly and respond with your full answer in this conversation, ending with ## DONE.`;
+    const args = ['run', '--format', 'json', '--model', model, directive];
     const run = spawnHeadless({
       command: 'opencode',
       args,

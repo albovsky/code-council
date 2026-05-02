@@ -15,6 +15,8 @@ import type {
 import { quotePath, validateValue } from './quote.js';
 import { spawnHeadless } from '../headless.js';
 import { parseOpencode, parseOpencodeExit } from './parsers.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export const opencodeShim: AgentShim = {
   lineage: 'opencode',
@@ -58,18 +60,41 @@ export const opencodeShim: AgentShim = {
   },
 
   /**
-   * Headless mode (`opencode run --format json "<prompt>"`).
+   * Headless mode (`opencode run --format json "<tiny argv> @prompt.md"`).
    *
-   * OpenCode's `run` is one-shot — emits a single JSON blob at the end with
+   * OpenCode `run` is one-shot — emits a single JSON blob at the end with
    * the final message. parseOpencode returns [] on every line; the on-exit
    * handler parses the full blob into a message_done event. Heartbeat is on
    * so the UI shows the agent is alive during the silent run.
+   *
+   * Argv-overflow guard: opencode's `run` only accepts the prompt as a
+   * positional argv (no stdin support — verified 2026-05-02 with `opencode
+   * run --help`). For chorus self-reviews on real PR diffs the prompt
+   * crosses 100KB and shell-quoting / ARG_MAX bites. Workaround mirrors
+   * the tmux path: write the prompt to `<cwd>/prompt.md` and pass a tiny
+   * directive on argv telling opencode to read that file using its read
+   * tool. The chat dir is always the cwd, so the relative path resolves
+   * inside opencode's allowed workspace.
    */
   runHeadless(opts: HeadlessSpawnOptions): AsyncIterable<AgentEvent> {
+    // Sidestep both ARG_MAX and shell-escape pitfalls by stashing the prompt
+    // on disk. The chat dir already exists (the runner creates it before
+    // spawning), so this never fails on first call.
+    const promptPath = path.join(opts.cwd, 'prompt.md');
+    fs.writeFileSync(promptPath, opts.promptText, 'utf-8');
+
+    // CRITICAL: Single-line message. Never lead with `/` or `@`.
+    // Plain text path reference matches the tmux formatPrompt pattern.
+    // Don't tell opencode to write answer.md — the runner captures stdout
+    // JSON via parseOpencodeExit and writes the file itself; a tool-side
+    // write would race with the runner's clobber on message_done.
+    const directive =
+      `Open the file at this absolute path using your read tool: ${promptPath} ` +
+      `— follow the instructions inside exactly and respond with your full answer in this conversation, ending with ## DONE.`;
+
     const args = ['run', '--format', 'json'];
     if (opts.model) args.push('--model', opts.model);
-    // Pass prompt as final positional arg.
-    args.push(opts.promptText);
+    args.push(directive);
 
     const run = spawnHeadless({
       command: 'opencode',

@@ -121,12 +121,13 @@ export const codexShim: AgentShim = {
   },
 
   /**
-   * Headless mode (`codex exec`).
+   * Headless mode (`codex exec -`).
    *
-   * Codex `exec` accepts a prompt on argv (or stdin if argv empty) and
-   * writes plain stdout — no stream-json. parseCodex returns [] every line;
-   * on exit we emit one message_done with the full stdout. Heartbeat is on
-   * so the UI shows progress during the silent run.
+   * Codex `exec` accepts the prompt either as a positional arg or, when `-`
+   * is passed (or no positional), on stdin. We always pipe via stdin so big
+   * diff reviews (chorus self-review on a 100KB+ PR diff) don't hit the OS
+   * argv ceiling — a single large argv string crosses ARG_MAX on some shells
+   * and triggers truncation/silent failure modes upstream.
    *
    * Sandbox flags forwarded same as the tmux path. Codex's `exec` honors
    * `-c sandbox_mode=...` and `-c sandbox_workspace_write.network_access=...`
@@ -162,14 +163,15 @@ export const codexShim: AgentShim = {
       args.push('--model', opts.model);
     }
 
-    // Codex exec accepts the prompt as the final positional arg.
-    args.push(opts.promptText);
+    // `-` tells codex exec to read the prompt from stdin.
+    args.push('-');
 
     const run = spawnHeadless({
       command: 'codex',
       args,
       cwd: opts.cwd,
       env: { CODEX_HOME: codexHome },
+      stdinPayload: opts.promptText,
       parseLine: parseCodex,
       onExit: (fullStdout, fullStderr, code) =>
         parseCodexExit(fullStdout, fullStderr, code),

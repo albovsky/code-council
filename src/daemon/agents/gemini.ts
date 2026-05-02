@@ -57,29 +57,31 @@ export const geminiShim: AgentShim = {
   },
 
   /**
-   * Headless mode (`gemini -p "<prompt>" --output-format stream-json`).
+   * Headless mode (`gemini -p " " --output-format stream-json` + stdin).
    *
-   * Gemini takes the prompt on argv (not stdin) — we pass it as the -p value.
-   *
-   * **Multi-line prompt bug:** Gemini's -p mode hangs indefinitely when the
-   * prompt contains newlines (verified 2026-04-30 with gemini-3.1-pro-preview
-   * — process spawns, holds the API call, but never emits any stream-json
-   * event). Mirrors the interactive-mode bug captured in
-   * feedback_gemini_multiline_prompts.md. Workaround: flatten the prompt to
-   * a single line before passing.
+   * Gemini's `-p`/`--prompt` value is appended to anything piped on stdin
+   * ("Appended to input on stdin (if any)" — verified `gemini --help`
+   * 2026-05-02). We pipe the full multi-line prompt via stdin and pass a
+   * placeholder `" "` (single space) on `-p` to mark the run non-interactive.
+   * This dodges:
+   *   1. argv overflow on big diffs (chorus self-reviews routinely cross
+   *      100KB+ — argv hits ARG_MAX or shell-quoting issues).
+   *   2. The historical "-p with newlines hangs" bug — irrelevant once the
+   *      multi-line content lives on stdin.
    *
    * Format verified 2026-04-30; see parseGemini for shape.
    */
   runHeadless(opts: HeadlessSpawnOptions): AsyncIterable<AgentEvent> {
-    // Flatten newlines to spaces to dodge the multi-line hang. We also collapse
-    // runs of whitespace so the resulting single-line prompt stays readable
-    // for Gemini and doesn't blow past argv limits with redundant spaces.
-    const flatPrompt = opts.promptText
-      .replace(/\r?\n/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const args = ['-p', flatPrompt, '--output-format', 'stream-json', '--skip-trust'];
+    // -p needs a non-empty value to flip gemini into non-interactive mode.
+    // The single-space placeholder is harmless once stdin carries the real
+    // prompt (gemini concatenates them with the stdin content first).
+    const args = [
+      '-p',
+      ' ',
+      '--output-format',
+      'stream-json',
+      '--skip-trust',
+    ];
 
     // Sandbox profile → approval-mode mapping. Never use yolo
     // (see feedback_gemini_yolo_dangerous.md — empty-content overwrites).
@@ -97,7 +99,7 @@ export const geminiShim: AgentShim = {
       command: 'gemini',
       args,
       cwd: opts.cwd,
-      // Gemini reads the prompt from argv, not stdin — no stdinPayload.
+      stdinPayload: opts.promptText,
       env: {
         // Defense in depth: env-var trust override matches the --skip-trust flag.
         GEMINI_CLI_TRUST_WORKSPACE: 'true',

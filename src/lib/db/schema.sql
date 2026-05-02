@@ -72,5 +72,43 @@ CREATE TABLE IF NOT EXISTS personas (
   updated_at INTEGER NOT NULL
 );
 
+-- Voices: a routable model surface unifying CLI subscriptions and
+-- API-routed providers (added in v0.7).
+--
+-- A voice = (id, label, source, provider, model_id, lineage, vendor_family,
+-- input_cost_per_mtok, output_cost_per_mtok, enabled).
+--
+-- ID conventions:
+--   - Single-model CLIs:  id = '<provider>'  (immutable, e.g. 'claude-code'.
+--                         model_id + label rewrite on each seed; the row
+--                         never rotates to a versioned ID.)
+--   - Multi-model CLIs:   id = '<provider>:<gateway-prefixed-model>'
+--                         (e.g. 'opencode-cli:opencode-go/kimi-k2.6'.)
+--   - API providers:      id = '<provider>:<canonical-model-id>'
+--                         (e.g. 'openrouter:moonshotai/kimi-k2'.)
+--
+-- lineage stays in the existing daemon-side 5-enum
+-- (anthropic|openai|google|opencode|moonshot — see
+-- src/daemon/agents/types.ts). vendor_family carries the finer taxonomy
+-- (deepseek|meta|mistral|xai|...) where the lineage is too coarse,
+-- without widening the daemon Lineage type.
+CREATE TABLE IF NOT EXISTS voices (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  source TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  lineage TEXT NOT NULL,
+  vendor_family TEXT,
+  input_cost_per_mtok REAL,
+  output_cost_per_mtok REAL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_chats_status ON chats(status);
 CREATE INDEX IF NOT EXISTS idx_phase_events_chat ON phase_events(chat_id, phase_idx);
+CREATE INDEX IF NOT EXISTS idx_voices_lineage ON voices(lineage);
+CREATE INDEX IF NOT EXISTS idx_voices_provider ON voices(provider);
+CREATE INDEX IF NOT EXISTS idx_voices_source ON voices(source);

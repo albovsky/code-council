@@ -58,6 +58,7 @@ describe('getDb() init', () => {
     expect(names).toContain('settings');
     expect(names).toContain('secrets');
     expect(names).toContain('personas');
+    expect(names).toContain('voices');
   });
 
   it('idempotent ALTER TABLE — re-init on existing DB does not error', async () => {

@@ -6,9 +6,11 @@
  * OpencodeFleetCard but skips the gateway grouping — these CLIs back a
  * single subscription with a flat list of models.
  *
- * Settings key: `<lineage>.enabled_models` (e.g. "claude.enabled_models").
- * Each toggle PUTs settings immediately so changes are live without a
- * save button.
+ * Data source: voices table via /voices?provider=<id>. Each toggle calls
+ * PUT /voices/:id immediately so changes are live without a save button.
+ *
+ * Shows ALL voices (enabled + disabled) so users can re-enable from the
+ * fleet card without going through onboarding.
  */
 
 import { useState } from "react";
@@ -20,7 +22,8 @@ import {
   Check,
 } from "lucide-react";
 import { lineageDot } from "@/lib/lineage-maps";
-import { updateSettings, DaemonError } from "@/lib/api";
+import { updateVoice, type Voice } from "@/lib/api/voices";
+import { DaemonError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 interface LineageFleetCardProps {
@@ -28,12 +31,8 @@ interface LineageFleetCardProps {
   lineage: string;
   /** Display label — "Claude Code", "Codex CLI", etc. */
   label: string;
-  /** Settings key for persisting the user's choice. */
-  settingsKey: string;
-  /** All models the user could enable. */
-  available: string[];
-  /** Current enabled subset. */
-  initialEnabled: string[];
+  /** Voices for this provider — both enabled and disabled. */
+  voices: Voice[];
   health: {
     status: "healthy" | "quota_exhausted" | "auth_invalid" | "rate_limited" | "unknown";
     message?: string;
@@ -43,35 +42,30 @@ interface LineageFleetCardProps {
 export function LineageFleetCard({
   lineage,
   label,
-  settingsKey,
-  available,
-  initialEnabled,
+  voices: initialVoices,
   health,
 }: LineageFleetCardProps) {
   const [open, setOpen] = useState(false);
-  const [enabled, setEnabled] = useState<string[]>(initialEnabled);
+  const [voices, setVoices] = useState<Voice[]>(initialVoices);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
 
-  async function persist(next: string[]) {
-    setSaving(true);
+  async function toggleVoice(v: Voice) {
+    setSaving(v.id);
     setSaveError(null);
     try {
-      await updateSettings({ [settingsKey]: next });
-      setEnabled(next);
+      const next = await updateVoice(v.id, { enabled: !v.enabled });
+      setVoices((prev) => prev.map((p) => (p.id === next.id ? next : p)));
     } catch (err) {
       const message =
         err instanceof DaemonError ? err.message : "Couldn't save. Is the daemon running?";
       setSaveError(message);
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   }
 
-  function toggleModel(m: string) {
-    const next = enabled.includes(m) ? enabled.filter((x) => x !== m) : [...enabled, m];
-    void persist(next);
-  }
+  const enabledCount = voices.filter((v) => v.enabled).length;
 
   return (
     <div className="rounded-lg border border-border bg-card transition-colors hover:border-foreground/20">
@@ -86,7 +80,7 @@ export function LineageFleetCard({
           <div className="mt-0.5 flex items-center gap-2">
             <StatusBadge status={health.status} />
             <span className="text-[10px] text-muted-foreground">
-              {enabled.length} model{enabled.length === 1 ? "" : "s"} enabled
+              {enabledCount} model{enabledCount === 1 ? "" : "s"} enabled
             </span>
           </div>
         </div>
@@ -101,40 +95,46 @@ export function LineageFleetCard({
       {open && (
         <div className="space-y-2 border-t border-border bg-card/50 p-3">
           {saveError && <p className="text-[11px] text-destructive">{saveError}</p>}
-          <div className="grid grid-cols-1 gap-1">
-            {available.map((m) => {
-              const sel = enabled.includes(m);
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => toggleModel(m)}
-                  title={m}
-                  className={cn(
-                    "flex items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] transition disabled:opacity-60",
-                    sel
-                      ? "border-primary/50 bg-primary/10 text-foreground"
-                      : "border-border bg-card hover:border-muted-foreground/30 text-muted-foreground",
-                  )}
-                >
-                  <div
+          {voices.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              No voices detected for this provider yet.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-1">
+              {voices.map((v) => {
+                const sel = v.enabled;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    disabled={saving === v.id}
+                    onClick={() => toggleVoice(v)}
+                    title={v.model_id}
                     className={cn(
-                      "grid h-3 w-3 shrink-0 place-items-center rounded-sm border transition",
+                      "flex items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] transition disabled:opacity-60",
                       sel
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border",
+                        ? "border-primary/50 bg-primary/10 text-foreground"
+                        : "border-border bg-card hover:border-muted-foreground/30 text-muted-foreground",
                     )}
                   >
-                    {sel && <Check className="h-2 w-2" />}
-                  </div>
-                  <span className="truncate font-mono">{m}</span>
-                </button>
-              );
-            })}
-          </div>
+                    <div
+                      className={cn(
+                        "grid h-3 w-3 shrink-0 place-items-center rounded-sm border transition",
+                        sel
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border",
+                      )}
+                    >
+                      {sel && <Check className="h-2 w-2" />}
+                    </div>
+                    <span className="truncate font-mono">{v.model_id}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <p className="text-[11px] leading-relaxed text-muted-foreground/70">
-            Toggles save automatically. Model list is curated per chorus release —
+            Toggles save automatically. Voice list is curated per chorus release —
             new models appear after upgrades.
           </p>
         </div>

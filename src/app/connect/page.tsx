@@ -6,39 +6,38 @@ import {
   type OrchestratorStatus,
 } from "@/lib/api";
 import { OrchestratorCard } from "@/components/orchestrator-card";
-import {
-  UI_LINEAGE_DEFAULT_MODEL,
-  type UILineage,
-} from "@/lib/lineage-maps";
 import { fetchFromDaemon } from "@/lib/api/client";
+import type { Voice } from "@/lib/api/voices";
 
-const ORCHESTRATOR_TO_UI: Record<string, UILineage> = {
-  claude: "claude",
-  codex: "codex",
-  gemini: "gemini",
-  opencode: "opencode",
-  kimi: "kimi",
+const ORCHESTRATOR_TO_PROVIDER: Record<string, string> = {
+  claude: "claude-code",
+  codex: "codex-cli",
+  gemini: "gemini-cli",
+  opencode: "opencode-cli",
+  kimi: "kimi-cli",
 };
 
 export const dynamic = "force-dynamic";
 
 interface PageData {
   orchestrators: OrchestratorStatus[];
-  settings: Record<string, unknown>;
+  voices: Voice[];
   error: string | null;
 }
 
 async function getPageData(): Promise<PageData> {
   try {
-    const [orchestrators, settings] = await Promise.all([
+    const [orchestrators, voices] = await Promise.all([
       listOrchestrators().catch(() => []),
-      fetchFromDaemon<Record<string, unknown>>("/settings").catch(() => ({})),
+      // Default GET /voices returns ALL rows (enabled + disabled) — fleet
+      // cards need both for the re-enable workflow.
+      fetchFromDaemon<Voice[]>("/voices?source=cli").catch(() => [] as Voice[]),
     ]);
-    return { orchestrators, settings, error: null };
+    return { orchestrators, voices, error: null };
   } catch (err) {
     return {
       orchestrators: [],
-      settings: {},
+      voices: [],
       error:
         err instanceof DaemonError ? err.message : "Failed to reach the daemon",
     };
@@ -46,14 +45,12 @@ async function getPageData(): Promise<PageData> {
 }
 
 export default async function ConnectPage() {
-  const { orchestrators, settings, error } = await getPageData();
+  const { orchestrators, voices, error } = await getPageData();
 
-  function readEnabled(uiLineage: UILineage): string[] {
-    const key = `${uiLineage}.enabled_models`;
-    const raw = settings[key];
-    if (Array.isArray(raw)) return raw as string[];
-    const def = UI_LINEAGE_DEFAULT_MODEL[uiLineage];
-    return def ? [def] : [];
+  function voicesForOrchestrator(name: string): Voice[] {
+    const provider = ORCHESTRATOR_TO_PROVIDER[name];
+    if (!provider) return [];
+    return voices.filter((v) => v.provider === provider);
   }
 
   return (
@@ -78,17 +75,13 @@ export default async function ConnectPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {orchestrators.map((o) => {
-                const ui = ORCHESTRATOR_TO_UI[o.name];
-                return (
-                  <OrchestratorCard
-                    key={o.name}
-                    initial={o}
-                    uiLineage={ui}
-                    initialEnabled={ui ? readEnabled(ui) : []}
-                  />
-                );
-              })}
+              {orchestrators.map((o) => (
+                <OrchestratorCard
+                  key={o.name}
+                  initial={o}
+                  voices={voicesForOrchestrator(o.name)}
+                />
+              ))}
             </div>
           )}
         </section>

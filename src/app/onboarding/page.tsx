@@ -269,17 +269,78 @@ export default function OnboardingPage() {
           networkAccess,
         });
 
-        // Persist the user's OpenCode model picks (if any) so templates
-        // and voice pickers downstream know which subscription models are
-        // available. Empty array = user has OpenCode but didn't pick any
-        // models — also valid (they may have selected only API keys).
-        const opencodeModelsToSave = selectedClis.has("opencode-cli")
-          ? Array.from(selectedOpencodeModels)
-          : [];
+        // Persist the user's OpenCode model picks (if any) by upserting
+        // the corresponding voice rows. We can't assume the daemon's
+        // Phase 2 background seed has completed — three round-1
+        // reviewers caught this race: PUT-only would silently drop
+        // the user's selection if the row didn't exist yet. So we list
+        // current voices, PUT existing rows, and POST missing ones.
+        if (selectedClis.has("opencode-cli") && opencodeModels) {
+          const { listVoices, updateVoice, createVoice } = await import(
+            "@/lib/api/voices"
+          );
+          const existing = new Map(
+            (await listVoices({ provider: "opencode-cli" }).catch(() => []))
+              .map((v) => [v.id, v]),
+          );
+
+          // Best-effort lineage classifier — mirrors the daemon's
+          // classifyOpencodeModel logic without importing it client-side.
+          // For uncovered models the lineage falls back to "opencode".
+          function classifyClient(qualified: string): {
+            lineage: "anthropic" | "openai" | "google" | "opencode" | "moonshot";
+            vendor_family: string | null;
+          } {
+            const slash = qualified.indexOf("/");
+            const tail = (slash >= 0 ? qualified.slice(slash + 1) : qualified).toLowerCase();
+            if (tail.includes("kimi")) return { lineage: "moonshot", vendor_family: null };
+            if (tail.includes("claude")) return { lineage: "anthropic", vendor_family: null };
+            if (tail.includes("gpt") || /(?:^|[^a-z])o[1-9](?:$|[^a-z0-9])/.test(tail))
+              return { lineage: "openai", vendor_family: null };
+            if (tail.includes("gemini")) return { lineage: "google", vendor_family: null };
+            if (tail.includes("deepseek")) return { lineage: "opencode", vendor_family: "deepseek" };
+            if (tail.includes("llama") || tail.includes("meta"))
+              return { lineage: "opencode", vendor_family: "meta" };
+            if (tail.includes("mistral") || tail.includes("mixtral"))
+              return { lineage: "opencode", vendor_family: "mistral" };
+            if (tail.includes("grok") || tail.includes("xai"))
+              return { lineage: "opencode", vendor_family: "xai" };
+            return { lineage: "opencode", vendor_family: null };
+          }
+
+          await Promise.all(
+            opencodeModels.flat.map(async (m) => {
+              const id = `opencode-cli:${m}`;
+              const wantEnabled = selectedOpencodeModels.has(m);
+              const row = existing.get(id);
+              try {
+                if (row) {
+                  if (row.enabled !== wantEnabled) {
+                    await updateVoice(id, { enabled: wantEnabled });
+                  }
+                } else {
+                  // Row doesn't exist yet (Phase 2 seed hasn't run or
+                  // happened to miss this model) — create it directly.
+                  const { lineage, vendor_family } = classifyClient(m);
+                  await createVoice({
+                    provider: "opencode-cli",
+                    model_id: m,
+                    label: m,
+                    source: "cli",
+                    lineage,
+                    vendor_family,
+                    enabled: wantEnabled,
+                  });
+                }
+              } catch {
+                // Best-effort: a single failed write shouldn't block onboarding.
+              }
+            }),
+          );
+        }
 
         await updateSettings({
           onboarded: true,
-          "opencode.enabled_models": opencodeModelsToSave,
         });
         router.push("/");
         router.refresh();

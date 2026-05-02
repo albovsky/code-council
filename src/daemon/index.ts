@@ -23,6 +23,7 @@ import {
   registerSecretRoutes,
 } from './routes/settings.js';
 import { registerSystemRoutes } from './routes/system.js';
+import { registerVoiceRoutes } from './routes/voices.js';
 
 const PORT = parseInt(process.env.CHORUS_DAEMON_PORT || '7707', 10);
 const HOST = '127.0.0.1';
@@ -364,6 +365,22 @@ async function main() {
     // Non-fatal: daemon still works without personas. Log for diagnostics.
     // eslint-disable-next-line no-console
     console.warn('[daemon] persona seed failed:', err instanceof Error ? err.message : err);
+  }
+
+  // Voices Phase 1 — synchronous, pre-listen seed of single-model CLIs +
+  // first-boot migration from <lineage>.enabled_models. Fast (no
+  // shell-outs); blocks listen on intent (we want voices ready before
+  // routes serve).
+  try {
+    const { seedCliVoices } = await import('../lib/voices.js');
+    const result = await seedCliVoices();
+    // eslint-disable-next-line no-console
+    console.log(
+      `[daemon] voices Phase 1: +${result.added} added, ${result.updated} updated, ${result.disabled} auto-disabled`,
+    );
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[daemon] voices Phase 1 seed failed:', err instanceof Error ? err.message : err);
   }
 
   // Health check
@@ -830,6 +847,7 @@ async function main() {
   registerSettingsRoutes(fastify);
   registerSecretRoutes(fastify);
   registerSystemRoutes(fastify, { chorusBinPath: CHORUS_BIN_PATH });
+  registerVoiceRoutes(fastify);
 
   // Seed built-in templates on startup
   await seedBuiltinTemplates();
@@ -924,6 +942,26 @@ async function main() {
 
   await fastify.listen({ port: PORT, host: HOST });
   console.log(`Chorus daemon listening on http://${HOST}:${PORT}`);
+
+  // Voices Phase 2 — background warmup. `opencode models` shells out and
+  // can take up to 10s; running it post-listen avoids that boot-latency
+  // hit on every daemon start (per round 1 deepseek LOW). Errors are
+  // logged but don't crash the daemon.
+  void (async () => {
+    try {
+      const { seedOpencodeVoicesAsync } = await import('../lib/voices.js');
+      const result = await seedOpencodeVoicesAsync();
+      if (result) {
+        console.log(
+          `[daemon] voices Phase 2 (opencode): +${result.added} added, ${result.updated} updated, ${result.disabled} auto-disabled`,
+        );
+      } else {
+        console.log('[daemon] voices Phase 2 (opencode): skipped (CLI not detected or shell-out failed)');
+      }
+    } catch (err) {
+      console.warn('[daemon] voices Phase 2 failed:', err instanceof Error ? err.message : err);
+    }
+  })();
 }
 
 async function seedBuiltinTemplates(): Promise<void> {

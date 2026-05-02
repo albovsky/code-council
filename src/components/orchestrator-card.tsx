@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Check,
   Loader2,
@@ -13,14 +13,8 @@ import {
   type OrchestratorStatus,
   type OrchestratorName,
   DaemonError,
-  updateSettings,
 } from "@/lib/api";
-import { listOpencodeModels, type OpencodeModelsResult } from "@/lib/api/orchestrators";
-import {
-  UI_LINEAGE_AVAILABLE_MODELS,
-  UI_LINEAGE_DEFAULT_MODEL,
-  type UILineage,
-} from "@/lib/lineage-maps";
+import { updateVoice, type Voice } from "@/lib/api/voices";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,67 +22,47 @@ import { cn } from "@/lib/utils";
  *   1. MCP wiring status + Connect button (the original OrchestratorCard
  *      content — this is what tells the user "chorus is reachable from
  *      Claude Code").
- *   2. Inline-expandable model picker (the ex-FleetCard pattern). Lists
- *      already-enabled models on the collapsed card; click to expand the
- *      checkbox grid; toggles save immediately.
+ *   2. Inline-expandable voice picker. Lists already-enabled voices on
+ *      the collapsed card; click to expand the checkbox grid; toggles
+ *      save immediately via PUT /voices/:id.
  *
- * Replaces the previous two-section layout (Editors above, Models per CLI
- * below) which showed each CLI twice. OpenCode picker is gateway-grouped
- * + lazy-fetched via `opencode models`; everything else uses the curated
- * flat list from UI_LINEAGE_AVAILABLE_MODELS.
+ * Data source: voices table. The daemon's seed populates these on boot
+ * (Phase 1 sync for single-model CLIs; Phase 2 background warmup for
+ * opencode multi-model). OpenCode voices are grouped by their
+ * model_id's gateway prefix in this card's UI.
  */
 interface Props {
   initial: OrchestratorStatus;
-  initialEnabled: string[];
-  uiLineage?: UILineage;
+  /** Voices for this orchestrator's provider — both enabled and disabled. */
+  voices: Voice[];
 }
 
-const ORCHESTRATOR_TO_UI: Record<string, UILineage> = {
-  claude: "claude",
-  codex: "codex",
-  gemini: "gemini",
-  opencode: "opencode",
-  kimi: "kimi",
+const ORCHESTRATOR_TO_PROVIDER: Record<string, string> = {
+  claude: "claude-code",
+  codex: "codex-cli",
+  gemini: "gemini-cli",
+  opencode: "opencode-cli",
+  kimi: "kimi-cli",
 };
 
-export function OrchestratorCard({ initial, initialEnabled, uiLineage }: Props) {
+export function OrchestratorCard({ initial, voices: initialVoices }: Props) {
   const [status, setStatus] = useState<OrchestratorStatus>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justConnected, setJustConnected] = useState(false);
 
-  // Per-CLI model picker state.
-  const ui = uiLineage ?? ORCHESTRATOR_TO_UI[initial.name];
-  const supportsModels = ui !== undefined;
-  const [enabled, setEnabled] = useState<string[]>(initialEnabled);
+  // Per-CLI voice picker state.
+  const provider = ORCHESTRATOR_TO_PROVIDER[initial.name];
+  const [voices, setVoices] = useState<Voice[]>(initialVoices);
   const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // OpenCode-specific: live-fetched gateway-grouped model list.
-  const isOpencode = ui === "opencode";
-  const [opencodeModels, setOpencodeModels] = useState<OpencodeModelsResult | null>(null);
-  const [opencodeError, setOpencodeError] = useState<string | null>(null);
-  const [opencodeLoading, setOpencodeLoading] = useState(false);
+  const supportsModels = !!provider && voices.length > 0;
+  const enabledCount = voices.filter((v) => v.enabled).length;
+  const enabledLabels = voices.filter((v) => v.enabled).map((v) => v.model_id);
 
-  // Curated flat list for non-opencode lineages.
-  const flatAvailable = ui && ui !== "opencode" ? UI_LINEAGE_AVAILABLE_MODELS[ui] : undefined;
-
-  useEffect(() => {
-    if (!open || !isOpencode || opencodeModels || opencodeLoading) return;
-    setOpencodeLoading(true);
-    setOpencodeError(null);
-    listOpencodeModels()
-      .then(setOpencodeModels)
-      .catch((err) => {
-        setOpencodeError(
-          err instanceof DaemonError
-            ? err.message
-            : "Couldn't list OpenCode models. Run `opencode auth login`.",
-        );
-      })
-      .finally(() => setOpencodeLoading(false));
-  }, [open, isOpencode, opencodeModels, opencodeLoading]);
+  const isOpencode = provider === "opencode-cli";
 
   const connect = async () => {
     setBusy(true);
@@ -108,29 +82,36 @@ export function OrchestratorCard({ initial, initialEnabled, uiLineage }: Props) 
     }
   };
 
-  const persistEnabled = async (next: string[]) => {
-    if (!ui) return;
-    setSaving(true);
+  const toggleVoice = async (v: Voice) => {
+    setSaving(v.id);
     setSaveError(null);
     try {
-      await updateSettings({ [`${ui}.enabled_models`]: next });
-      setEnabled(next);
+      const next = await updateVoice(v.id, { enabled: !v.enabled });
+      setVoices((prev) => prev.map((p) => (p.id === next.id ? next : p)));
     } catch (err) {
       setSaveError(
         err instanceof DaemonError ? err.message : "Couldn't save. Is the daemon running?",
       );
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
-  };
-
-  const toggleModel = (m: string) => {
-    const next = enabled.includes(m) ? enabled.filter((x) => x !== m) : [...enabled, m];
-    void persistEnabled(next);
   };
 
   const isConnected = status.connected;
   const partial = status.approvedTools > 0 && !isConnected;
+
+  // Group OpenCode voices by gateway prefix in model_id.
+  const opencodeGroups = new Map<string, Voice[]>();
+  if (isOpencode) {
+    for (const v of voices) {
+      const slash = v.model_id.indexOf("/");
+      const gw = slash > 0 ? v.model_id.slice(0, slash) : "other";
+      const list = opencodeGroups.get(gw) ?? [];
+      list.push(v);
+      opencodeGroups.set(gw, list);
+    }
+  }
+  const sortedGateways = Array.from(opencodeGroups.keys()).sort();
 
   return (
     <div className="rounded-lg border border-border bg-gradient-to-br from-primary/5 via-card to-card">
@@ -158,22 +139,22 @@ export function OrchestratorCard({ initial, initialEnabled, uiLineage }: Props) 
               )}
               {supportsModels && (
                 <span className="text-[10px] text-muted-foreground">
-                  · {enabled.length} model{enabled.length === 1 ? "" : "s"} enabled
+                  · {enabledCount} model{enabledCount === 1 ? "" : "s"} enabled
                 </span>
               )}
             </div>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               {status.note}
             </p>
-            {supportsModels && enabled.length > 0 && (
-              <p className="mt-2 truncate font-mono text-[11px] text-foreground/80" title={enabled.join(", ")}>
-                {enabled.slice(0, 3).join(", ")}
-                {enabled.length > 3 && ` +${enabled.length - 3} more`}
+            {supportsModels && enabledCount > 0 && (
+              <p className="mt-2 truncate font-mono text-[11px] text-foreground/80" title={enabledLabels.join(", ")}>
+                {enabledLabels.slice(0, 3).join(", ")}
+                {enabledLabels.length > 3 && ` +${enabledLabels.length - 3} more`}
               </p>
             )}
             {isConnected && status.firstCallBehavior === "prompts_once" && (
               <p className="mt-2 text-[11px] text-amber-300/90">
-                ⚠ First chorus.* call will show a one-time prompt — click "Always allow".
+                ⚠ First chorus.* call will show a one-time prompt — click &quot;Always allow&quot;.
               </p>
             )}
             {isConnected && status.firstCallBehavior === "inherits_global" && (
@@ -240,54 +221,42 @@ export function OrchestratorCard({ initial, initialEnabled, uiLineage }: Props) 
 
           {isOpencode ? (
             <>
-              {opencodeLoading && (
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Listing models from <code className="rounded bg-muted px-1">opencode models</code>…
-                </div>
-              )}
-              {opencodeError && (
-                <p className="text-[11px] text-destructive">{opencodeError}</p>
-              )}
-              {opencodeModels &&
-                Object.entries(opencodeModels.gateways)
-                  .filter(([gw]) => gw.startsWith("opencode"))
-                  .sort(([a], [b]) => a.localeCompare(b))
-                  .map(([gateway, list]) => (
-                    <div key={gateway} className="space-y-1">
-                      <p className="text-[11px] font-mono text-muted-foreground/80">
-                        {gateway}/
-                      </p>
-                      <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                        {list.map((m) => (
-                          <ModelToggle
-                            key={m}
-                            label={m.slice(gateway.length + 1)}
-                            value={m}
-                            selected={enabled.includes(m)}
-                            disabled={saving}
-                            onClick={() => toggleModel(m)}
-                          />
-                        ))}
-                      </div>
+              {sortedGateways.map((gateway) => {
+                const list = opencodeGroups.get(gateway) ?? [];
+                return (
+                  <div key={gateway} className="space-y-1">
+                    <p className="text-[11px] font-mono text-muted-foreground/80">
+                      {gateway}/
+                    </p>
+                    <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                      {list.map((v) => (
+                        <ModelToggle
+                          key={v.id}
+                          label={v.model_id.slice(gateway.length + 1)}
+                          value={v.model_id}
+                          selected={v.enabled}
+                          disabled={saving === v.id}
+                          onClick={() => toggleVoice(v)}
+                        />
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                );
+              })}
             </>
           ) : (
-            flatAvailable && (
-              <div className="grid grid-cols-1 gap-1">
-                {flatAvailable.map((m) => (
-                  <ModelToggle
-                    key={m}
-                    label={m}
-                    value={m}
-                    selected={enabled.includes(m)}
-                    disabled={saving}
-                    onClick={() => toggleModel(m)}
-                  />
-                ))}
-              </div>
-            )
+            <div className="grid grid-cols-1 gap-1">
+              {voices.map((v) => (
+                <ModelToggle
+                  key={v.id}
+                  label={v.model_id}
+                  value={v.model_id}
+                  selected={v.enabled}
+                  disabled={saving === v.id}
+                  onClick={() => toggleVoice(v)}
+                />
+              ))}
+            </div>
           )}
 
           <p className="text-[11px] leading-relaxed text-muted-foreground/70">
@@ -335,10 +304,4 @@ function ModelToggle({ label, value, selected, disabled, onClick }: ModelToggleP
       <span className="truncate font-mono">{label}</span>
     </button>
   );
-}
-
-export function defaultEnabledFor(uiLineage: UILineage | undefined): string[] {
-  if (!uiLineage) return [];
-  const def = UI_LINEAGE_DEFAULT_MODEL[uiLineage];
-  return def ? [def] : [];
 }

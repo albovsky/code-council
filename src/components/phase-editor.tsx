@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSettings } from "@/lib/api";
+import { listVoices } from "@/lib/api/voices";
 import {
   ArrowDown,
   ArrowUp,
@@ -74,22 +74,34 @@ interface PhaseEditorProps {
 }
 
 /**
- * Reactive copy of `opencode.enabled_models` from settings — used to
- * narrow the model picker when lineage is opencode so users can't pick
- * a model they didn't authorise during onboarding. One fetch per
- * PhaseEditor mount is enough; settings updates are rare and a manual
- * page refresh covers them.
+ * Reactive copy of enabled OpenCode voices — used to narrow the model
+ * picker when lineage is opencode so users can't pick a model they
+ * didn't authorise. One fetch per PhaseEditor mount is enough; voices
+ * updates are rare and a manual page refresh covers them.
+ *
+ * Explicit `enabled: true` filter — this is the template-dropdown
+ * context, where only enabled voices should appear.
+ *
+ * Filter is by `provider='opencode-cli'`, NOT `lineage='opencode'`.
+ * This intentionally mirrors the v0.7 substrate which only knew about
+ * the OpenCode CLI subscription path. When OpenRouter ships in PR 2/3,
+ * api-routed opencode-lineage voices may exist (e.g. via the openrouter
+ * provider routing through a deepseek model that we tag as
+ * lineage='opencode'). Widening this dropdown to include those is
+ * intentionally deferred to PR 2/3 — by then we'll have a better idea
+ * of how api voices interact with the existing template runner. Round
+ * 1 gem-2 BLOCKER 4 flagged this; deferred-with-comment per the PR
+ * scope discussion.
  */
 function useEnabledOpencodeModels(): string[] {
   const [models, setModels] = useState<string[]>([]);
   useEffect(() => {
-    getSettings()
-      .then((s) => {
-        const list = s["opencode.enabled_models"];
-        if (Array.isArray(list)) setModels(list as string[]);
+    listVoices({ provider: "opencode-cli", enabled: true })
+      .then((voices) => {
+        setModels(voices.map((v) => v.model_id));
       })
       .catch(() => {
-        /* settings load is best-effort; freeform input still works */
+        /* voices load is best-effort; freeform input still works */
       });
   }, []);
   return models;

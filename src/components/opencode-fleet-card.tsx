@@ -3,17 +3,21 @@
 /**
  * Inline-expandable OpenCode card for the home-page reviewer fleet.
  *
- * Shows count of currently-enabled models; clicking expands a panel with
- * the same gateway-grouped checkbox grid used during onboarding. Toggling
- * a model PUTs /settings immediately so the change is live without a save
- * button — feels like checkbox state in the OS, not form state.
+ * Shows count of currently-enabled voices; clicking expands a panel with
+ * the gateway-grouped checkbox grid. Toggling a model PUTs /voices/:id
+ * immediately so the change is live without a save button.
+ *
+ * Data source: voices table, filtered to provider='opencode-cli'. The
+ * daemon's Phase 2 background warmup populates these from `opencode
+ * models`. Includes both enabled + disabled rows (per round 1 cdx-1
+ * BLOCKER) so users can re-enable from the fleet card.
  */
 
-import { useEffect, useState } from "react";
-import { CheckCircle2, AlertTriangle, ChevronDown, Loader2, Check } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, AlertTriangle, ChevronDown, Check } from "lucide-react";
 import { lineageDot } from "@/lib/lineage-maps";
-import { listOpencodeModels, type OpencodeModelsResult } from "@/lib/api/orchestrators";
-import { updateSettings, DaemonError } from "@/lib/api";
+import { updateVoice, type Voice } from "@/lib/api/voices";
+import { DaemonError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 interface OpencodeFleetCardProps {
@@ -21,53 +25,46 @@ interface OpencodeFleetCardProps {
     status: "healthy" | "quota_exhausted" | "auth_invalid" | "rate_limited" | "unknown";
     message?: string;
   };
-  initialEnabled: string[];
+  /** OpenCode voices — both enabled and disabled. */
+  voices: Voice[];
 }
 
-export function OpencodeFleetCard({ health, initialEnabled }: OpencodeFleetCardProps) {
+export function OpencodeFleetCard({ health, voices: initialVoices }: OpencodeFleetCardProps) {
   const [open, setOpen] = useState(false);
-  const [enabled, setEnabled] = useState<string[]>(initialEnabled);
-  const [models, setModels] = useState<OpencodeModelsResult | null>(null);
-  const [loadingModels, setLoadingModels] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [voices, setVoices] = useState<Voice[]>(initialVoices);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open || models || loadingModels) return;
-    setLoadingModels(true);
-    setModelsError(null);
-    listOpencodeModels()
-      .then((res) => setModels(res))
-      .catch((err) => {
-        const message =
-          err instanceof DaemonError
-            ? err.message
-            : "Couldn't list OpenCode models. Run `opencode auth login`.";
-        setModelsError(message);
-      })
-      .finally(() => setLoadingModels(false));
-  }, [open, models, loadingModels]);
-
-  async function persist(next: string[]) {
-    setSaving(true);
+  async function toggleVoice(v: Voice) {
+    setSaving(v.id);
     setSaveError(null);
     try {
-      await updateSettings({ "opencode.enabled_models": next });
-      setEnabled(next);
+      const next = await updateVoice(v.id, { enabled: !v.enabled });
+      setVoices((prev) => prev.map((p) => (p.id === next.id ? next : p)));
     } catch (err) {
       const message =
         err instanceof DaemonError ? err.message : "Couldn't save. Is the daemon running?";
       setSaveError(message);
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   }
 
-  function toggleModel(m: string) {
-    const next = enabled.includes(m) ? enabled.filter((x) => x !== m) : [...enabled, m];
-    void persist(next);
+  // Group voices by gateway prefix for the card layout. The `model_id`
+  // column carries the gateway-prefixed qualified name (e.g.
+  // "opencode-go/kimi-k2.6") so the prefix is everything up to the
+  // first slash.
+  const grouped = new Map<string, Voice[]>();
+  for (const v of voices) {
+    const slash = v.model_id.indexOf("/");
+    const gw = slash > 0 ? v.model_id.slice(0, slash) : "other";
+    const list = grouped.get(gw) ?? [];
+    list.push(v);
+    grouped.set(gw, list);
   }
+  const sortedGateways = Array.from(grouped.keys()).sort();
+
+  const enabledCount = voices.filter((v) => v.enabled).length;
 
   return (
     <div className="rounded-lg border border-border bg-card transition-colors hover:border-foreground/20">
@@ -82,7 +79,7 @@ export function OpencodeFleetCard({ health, initialEnabled }: OpencodeFleetCardP
           <div className="mt-0.5 flex items-center gap-2">
             <StatusBadge status={health.status} />
             <span className="text-[10px] text-muted-foreground">
-              {enabled.length} model{enabled.length === 1 ? "" : "s"} enabled
+              {enabledCount} model{enabledCount === 1 ? "" : "s"} enabled
             </span>
           </div>
         </div>
@@ -96,34 +93,31 @@ export function OpencodeFleetCard({ health, initialEnabled }: OpencodeFleetCardP
 
       {open && (
         <div className="space-y-3 border-t border-border bg-card/50 p-3">
-          {loadingModels && (
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Listing models from <code className="rounded bg-muted px-1">opencode models</code>…
-            </div>
-          )}
-
-          {modelsError && <p className="text-[11px] text-destructive">{modelsError}</p>}
           {saveError && <p className="text-[11px] text-destructive">{saveError}</p>}
 
-          {models && (
+          {voices.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              No OpenCode voices detected yet. Run <code className="rounded bg-muted px-1">opencode models</code>{" "}
+              and restart the daemon.
+            </p>
+          ) : (
             <div className="space-y-3">
-              {Object.entries(models.gateways)
-                .filter(([gw]) => gw.startsWith("opencode"))
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([gateway, list]) => (
+              {sortedGateways.map((gateway) => {
+                const list = grouped.get(gateway) ?? [];
+                return (
                   <div key={gateway} className="space-y-1">
                     <p className="text-[11px] font-mono text-muted-foreground/80">{gateway}/</p>
                     <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                      {list.map((m) => {
-                        const sel = enabled.includes(m);
+                      {list.map((v) => {
+                        const sel = v.enabled;
+                        const shortName = v.model_id.slice(gateway.length + 1);
                         return (
                           <button
-                            key={m}
+                            key={v.id}
                             type="button"
-                            disabled={saving}
-                            onClick={() => toggleModel(m)}
-                            title={m}
+                            disabled={saving === v.id}
+                            onClick={() => toggleVoice(v)}
+                            title={v.model_id}
                             className={cn(
                               "flex items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] transition disabled:opacity-60",
                               sel
@@ -141,15 +135,14 @@ export function OpencodeFleetCard({ health, initialEnabled }: OpencodeFleetCardP
                             >
                               {sel && <Check className="h-2 w-2" />}
                             </div>
-                            <span className="truncate font-mono">
-                              {m.slice(gateway.length + 1)}
-                            </span>
+                            <span className="truncate font-mono">{shortName}</span>
                           </button>
                         );
                       })}
                     </div>
                   </div>
-                ))}
+                );
+              })}
               <p className="text-[11px] leading-relaxed text-muted-foreground/70">
                 Toggles save automatically. Templates and the New Chat dialog will only offer
                 models you&apos;ve enabled here.

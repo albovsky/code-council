@@ -117,7 +117,7 @@ export const TRANSPORT_DESCRIPTIONS: Record<Transport, { label: string; descript
       'Each CLI runs as a one-shot subprocess. ~80% less RAM, faster cold start, no permission dialogs. Recommended for everyday use.',
   },
   tmux: {
-    label: 'Show live terminal sessions',
+    label: 'Tmux — attach & take over',
     description:
       'Each CLI runs in a persistent tmux session you can attach to (`tmux attach -t <name>`) to watch step-by-step or take over mid-run. Uses more RAM. Requires tmux installed on the host (brew/apt/dnf).',
   },

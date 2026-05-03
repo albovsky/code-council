@@ -30,6 +30,8 @@ import {
   Loader2,
   Info,
   CreditCard,
+  Terminal,
+  Clock,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -248,28 +250,10 @@ export default function SettingsPage() {
           />
         )}
 
-        {/* Save — most fields on this page are still preview surfaces;
-            the daemon only respects transport (above) and billing mode +
-            permissions (separate page). Showing a "saved" badge + a real
-            Apply button would lie to the user. Honest disclaimer instead;
-            wire-up tracked for v0.8. */}
-        <div className="mt-8 flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/5 px-5 py-3">
-          <Badge
-            variant="outline"
-            className="border-amber-500/30 bg-amber-500/10 text-[10px] text-amber-300"
-          >
-            <AlertTriangle className="mr-1 h-3 w-3" />
-            Preview — most form fields are not yet wired to the daemon
-          </Badge>
-          <button
-            type="button"
-            disabled
-            title="Settings persistence wiring lands in v0.8. Transport (above) and Permissions / Billing (separate pages) save today."
-            className="rounded-md bg-muted px-4 py-1.5 text-xs font-medium text-muted-foreground cursor-not-allowed"
-          >
-            Save (v0.8)
-          </button>
-        </div>
+        {/* No global Save button — each wired section (Run mode, Billing
+            mode) saves on click; Sandbox links to its own page. Preview
+            sections at the bottom are non-interactive so there's nothing
+            to flush. */}
       </div>
     </AppShell>
   );
@@ -305,7 +289,55 @@ interface FormViewProps {
 function FormView(p: FormViewProps) {
   return (
     <>
-      {/* Concurrency */}
+      {/* ─── Wired sections — fully interactive, save individually. ───── */}
+
+      {/* Sandbox profile — links to dedicated /settings/permissions page */}
+      <Section
+        icon={<Shield className="h-4 w-4" />}
+        title="Sandbox & first-call permissions"
+        subtitle="What can chorus-spawned reviewers do on this machine? Pick a profile, toggle prompt auto-approval, choose whether to allow outbound network."
+      >
+        <a
+          href="/settings/permissions"
+          className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition hover:bg-primary/10"
+        >
+          Open Permissions page
+          <span aria-hidden>→</span>
+        </a>
+      </Section>
+
+      {/* Run mode (headless vs tmux) */}
+      <TransportSection />
+
+      {/* Billing mode: subscription vs API */}
+      <BillingModeSection />
+
+      {/* ─── Coming in v0.8 — preview surfaces, greyed + non-interactive. ─
+          Reordered to the bottom so the working sections lead. The whole
+          group sits inside a `pointer-events-none + opacity-60` wrapper so
+          clicks/keystrokes don't escape; the YAML view (toggle at top of
+          page) shows the planned schema for users who want to peek. */}
+      <div
+        className="mt-12 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+        role="note"
+      >
+        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+        <div>
+          <p className="font-semibold">Coming in v0.8 — preview only</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-100/80">
+            The sections below show planned controls. They&apos;re not wired
+            to the daemon yet — interaction is disabled. The YAML toggle at
+            the top of the page already exposes the schema if you&apos;re
+            curious.
+          </p>
+        </div>
+      </div>
+
+      <div
+        className="mt-2 select-none opacity-60 [&_*]:pointer-events-none"
+        aria-disabled="true"
+      >
+      {/* Concurrency — preview */}
       <Section
         icon={<Activity className="h-4 w-4" />}
         title="Concurrency"
@@ -320,6 +352,7 @@ function FormView(p: FormViewProps) {
               step={1}
               value={p.maxConcurrent}
               onChange={(e) => p.setMaxConcurrent(parseInt(e.target.value, 10))}
+              disabled
               className="w-full accent-primary"
             />
             <div className="mt-1.5 flex justify-between text-[10px] font-mono text-muted-foreground">
@@ -338,28 +371,7 @@ function FormView(p: FormViewProps) {
         </p>
       </Section>
 
-      {/* Sandbox profile — links to dedicated /settings/permissions page */}
-      <Section
-        icon={<Shield className="h-4 w-4" />}
-        title="Sandbox & first-call permissions"
-        subtitle="What can chorus-spawned reviewers do on this machine? Pick a profile, toggle prompt auto-approval, choose whether to allow outbound network."
-      >
-        <a
-          href="/settings/permissions"
-          className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition hover:bg-primary/10"
-        >
-          Open Permissions page
-          <span aria-hidden>→</span>
-        </a>
-      </Section>
-
-      {/* Transport: headless vs tmux */}
-      <TransportSection />
-
-      {/* Billing mode: subscription vs API */}
-      <BillingModeSection />
-
-      {/* Permissions — split by role */}
+      {/* Per-tool auto-approve — preview */}
       <Section
         icon={<FolderLock className="h-4 w-4" />}
         title="Per-tool auto-approve"
@@ -378,7 +390,7 @@ function FormView(p: FormViewProps) {
           </span>
         </div>
 
-        <div className="mt-1 divide-y divide-border">
+        <div className="mt-1 divide-y divide-border opacity-70">
           {TOOLS.map((tool) => (
             <div
               key={tool.id}
@@ -404,12 +416,17 @@ function FormView(p: FormViewProps) {
           ))}
         </div>
 
-        <p className="mt-3 flex items-start gap-1.5 text-[11px] text-muted-foreground">
-          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
+        <p className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-100">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
           <span>
-            <span className="font-mono text-amber-300">ask</span> prompts
-            appear as cards in the chat — you click Approve / Deny instead of
-            the agent stalling.
+            <span className="font-semibold">When wired:</span>{" "}
+            <code className="rounded bg-amber-400/10 px-1 font-mono text-amber-200">
+              ask
+            </code>{" "}
+            prompts will appear as cards in the chat — you click{" "}
+            <span className="font-semibold">Approve</span> /{" "}
+            <span className="font-semibold">Deny</span> instead of the agent
+            stalling.
           </span>
         </p>
       </Section>
@@ -659,6 +676,8 @@ function FormView(p: FormViewProps) {
           </Field>
         </div>
       </Section>
+
+      </div>
     </>
   );
 }
@@ -731,18 +750,21 @@ function YamlEditor({ yaml }: { yaml: string }) {
 }
 
 function Section({
+  id,
   icon,
   title,
   subtitle,
   children,
 }: {
+  /** Optional anchor id so docs / CLI hints can deep-link via /settings#<id>. */
+  id?: string;
   icon: React.ReactNode;
   title: string;
   subtitle: string;
   children: React.ReactNode;
 }) {
   return (
-    <Card className="mt-6 bg-card p-5">
+    <Card id={id} className="mt-6 scroll-mt-20 bg-card p-5">
       <div className="mb-4 flex items-start gap-3">
         <span className="rounded-md border border-border bg-card/60 p-1.5 text-foreground/70">
           {icon}
@@ -944,9 +966,10 @@ function TransportSection() {
 
   return (
     <Section
-      icon={<Server className="h-4 w-4" />}
-      title="Transport"
-      subtitle="How chorus runs each CLI. Default is headless (faster, lower RAM). Switch to tmux if you want to attach and watch agents work step-by-step."
+      id="transport"
+      icon={<Terminal className="h-4 w-4" />}
+      title="Run mode (headless / tmux)"
+      subtitle="How chorus runs each CLI. Default is headless (faster, lower RAM). Switch to tmux if you want to attach to a live voice and take over mid-run (debug + handoff)."
     >
       {error && (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">

@@ -32,9 +32,9 @@ const NAV: NavItem[] = [
   { href: "/templates", label: "Templates", icon: Layers },
   { href: "/personas", label: "Personas", icon: Users },
   { href: "/connect", label: "Connect", icon: Plug },
-];
-
-const FOOTER_NAV: NavItem[] = [
+  // Settings sits with the rest of the primary nav (under Connect) —
+  // pinned to the footer made it look optional and pushed it below
+  // the Recent chats list, where users couldn't find it.
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -307,33 +307,6 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
       </div>
       )}
 
-      {/* Footer nav (global) — same collapsed treatment as primary nav. */}
-      <div className={cn("border-t border-border py-3", collapsed ? "px-1.5" : "px-2")}>
-        <ul className="flex flex-col gap-0.5">
-          {FOOTER_NAV.map((item) => {
-            const Icon = item.icon;
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={onNavigate}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    "flex items-center rounded-md text-sm transition-colors",
-                    collapsed ? "justify-center px-2 py-2" : "gap-2 px-2 py-1.5",
-                    isActive(item.href)
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {!collapsed && <span>{item.label}</span>}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
     </div>
   );
 }

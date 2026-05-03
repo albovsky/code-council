@@ -10,8 +10,14 @@
  *
  * v0.7 keeps this as a single global enum. v0.8 will split into per-lineage
  * overrides (Claude on subscription, Gemini on API) once we have the
- * onboarding UI for it. The default is 'api' to be conservative — assume
- * the user is paying until told otherwise.
+ * onboarding UI for it.
+ *
+ * Default is 'subscription' — the path-of-least-cost-shock for new users.
+ * Most people land here from a Claude Pro / ChatGPT Plus / Gemini Advanced
+ * subscription they already pay for; showing "$0.47 estimate" on every
+ * /new chat would imply per-call billing they don't owe and scare them
+ * off. Subscription users see "Subscription quota — ~12,000 input tokens"
+ * instead. API-key users flip the toggle once and never look back.
  */
 
 import { settings } from '../db';
@@ -19,7 +25,7 @@ import { settings } from '../db';
 export type BillingMode = 'api' | 'subscription' | 'mixed';
 
 const BILLING_MODE_KEY = 'billing_mode';
-export const DEFAULT_BILLING_MODE: BillingMode = 'api';
+export const DEFAULT_BILLING_MODE: BillingMode = 'subscription';
 
 export const BILLING_MODE_LABELS: Record<BillingMode, { label: string; description: string }> = {
   api: {

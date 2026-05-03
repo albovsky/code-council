@@ -22,19 +22,23 @@ async function getRunData(runId: string) {
   }
 }
 
-const AGENT_TO_LINEAGE: Record<string, "claude" | "codex" | "gemini" | "opencode" | "kimi"> = {
+const AGENT_TO_LINEAGE: Record<string, "claude" | "codex" | "gemini" | "opencode" | "kimi" | "openrouter"> = {
   "claude-code": "claude",
   "codex-cli": "codex",
   "gemini-cli": "gemini",
   "opencode-cli": "opencode",
   "kimi-cli": "kimi",
+  // HTTP-dispatched shim — runner creates `reviewer-openrouter-N` dirs;
+  // without this entry the lineage fell through to "claude" and rendered
+  // OpenRouter answers with the wrong brand on the run page.
+  openrouter: "openrouter",
 };
 
 interface ParticipantSnapshot {
   participant: string;
   role: "doer" | "reviewer";
   agentName: string;
-  lineage: "claude" | "codex" | "gemini" | "opencode" | "kimi";
+  lineage: "claude" | "codex" | "gemini" | "opencode" | "kimi" | "openrouter";
   hasAnswer: boolean;
   answer?: string;
   findingsPreview?: string[];

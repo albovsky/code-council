@@ -5,6 +5,7 @@ import { TmuxManagerImpl } from './tmux.js';
 import { startReaper } from './reaper.js';
 import { runChat } from './runner.js';
 import * as participantAborts from './participant-aborts.js';
+import * as openrouter from './openrouter.js';
 import { ErrorDetector } from './error-detector.js';
 import { TemplateSchema, isReviewOnlyPhase, templateRequiresArtifact } from '../lib/template-schema.js';
 import fs from 'fs';
@@ -1219,6 +1220,78 @@ async function main() {
   registerSecretRoutes(fastify);
   registerSystemRoutes(fastify, { chorusBinPath: CHORUS_BIN_PATH });
   registerVoiceRoutes(fastify);
+
+  // OpenRouter inline flow: validate key → save → fetch models → add as
+  // voices. The HTTP shim that actually dispatches chat completions to
+  // OpenRouter is a follow-up; this PR ships the catalog/inserts only.
+  // Voices show up in the picker but selecting one in a template will
+  // not run successfully until the shim lands.
+  fastify.post<{
+    Body: { apiKey?: string };
+    Reply: ApiResponse<{ valid: boolean; error?: string }>;
+  }>('/openrouter/validate', async (request) => {
+    try {
+      const apiKey = request.body?.apiKey;
+      if (typeof apiKey !== 'string') {
+        return errorResponse('validation', 'apiKey (string) is required');
+      }
+      const result = await openrouter.validateKey(apiKey);
+      return successResponse(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('openrouter_error', message);
+    }
+  });
+
+  fastify.post<{
+    Body: { apiKey?: string };
+    Reply: ApiResponse<{ valid: boolean; error?: string }>;
+  }>('/openrouter/save-key', async (request) => {
+    try {
+      const apiKey = request.body?.apiKey;
+      if (typeof apiKey !== 'string') {
+        return errorResponse('validation', 'apiKey (string) is required');
+      }
+      const result = await openrouter.saveKey(apiKey);
+      return successResponse(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('openrouter_error', message);
+    }
+  });
+
+  fastify.get<{
+    Reply: ApiResponse<{ models: openrouter.OpenRouterModel[] }>;
+  }>('/openrouter/models', async () => {
+    try {
+      const models = await openrouter.listModels();
+      return successResponse({ models });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('openrouter_error', message);
+    }
+  });
+
+  fastify.post<{
+    Body: { modelIds?: string[]; apiKey?: string };
+    Reply: ApiResponse<{ added: string[]; skipped: string[] }>;
+  }>('/openrouter/voices', async (request) => {
+    try {
+      const modelIds = request.body?.modelIds;
+      if (!Array.isArray(modelIds) || !modelIds.every((s) => typeof s === 'string')) {
+        return errorResponse('validation', 'modelIds (string[]) is required');
+      }
+      // Optional apiKey lets a caller bypass the secrets table — useful
+      // for one-off automation that already holds the key, and avoids
+      // racing a concurrent save-key write.
+      const apiKey = typeof request.body?.apiKey === 'string' ? request.body.apiKey : undefined;
+      const result = await openrouter.addModelsAsVoices(modelIds, apiKey);
+      return successResponse(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('openrouter_error', message);
+    }
+  });
 
   // Seed built-in templates on startup
   await seedBuiltinTemplates();

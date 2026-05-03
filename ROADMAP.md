@@ -39,13 +39,29 @@ This is the seed of the **template marketplace**: an asset class that didn't exi
 | Opt-out telemetry heartbeat (round-2-deferred §4) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #6 bac7445); daemon-side ping to chorus.codes once on boot + every 24h; three opt-out paths; server endpoint deploy + privacy notice are separate infra tasks |
 | Structured JSON-line logger substrate (round-2-deferred §3) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #7 7ce6b46); pino-shaped wire format (level/time/pid/hostname); 5 first-class call sites; mechanical migration of remaining ~50 console sites is a follow-up |
 | Codex quota_exhausted detection + `CHORUS_CODEX_HOME` override | 0.7 | ✅ DONE | merged 2026-05-02 (PR #9 ee7b5fb); codex emits `ERROR: hit your usage limit` to stderr and exits 1, parseCodexExit now reads stderr+code and emits `error{kind:'quota_exhausted'}` instead of writing 0-byte answer.md. Round-1 review-only dogfood caught the regex was too loose (codex echoes user prompt to stderr → false-positive risk); fixed by anchoring on literal `ERROR:` prefix. Env override is a stopgap; proper UX is multi-account-per-CLI in v0.8. |
-| OpenRouter inline flow (validate → fetch models → multi-add) | 0.7 | ⏳ NEXT | builds on voices table; POST /voices already exists |
-| Phase composition UI (drag/reorder, edit prompts) | 0.7 | 📐 PLANNED | depends on voices + OpenRouter; unlocks per-phase persona binding |
+| SSE hijack + backpressure drain race + init log path | 0.7 | ✅ DONE | merged 2026-05-02 (PR #13 a5f6db1); fastify `reply.hijack()` before `reply.raw` writes, drain handler clears `paused` first then flushes, `chorus init` log honours `CHORUS_DB_PATH`. cdx-1 round-2 follow-ups from libsql migration. |
+| Cockpit retry button + correct reviewer count | 0.7 | ✅ DONE | merged 2026-05-02 (PR #14 0ab62e4) |
+| Templates `liveYaml` precedence test coverage | 0.7 | ✅ DONE | merged 2026-05-02 (PR #15 02e0820) — Fix C from PR #10 |
+| Time + token chips on participant cards | 0.7 | ✅ DONE | merged 2026-05-02 (PR #16 b1e2f09); reads from `_stats.json` sidecar |
+| Personas wire into doer + reviewer slots (per-slot binding) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #17 969dca5); each phase row carries its own persona — removes the §1 "one-persona-overlay-on-all-voices" limitation |
+| CLI orphan reap on `chorus stop` + `start` | 0.7 | ✅ DONE | merged 2026-05-02 (PR #18 3eaf166) |
+| `/rerun` server-side guard + retry button surfaces ok:false | 0.7 | ✅ DONE | merged 2026-05-02 (PR #19 a682e14) |
+| Persona injection fence + missing-persona warning + stats SSE cleanup | 0.7 | ✅ DONE | merged 2026-05-02 (PR #20 0758791); emits `cli_warning{kind:'persona_missing'}` on lookup failure |
+| Auto-fire chat runner on POST /chats (closes deferred #11) | 0.7 | ✅ DONE | merged 2026-05-02 (PR #21 b372bec); MCP-driven flows no longer sit `drafting` until a human opens the URL — runChat fires immediately on POST, SSE becomes a passive subscriber on a per-chat event bus that replays from `phase_events`. |
+| MCP `wait_for_chat` progress-notification keepalive | 0.7 | ✅ DONE | merged 2026-05-02 (PR #22 1940964); `notifications/progress` every 30s past Anthropic's 60s default tool timeout |
+| Per-slot persona picker in PhaseEditor UI | 0.7 | ✅ DONE | merged 2026-05-02 (PR #23 4ac8cdc); completes the per-phase persona-binding UX from PR #17 |
+| Per-card cancel button + per-runner AbortController | 0.7 | ✅ DONE | merged 2026-05-02 (PR #24 58603b6); cancel a single voice mid-run without killing the chat |
+| Surface opencode + kimi token usage in message_done | 0.7 | ✅ DONE | merged 2026-05-02 (PR #25 15b219a); per-lineage parser updates aggregating `step_finish` events session-wide |
+| `cli_warning` banner + USD cost on participant card | 0.7 | ✅ DONE | merged 2026-05-03 (PR #26 3ff046c); compounds with #25 token aggregation — opencode multi-step cost summed independently of token parsing so a malformed-tokens-but-valid-cost step still bills correctly |
+| OpenRouter inline flow (validate → fetch models → multi-add) | 0.7 | ⏳ IN FLIGHT | code written this session: `src/daemon/openrouter.ts`, `src/lib/api/openrouter.ts`, `src/app/settings/openrouter/page.tsx` + 4 routes wired in daemon. Validate / catalog / insert flow only — runtime HTTP shim for chat-completion dispatch is a follow-up. Per-pricing per-Mtok USD math; voice id format `openrouter:<model-id>`; `classifyOpencodeModel` reused for lineage classification. Ready for typecheck + test + commit + PR + self-review (review fleet only — not consuming OpenRouter credits). |
+| HTTP shim for OpenRouter chat-completion dispatch | 0.7 | ⏳ TODO | follow-up to OpenRouter inline; voices added via that PR appear in picker but won't dispatch yet — UX surfaces this caveat |
+| Phase composition UI (drag/reorder, edit prompts) | 0.7 | 🟡 PARTIAL | per-slot persona binding shipped (PR #17 + #23). Drag-to-reorder, add/remove phases, fork-from-existing still PLANNED. |
 | Default chorus-on-chorus template (Sentinel + Cartographer + Accountant + Translator) | 0.7 | 📐 PLANNED | bakes meta-fix |
-| Squashed migration push to `chorus-codes/chorus` | 0.7 | ⏳ NEXT | piece-by-piece audit using personas |
-| `npm publish @chorus-codes/chorus` | 0.7 | ⏳ NEXT | rotate token after first publish |
+| Squashed migration push to `chorus-codes/chorus` | 0.7 | ⏳ NEXT | piece-by-piece audit using personas. **Going live ~2026-05-04.** |
+| `npm publish @chorus-codes/chorus` | 0.7 | ⏳ NEXT | rotate token after first publish. **Going live ~2026-05-04.** |
 | Cleanup `99xAgency/chorus-ship-e2e` sandbox repo | 0.7 | ⏳ TODO | |
 | Pre-audit cleanup sweep (12 findings fixed in one go) | 0.7 | ✅ DONE | 2026-05-01 — runner abort/done race, silent-empty doer, attached_files wire-up, builtin seed re-sync, version drift, brief wall, daemon logs, more. See "Pre-flagged" section. |
+| **Per-slot fallback voice chain** (HIGH PRIORITY user-pain) | 0.8 | 🔥 NEXT | **Live pain:** when one voice in a multi-voice template errors (quota_exhausted, network, CLI crash), the partial work from other voices is wasted — they have to re-run from scratch alongside whatever voice replaces the failed one. Fix: each phase slot carries a `fallback: voice[]` chain. On retryable errors (`quota_exhausted`, `network`, `timeout`, `cli_failed`), the runner tries the next fallback voice for THAT slot only — other voices' completed work is preserved. Schema: `phases[].voices[].fallback: ['claude-code', 'openrouter:openai/gpt-4', ...]`. Reuses the same persona binding. Surfaces in PhaseEditor as a "+ add fallback" affordance under each voice slot. **Forces lineage-diversity rule into the chain** — fallback voices should default to same lineage as primary (so quorum math doesn't shift). Dovetails with multi-account-per-CLI: a fallback can be the same CLI on a different account when `CHORUS_CODEX_HOME` rotation is wired up. |
 | `chorus audit <persona> <file>` CLI shorthand | 0.8 | 💭 IDEA | wraps `invoke_persona` MCP call; ~30 lines in `src/cli/index.ts`; saves typing the JSON in editors/conversations |
 | Cockpit edit UI for builtin templates | 0.8 | ⏳ TODO | POST /templates upsert is now safe (preserves source=builtin); editor itself still missing — designed not built |
 | Runner decoupling from SSE — background runChat + event bus replay | 0.8 | ⏳ TODO | surgical fix landed for v0.7 (no auto-abort + chat_done latch); proper fix is fire-on-POST so MCP flows don't sit drafting until a human opens the page |
@@ -56,7 +72,9 @@ This is the seed of the **template marketplace**: an asset class that didn't exi
 | Local LLM voices (Ollama, llama.cpp) | 1.0+ | 💭 IDEA | |
 | CI integration (`chorus review --pr 1234`) | 1.0+ | 💭 IDEA | |
 
-Legend: ✅ done · ⏳ in flight · 📐 designed · 💭 idea
+Legend: ✅ done · ⏳ in flight · 🔥 high-priority next · 🟡 partial · 📐 designed · 💭 idea
+
+> **Where we are (2026-05-03):** v0.7 substrate is essentially complete — voices, personas, review-only, token capture, cost surfacing, per-slot persona binding, runner-on-POST, SSE robustness all shipped. Last v0.7 mile: OpenRouter inline (in flight), then squash + publish to `chorus-codes/chorus`. **Going live ~2026-05-04.**
 
 ---
 
@@ -101,7 +119,7 @@ Each prompt is a *worldview*, not a checklist — single role, list of red flags
 - `list_personas()` → `{ personas: [{id, label, oneLiner, recommendedLineage, builtin}] }`
 - `invoke_persona({personaId, brief, repoPath?, files?, template?})` → `{chatId, status, url}` — fires a real chat with the persona's system_prompt prepended to the user's brief.
 
-> ⚠️ **Current limitation — one persona, all voices.** Today `invoke_persona` prepends a *single* persona's system_prompt to the brief, then runs whatever template is chosen. Every voice in every phase of that template sees the same persona overlay. There is no per-phase persona binding yet. So if a template has 3 voices across Discover/Develop/Decide, all 3 voices speak as e.g. Cartographer — you cannot say "Cartographer drives Discover, Sentinel drives Develop, Accountant drives Decide" until **Phase composition (item 5 below)** lands. This is fine for the v0.7 migration audit (one-persona-per-file is enough for findings) but is the headline gap before the marketplace pitch lands. Don't forget.
+> ✅ **Per-slot persona binding shipped 2026-05-02** (PR #17 969dca5 + PR #23 4ac8cdc). Templates now carry a `persona` field on each phase row, so a single template can route Cartographer → Discover, Sentinel → Develop, Accountant → Decide. The PhaseEditor UI exposes a per-slot persona picker. `invoke_persona` still works as the single-persona-overlay shorthand for ad-hoc audits, but the marketplace-blocking gap is closed. Drag-to-reorder + fork-from-existing remain on §5 (planned).
 
 ### 2. Voices (DONE 2026-05-02 — PR #2 c758e80)
 
@@ -170,11 +188,11 @@ Out of scope (deferred):
 
 **Cost surfacing** — per-1M-token costs shown in picker. Template designer later shows "this template will cost ~$X per run" (sum of expected tokens × per-model cost). Avoids the bill-shock failure mode.
 
-### 5. Phase composition (PLANNED) — **unlocks per-phase persona binding**
+### 5. Phase composition (PARTIAL — per-slot persona binding shipped 2026-05-02)
 
-This is what removes the §1 limitation. Until this ships, `invoke_persona` is a one-persona-overlay-on-all-voices coarse hammer. After this ships, each phase row owns its own `(voice_id, persona_id)` pair, so a template can route Cartographer → Discover, Sentinel → Develop, Accountant → Decide.
+The §1 limitation is gone — PR #17 wired persona into doer + reviewer slots and PR #23 added the per-slot picker UI. Each phase row now owns its own `(voice, persona)` pair, so templates route Cartographer → Discover, Sentinel → Develop, Accountant → Decide out of the box.
 
-Templates become editable sequences:
+Still PLANNED for full §5 (drag-reorder, add/remove phases, fork-from-existing):
 
 ```
 phase {
@@ -247,7 +265,56 @@ The first cartographer audit attempt revealed 5 more findings — most caught wh
 ### Deferred — substantial work
 
 - ⏳ **#3 Cockpit UI for editing builtin templates** — `src/app/templates/page.tsx` is still read-only. With #2 now safe (POST won't demote builtins), the missing piece is the editor itself. Designed but not implemented: in-page YAML editor with validate-on-save, "Fork to user template" button, voice/persona/quorum picker (depends on Voices abstraction in v0.7-final). Target: v0.8.
-- ⏳ **Runner decoupling from SSE (#11 properly)** — surgical #12 fix prevents data corruption, but POST /chats still doesn't kick off the runner; only opening the run page does. For MCP-driven flows (`invoke_persona` from Claude Code/Codex/Cursor) this is bad UX — chat sits in `drafting` until a human opens the URL. Proper fix: spawn `runChat` in a background async task on POST /chats; SSE becomes a passive subscriber on a per-chat event bus that replays past events from `phase_events`. Target: v0.8.
+- ✅ **Runner decoupling from SSE (#11 properly)** — shipped 2026-05-02 in PR #21 (b372bec). `runChat` now fires in a background async task on POST /chats; SSE is a passive subscriber on a per-chat event bus that replays past events from `phase_events`. MCP-driven flows (`invoke_persona` from Claude Code/Codex/Cursor) no longer sit in `drafting` until a human opens the URL.
+
+---
+
+## v0.8 — Per-slot fallback voice chain (HIGH PRIORITY)
+
+**The pain (live, observed 2026-05-03):** when one voice in a multi-voice template errors mid-run (codex `quota_exhausted` until next reset, gemini network blip, claude CLI crash, opencode subprocess kill), today the runner reports the slot as `errored` and the *other voices' completed reviews* are wasted — re-running the chat re-fires every voice from scratch. With a 4-voice review template that's 3 wasted ~$X reviews because of one bad subscription.
+
+**The fix:** every phase slot owns a `fallback: voice[]` chain. On a retryable error class (`quota_exhausted | network | timeout | cli_failed`), the runner swaps in the next fallback voice **for that slot only**. The completed work from other voices is preserved — no global re-run.
+
+**Schema** (additive on top of the per-slot persona binding from PR #17 + #23):
+
+```yaml
+phases:
+  - kind: review_only
+    reviewers:
+      - voice: codex-cli           # primary
+        persona: sentinel
+        fallback:                  # tried in order on retryable error
+          - openrouter:openai/gpt-5.5
+          - claude-code
+      - voice: gemini-cli
+        persona: cartographer
+        fallback:
+          - openrouter:google/gemini-3-pro
+      - voice: opencode-go         # no fallback declared — error stays errored
+        persona: accountant
+```
+
+**Behaviour rules:**
+
+- **Retryable errors only** — `cli_warning` and non-terminal events do NOT trigger fallback. Only the four error kinds above. Schema validation errors, hostile-stream writer-died, etc. stay terminal because the underlying problem is the prompt or environment, not the voice.
+- **One fallback exhaustion at a time** — runner tries fallback[0]. If that also errors retryably, tries fallback[1]. Once the chain is empty, the slot is terminal `errored`. Quorum math then runs on whoever did succeed (e.g. `require: 2 of 3` still passes if 2 succeeded and 1 exhausted its chain).
+- **Lineage diversity preserved by default** — PhaseEditor warns if a fallback differs in lineage from the primary (so quorum math doesn't silently shift from "2 lineages agree" to "all 3 are anthropic"). User can override with explicit acknowledgement.
+- **No re-run of already-finished voices** — the partial event log is authoritative. The runner inspects `phase_events` for the slot, sees primary errored, dispatches the fallback to the same persona+brief without touching the others.
+- **Cost attribution** — both primary attempt and fallback attempt log their own `cost_usd` rows. Run history shows "voice swap due to quota_exhausted" inline so the user understands why their bill has two charges for one slot.
+- **MCP visibility** — `chat_done` payload gains `voiceSwaps: [{slot, from, to, reason}]` so MCP harnesses can decide whether the swap fundamentally changes the verdict semantics.
+
+**UX surfaces:**
+
+- PhaseEditor: each voice row gets a "+ add fallback" chevron. Drag-to-reorder within the chain. Lineage warning badge when chain crosses lineages.
+- Run page: when a swap fires, the participant card shows a small "→ swapped to <fallback>" pill instead of disappearing. Both attempts visible in the round expander.
+- Onboarding: when a user has only ONE voice in a lineage, the post-add nudge suggests "Add an OpenRouter fallback so a quota hit doesn't kill your runs."
+
+**Dovetails with:**
+
+- **Multi-account per CLI** (also v0.8): a fallback can be the same CLI on a different `CHORUS_CODEX_HOME` account. So Codex with quota A → Codex with quota B → OpenRouter `openai/*`. First-class UX once the `cli_account` table lands.
+- **OpenRouter inline** (in flight PR #27): API-routed fallbacks become trivial once the dispatch shim ships. The roadmap-level value of OpenRouter is partly about being the universal-fallback layer.
+
+**Effort:** ~3 days. Schema + parser + runner dispatch swap + PhaseEditor UI + 2 cockpit surfaces. Tests cover: retryable-classification, chain-exhaustion-then-quorum-still-passes, lineage-warning, cost-double-attribution, no-re-run-of-others.
 
 ---
 

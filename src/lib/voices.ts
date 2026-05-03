@@ -57,8 +57,11 @@ const SINGLE_MODEL_CLIS: ReadonlyArray<{
  * suffix drives the mapping, not the gateway prefix — `opencode-go/kimi-*`
  * and `opencode-zen/kimi-*` are both lineage=moonshot. Diversity scoring
  * reads `lineage`; cost UX reads `vendor_family`.
+ *
+ * Reused for OpenRouter model ids (`anthropic/claude-...`,
+ * `openai/gpt-...`, etc.) — the qualified prefix pattern is identical.
  */
-function classifyOpencodeModel(qualified: string): {
+export function classifyOpencodeModel(qualified: string): {
   lineage: DaemonLineage;
   vendor_family: string | null;
 } {

@@ -187,10 +187,32 @@ export function parseKimi(line: string): AgentEvent[] {
 // ─── OpenCode (opencode run --format json) ─────────────────────────────────
 //
 // OpenCode `run --format json` (v1.14+) emits JSON Lines — one event per
-// line: step_start, text, tool calls, step-finish. The text events carry
-// the LLM output under `part.text` and are what the runner cares about.
-// parseOpencode emits text_delta for each text event; parseOpencodeExit
-// is a fallback for older builds that emit a single JSON blob.
+// line: step_start, text, tool calls, step_finish. The text events carry
+// the LLM output under `part.text`; the step_finish event carries token
+// counts under `part.tokens`.
+//
+// step_finish shape (verified live 2026-05-03 against deepseek-v4-pro):
+//   { "type": "step_finish",
+//     "part": { "tokens": { "total": <n>, "input": <n>, "output": <n>,
+//                           "reasoning": <n>,
+//                           "cache": { "write": <n>, "read": <n> } },
+//               "cost": <usd> } }
+//
+// Why parseOpencode does NOT emit message_done on step_finish anymore:
+// retroactive PR #25 review (gemini + opencode-deepseek + opencode-kimi)
+// caught that opencode can emit MULTIPLE step_finish events per session
+// (tool-call agents, multi-turn). Emitting a per-step message_done made
+// the runner overwrite finalText to ``, fire participant_done multiple
+// times, and replace (not accumulate) usage. The fix lives in
+// parseOpencodeExit, which sees the full stdout once and aggregates
+// every step_finish into a single message_done with summed tokens.
+//
+// We mirror the AgentEvent.message_done.usage shape:
+//   inputTokens         <- sum of tokens.input across all step_finish
+//   outputTokens        <- sum of tokens.output
+//   cachedInputTokens   <- sum of tokens.cache.read
+// Reasoning + cache.write are dropped today; they don't render on the
+// chip. Easy to lift if we need them later.
 export function parseOpencode(line: string): AgentEvent[] {
   const obj = tryJson(line) as Record<string, unknown> | undefined;
   if (!obj || obj.type !== 'text') return [];
@@ -200,20 +222,76 @@ export function parseOpencode(line: string): AgentEvent[] {
   return [{ type: 'text_delta', text }];
 }
 
+interface OpencodeUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+}
+
 /**
- * OpenCode on-exit handler — fallback for non-JSON-Lines stdout. With
- * `--format json` on opencode 1.14+, parseOpencode already pulled out the
- * text events, so this is a no-op in that case. Older builds (or a
- * single-blob fallback shape) still resolve here.
+ * Walk every line of opencode JSON-Lines stdout, sum tokens from every
+ * `step_finish` event, return undefined when no step_finish carried any
+ * usable counts. Exported for the inline test fixture.
+ */
+function aggregateOpencodeUsage(fullStdout: string): OpencodeUsage | undefined {
+  const acc: OpencodeUsage = {};
+  let any = false;
+  for (const line of fullStdout.split('\n')) {
+    const obj = tryJson(line) as Record<string, unknown> | undefined;
+    if (!obj || obj.type !== 'step_finish') continue;
+    const part = obj.part as Record<string, unknown> | undefined;
+    const tokens = part?.tokens as
+      | { input?: number; output?: number; cache?: { read?: number } }
+      | undefined;
+    if (!tokens) continue;
+    if (typeof tokens.input === 'number') {
+      acc.inputTokens = (acc.inputTokens ?? 0) + tokens.input;
+      any = true;
+    }
+    if (typeof tokens.output === 'number') {
+      acc.outputTokens = (acc.outputTokens ?? 0) + tokens.output;
+      any = true;
+    }
+    if (typeof tokens.cache?.read === 'number') {
+      acc.cachedInputTokens = (acc.cachedInputTokens ?? 0) + tokens.cache.read;
+      any = true;
+    }
+  }
+  return any ? acc : undefined;
+}
+
+/**
+ * OpenCode on-exit handler. Two responsibilities:
+ *
+ * 1. JSON-Lines path (modern opencode `run --format json`): parseOpencode
+ *    already emitted text_delta events for the body; the runner accumulated
+ *    them. We emit a single synthetic message_done with finalText="" (so
+ *    the runner falls back to its accumulator) plus the SUM of step_finish
+ *    token counts across the whole session.
+ *
+ * 2. Single-blob path (older opencode builds, fallback shape): parse the
+ *    whole stdout as a JSON object, lift `message`/`result`/`output` as
+ *    finalText, no usage available.
+ *
+ * Either way we emit ONE message_done — never multiple — so the runner's
+ * participant_done lifecycle fires exactly once.
  */
 export function parseOpencodeExit(fullStdout: string): AgentEvent[] {
   if (fullStdout.trim().length === 0) return [];
-  // If the stdout starts with a JSON-Lines stream, parseOpencode already
-  // handled it — don't double-emit.
+  // JSON-Lines detection: probe the first non-empty line.
   const firstLine = fullStdout.split('\n').find((l) => l.trim().length > 0);
   if (firstLine) {
     const probe = tryJson(firstLine) as Record<string, unknown> | undefined;
-    if (probe && typeof probe.type === 'string') return [];
+    if (probe && typeof probe.type === 'string') {
+      // Aggregate tokens across every step_finish event in the stream.
+      // finalText="" tells the runner to fall back to its text_delta
+      // accumulator (mirrors parseClaude's `result` event handling).
+      const usage = aggregateOpencodeUsage(fullStdout);
+      if (usage) {
+        return [{ type: 'message_done', finalText: '', usage }];
+      }
+      return [];
+    }
   }
   const obj = tryJson(fullStdout) as Record<string, unknown> | undefined;
   if (!obj) return [{ type: 'message_done', finalText: fullStdout }];

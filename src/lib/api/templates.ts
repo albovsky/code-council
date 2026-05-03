@@ -190,6 +190,7 @@ function parseRow(row: RawTemplateRow): Template {
     authorHandle: parsed.author ?? "chorus",
     forks: 0,
     popularity: 0,
+    source: row.source,
   };
 }
 
@@ -212,4 +213,14 @@ export async function saveTemplate(template: {
     body: JSON.stringify(template),
   });
   return parseRow(row);
+}
+
+/** Hard-delete a user template. The daemon refuses for built-ins (the
+ *  boot seed re-creates them from disk on next start) — surface that as a
+ *  DaemonError to the cockpit so the delete button is hidden for built-ins.
+ */
+export async function deleteTemplate(id: string): Promise<void> {
+  await fetchFromDaemon<{ id: string }>(`/templates/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }

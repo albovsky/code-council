@@ -228,6 +228,11 @@ export interface Template {
     doer?: ReviewerCandidate[];
     reviewer?: ReviewerCandidate[];
   };
+  /** "builtin" rows are seeded from `templates/*.yaml` on every daemon
+   *  boot — deletes refuse because they'd come back. The cockpit hides the
+   *  delete affordance for these rows. "user" rows are user-created or
+   *  user-edited (a builtin gets demoted to user on first edit). */
+  source?: "builtin" | "user";
 }
 
 export interface BlockedChat {

@@ -635,6 +635,15 @@ export const templates = {
     if (result.rows.length === 0) return null;
     return TemplateSchema.parse(coerceTemplateYaml(result.rows[0]));
   },
+
+  /** Hard-delete by id. Caller is responsible for refusing built-in rows
+   *  before reaching here — the boot seed in src/daemon/index.ts re-creates
+   *  built-in templates from `templates/*.yaml`, so a built-in delete would
+   *  come back on next start. */
+  async delete(id: string): Promise<void> {
+    const db = await getDb();
+    await db.execute({ sql: 'DELETE FROM templates WHERE id = ?', args: [id] });
+  },
 };
 
 // SQLite stores text columns as TEXT, but `INSERT ... readfile(...)` and some

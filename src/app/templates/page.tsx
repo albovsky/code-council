@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useState, useEffect } from "react";
-import { Pencil } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/page-header";
 import { CodeBlock } from "@/components/code-block";
 import { TemplateDialog } from "@/components/template-dialog";
-import { listTemplates, DaemonError } from "@/lib/api";
+import { listTemplates, deleteTemplate, DaemonError } from "@/lib/api";
 import { Template } from "@/lib/types";
 import { UI_LINEAGE_BRAND } from "@/lib/lineage-maps";
 
@@ -30,6 +30,11 @@ export default function TemplatesPage() {
   const [activeCat, setActiveCat] =
     useState<(typeof CATEGORIES)[number]["id"]>("all");
   const [selectedId, setSelectedId] = useState<string>("");
+  // Two-click delete confirm (matches /personas pattern). 8s auto-disarm
+  // so a long-armed Delete doesn't eat a stray click later.
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const refreshTemplates = useCallback(
     async (preserveId?: string) => {
@@ -54,6 +59,40 @@ export default function TemplatesPage() {
     refreshTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleDeleteRow(target: Template) {
+    if (deletingId || target.source === "builtin") return;
+    if (confirmingDeleteId !== target.id) {
+      setConfirmingDeleteId(target.id);
+      setDeleteError(null);
+      // 8s auto-disarm matches the personas page.
+      setTimeout(() => {
+        setConfirmingDeleteId((cur) => (cur === target.id ? null : cur));
+      }, 8000);
+      return;
+    }
+    setDeletingId(target.id);
+    setDeleteError(null);
+    try {
+      await deleteTemplate(target.id);
+      setConfirmingDeleteId(null);
+      // If the deleted template was selected, fall through to whichever row
+      // refreshTemplates picks next (no preserveId).
+      if (selectedId === target.id) setSelectedId("");
+      await refreshTemplates();
+    } catch (err) {
+      setDeleteError(
+        err instanceof DaemonError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Delete failed (unknown error)",
+      );
+      setConfirmingDeleteId(null);
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const filtered =
     activeCat === "all"
@@ -89,6 +128,12 @@ export default function TemplatesPage() {
             />
           }
         />
+
+        {deleteError && (
+          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {deleteError}
+          </div>
+        )}
 
         <div className="mb-4 flex items-center gap-1 border-b border-border">
           {CATEGORIES.map((c) => (
@@ -193,7 +238,7 @@ export default function TemplatesPage() {
                 {/* Pencil edit affordance — appears on hover or when selected.
                     stopPropagation prevents the card's onClick from firing. */}
                 <div
-                  className={`absolute bottom-3 right-3 transition ${
+                  className={`absolute bottom-3 right-3 flex items-center gap-1.5 transition ${
                     t.id === selectedId
                       ? "opacity-100"
                       : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
@@ -214,6 +259,39 @@ export default function TemplatesPage() {
                       </button>
                     }
                   />
+                  {/* Delete — only for user-source templates (built-ins
+                      refuse server-side because the boot seed re-creates
+                      them; hiding the button here too avoids a confusing
+                      400 on click). Two-click confirm + 8s auto-disarm,
+                      matches the /personas pattern. */}
+                  {t.source !== "builtin" && (
+                    <button
+                      type="button"
+                      aria-label={
+                        confirmingDeleteId === t.id
+                          ? `Confirm delete ${t.name}`
+                          : `Delete ${t.name}`
+                      }
+                      title={
+                        confirmingDeleteId === t.id
+                          ? "Click again to confirm"
+                          : "Delete"
+                      }
+                      disabled={deletingId === t.id}
+                      onClick={() => handleDeleteRow(t)}
+                      className={`grid h-7 w-7 place-items-center rounded-md border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        confirmingDeleteId === t.id
+                          ? "border-destructive bg-destructive/15 text-destructive"
+                          : "border-border bg-card text-muted-foreground hover:border-destructive/50 hover:text-destructive"
+                      }`}
+                    >
+                      {deletingId === t.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

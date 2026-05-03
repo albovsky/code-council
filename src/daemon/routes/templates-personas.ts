@@ -117,6 +117,34 @@ export function registerTemplateRoutes(fastify: FastifyInstance): void {
       return errorResponse('db_error', message);
     }
   });
+
+  // Delete a user template. Built-ins refuse because the boot seed in
+  // src/daemon/index.ts re-creates them from `templates/*.yaml` on next
+  // start — surfacing a 400 here makes the cockpit hide the delete button
+  // for builtins instead of silently no-op'ing. Mirrors the persona DELETE
+  // route shape.
+  fastify.delete<{
+    Params: { id: string };
+    Reply: ApiResponse<{ id: string }>;
+  }>('/templates/:id', async (request) => {
+    try {
+      const existing = await templates.getById(request.params.id);
+      if (!existing) {
+        return errorResponse('not_found', `Template ${request.params.id} not found`);
+      }
+      if (existing.source === 'builtin') {
+        return errorResponse(
+          'validation',
+          'Built-in templates cannot be deleted (the boot seed would recreate them). Edit instead — your changes will be preserved.',
+        );
+      }
+      await templates.delete(request.params.id);
+      return successResponse({ id: request.params.id });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('db_error', message);
+    }
+  });
 }
 
 const PERSONA_ID_RE = /^[a-z0-9][a-z0-9-]{1,63}$/;

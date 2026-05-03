@@ -122,7 +122,7 @@ const DAEMON_TO_COCKPIT_LINEAGE: Record<string, ReviewerLineage> = {
   xai: "opencode",
 };
 
-interface ConnectedVoiceMap {
+export interface ConnectedVoiceMap {
   /** Per-cockpit-lineage list of enabled model_ids. */
   byLineage: Partial<Record<ReviewerLineage, string[]>>;
   /** Set of cockpit-lineages that have at least one enabled voice. */
@@ -137,7 +137,7 @@ interface ConnectedVoiceMap {
  * failure — falls back to empty maps; freeform fallback still lets the
  * user type a model id by hand.
  */
-function useConnectedVoices(): ConnectedVoiceMap {
+export function useConnectedVoices(): ConnectedVoiceMap {
   const [state, setState] = useState<ConnectedVoiceMap>({
     byLineage: {},
     connectedLineages: new Set(),
@@ -835,7 +835,7 @@ function PhaseCard({
             />
           </SubField>
 
-          <SubField label="Quorum">
+          <SubField label="Approvals">
             <div className="flex items-center gap-4 flex-wrap">
               <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
                 Require:

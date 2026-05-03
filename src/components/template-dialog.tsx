@@ -54,7 +54,7 @@ import type {
   TemplatePhase,
   ThresholdAction,
 } from "@/lib/mock-data";
-import { PhaseEditor } from "@/components/phase-editor";
+import { PhaseEditor, useConnectedVoices, type ConnectedVoiceMap } from "@/components/phase-editor";
 import { cn } from "@/lib/utils";
 import { saveTemplate, DaemonError } from "@/lib/api";
 import {
@@ -1195,7 +1195,11 @@ const WIZARD_STEPS: StepDef[] = [
   { id: 1, label: "Basics", icon: Tag },
   { id: 2, label: "Phases", icon: Layers },
   { id: 3, label: "Fallback", icon: Shuffle },
-  { id: 4, label: "Quorum", icon: Sliders },
+  // "Policy" — covers threshold + iteration (maxRounds) + gates (yolo).
+  // Was "Quorum" but that collided with PhaseEditor's per-phase Approvals
+  // section (reviewer.require + crossLineage); the only quorum-shaped
+  // thing here is the threshold preset, the rest is run policy.
+  { id: 4, label: "Policy", icon: Sliders },
 ];
 
 function validateStep(step: number, form: FormState): string[] {
@@ -1225,7 +1229,7 @@ function validateStep(step: number, form: FormState): string[] {
       }
     }
   }
-  // Steps 3 (Fallback) + 4 (Quorum) are optional — no required fields.
+  // Steps 3 (Fallback) + 4 (Policy) are optional — no required fields.
   return issues;
 }
 
@@ -1287,7 +1291,7 @@ function FormPanel({
           <PhasesStep form={form} setField={setField} showErrors={showErrors} />
         )}
         {step === 3 && <FallbackStep form={form} setField={setField} />}
-        {step === 4 && <QuorumStep form={form} setField={setField} />}
+        {step === 4 && <PolicyStep form={form} setField={setField} />}
       </div>
 
       {showErrors && issues.length > 0 && (
@@ -1504,6 +1508,10 @@ function FallbackStep({
   form: FormState;
   setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
 }) {
+  // Same hook the PhaseEditor uses — fetch enabled voices once, bucket by
+  // cockpit lineage. Lets the model dropdown show ONLY models the user
+  // actually has connected for the selected lineage.
+  const connectedVoices = useConnectedVoices();
   return (
     <>
       <div className="rounded-md border border-border bg-card/40 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
@@ -1525,6 +1533,7 @@ function FallbackStep({
         hint="Engaged when the doer's primary + per-slot models all fail."
         rows={form.fallbackDoer}
         onChange={(rows) => setField("fallbackDoer", rows)}
+        connectedVoices={connectedVoices}
       />
 
       <FallbackList
@@ -1532,6 +1541,7 @@ function FallbackStep({
         hint="Engaged when any reviewer's primary + per-slot models all fail."
         rows={form.fallbackReviewer}
         onChange={(rows) => setField("fallbackReviewer", rows)}
+        connectedVoices={connectedVoices}
       />
     </>
   );
@@ -1542,20 +1552,44 @@ function FallbackList({
   hint,
   rows,
   onChange,
+  connectedVoices,
 }: {
   title: string;
   hint: string;
   rows: FallbackVoice[];
   onChange: (rows: FallbackVoice[]) => void;
+  connectedVoices: ConnectedVoiceMap;
 }) {
   const addRow = () => {
-    onChange([...rows, { lineage: "claude", model: "" }]);
+    // Default lineage = first one with at least one connected model so the
+    // model dropdown isn't empty on first add. Falls back to "claude" if
+    // nothing is connected yet (user can still pick a different lineage and
+    // see the empty-state hint).
+    const firstConnected = (
+      ["claude", "codex", "gemini", "opencode", "kimi", "openrouter"] as const
+    ).find((l) => (connectedVoices.byLineage[l] ?? []).length > 0);
+    const lineage: ReviewerLineage = firstConnected ?? "claude";
+    const firstModel = connectedVoices.byLineage[lineage]?.[0] ?? "";
+    onChange([...rows, { lineage, model: firstModel }]);
   };
   const removeRow = (idx: number) => {
     onChange(rows.filter((_, i) => i !== idx));
   };
   const updateRow = (idx: number, patch: Partial<FallbackVoice>) => {
     onChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+  // Auto-pick the first model for the lineage when the user switches
+  // lineage on a row whose current model isn't valid for the new lineage.
+  // Without this the row could keep e.g. "claude-opus-4-7" after switching
+  // to opencode, which would fail at runtime with "model not enabled".
+  const updateLineage = (idx: number, nextLineage: ReviewerLineage) => {
+    const models = connectedVoices.byLineage[nextLineage] ?? [];
+    const currentModel = rows[idx].model;
+    const keepModel = models.includes(currentModel);
+    updateRow(idx, {
+      lineage: nextLineage,
+      model: keepModel ? currentModel : (models[0] ?? ""),
+    });
   };
   return (
     <div className="rounded-lg border border-border bg-card/40 p-4">
@@ -1579,59 +1613,81 @@ function FallbackList({
         </p>
       ) : (
         <ul className="space-y-2">
-          {rows.map((row, idx) => (
-            <li key={idx} className="flex items-center gap-2">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-card font-mono text-[10px] text-muted-foreground">
-                {idx + 1}
-              </span>
-              <select
-                value={row.lineage}
-                onChange={(e) =>
-                  updateRow(idx, {
-                    lineage: e.target.value as ReviewerLineage,
-                  })
-                }
-                className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-              >
-                {(
-                  [
-                    "claude",
-                    "codex",
-                    "gemini",
-                    "opencode",
-                    "kimi",
-                    "openrouter",
-                  ] as const
-                ).map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={row.model}
-                onChange={(e) => updateRow(idx, { model: e.target.value })}
-                placeholder="model id (e.g. claude-sonnet-4-6)"
-                className="h-8 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
-              />
-              <button
-                type="button"
-                onClick={() => removeRow(idx)}
-                aria-label={`Remove fallback ${idx + 1}`}
-                className="grid h-7 w-7 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </li>
-          ))}
+          {rows.map((row, idx) => {
+            const lineageModels =
+              connectedVoices.byLineage[row.lineage] ?? [];
+            // If the row's stored model isn't in the connected list, surface
+            // it as a "(stored)" option so editing an existing template
+            // doesn't silently lose the value when a model is no longer
+            // enabled. Same trick the PhaseEditor uses.
+            const modelHasOption =
+              row.model.length === 0 || lineageModels.includes(row.model);
+            return (
+              <li key={idx} className="flex items-center gap-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-card font-mono text-[10px] text-muted-foreground">
+                  {idx + 1}
+                </span>
+                <select
+                  value={row.lineage}
+                  onChange={(e) =>
+                    updateLineage(idx, e.target.value as ReviewerLineage)
+                  }
+                  className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+                >
+                  {(
+                    [
+                      "claude",
+                      "codex",
+                      "gemini",
+                      "opencode",
+                      "kimi",
+                      "openrouter",
+                    ] as const
+                  ).map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={row.model}
+                  onChange={(e) => updateRow(idx, { model: e.target.value })}
+                  className="h-8 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/20"
+                >
+                  {lineageModels.length === 0 && (
+                    <option value="" disabled>
+                      {connectedVoices.loaded
+                        ? `No ${row.lineage} models enabled — open Connect → ${row.lineage}`
+                        : "loading…"}
+                    </option>
+                  )}
+                  {lineageModels.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                  {!modelHasOption && row.model.length > 0 && (
+                    <option value={row.model}>{row.model} (stored)</option>
+                  )}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => removeRow(idx)}
+                  aria-label={`Remove fallback ${idx + 1}`}
+                  className="grid h-7 w-7 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
   );
 }
 
-function QuorumStep({
+function PolicyStep({
   form,
   setField,
 }: {

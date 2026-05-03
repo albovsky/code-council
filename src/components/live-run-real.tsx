@@ -90,7 +90,9 @@ const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   drafting: { text: "DRAFTING · doer working", color: "primary" },
   reviewing: { text: "REVIEWING · cross-lineage check", color: "primary" },
   approved: { text: "APPROVED", color: "emerald" },
-  merged: { text: "MERGED · PR opened", color: "emerald" },
+  // Internal status name is 'merged' (legacy) — but chorus only opens
+  // the PR; the human clicks Merge in GitHub. Label reflects reality.
+  merged: { text: "PR OPENED", color: "emerald" },
   blocked: { text: "BLOCKED · ship error", color: "amber" },
   no_review: { text: "NO REVIEW · reviewers unavailable", color: "amber" },
   failed: { text: "FAILED", color: "destructive" },

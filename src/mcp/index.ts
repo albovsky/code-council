@@ -61,28 +61,80 @@ mcpServer.registerTool(
       "Long-poll a chat until terminal state. Blocks until status is approved, merged, blocked, cancelled, or failed.",
     inputSchema: WaitForChatSchema,
   },
-  async (input) => {
+  async (input, extra) => {
     const progressEvents: Record<string, unknown>[] = [];
-    const result = await waitForChat(input, (event) => {
-      progressEvents.push(event);
-      // Emit MCP notification for each phase transition
-      mcpServer.server.notification({
-        method: "notifications/message",
-        params: {
-          level: "info",
-          data: event,
-        },
+    // The MCP SDK enforces a 60s default request timeout (DEFAULT_REQUEST_TIMEOUT_MSEC).
+    // Long chorus chats routinely exceed that — we previously surfaced as
+    // "Connection closed -32000" on the client. The MCP spec's progress
+    // notification mechanism resets the timeout per `resetTimeoutOnProgress`
+    // when the client opted into it AND we send `notifications/progress`
+    // referencing the request's progressToken (passed in via _meta).
+    //
+    // We send a progress notification on every chat event AND on a fixed
+    // ~25s heartbeat so a stalled chat (mid-LLM-stream, low SSE event
+    // density) still keeps the client awake. The progress field is a
+    // monotonically-increasing counter — the spec mandates monotonicity
+    // even though most clients don't enforce it.
+    const progressToken = extra._meta?.progressToken;
+    let progressCounter = 0;
+    const sendProgress = async (message?: string): Promise<void> => {
+      if (progressToken === undefined || progressToken === null) return;
+      progressCounter += 1;
+      try {
+        await extra.sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken,
+            progress: progressCounter,
+            ...(message ? { message } : {}),
+          },
+        });
+      } catch {
+        // Notification delivery is best-effort. A failed send doesn't
+        // imply the request is dead — let the await on the chat finish.
+      }
+    };
+
+    // Heartbeat keeps the timer alive between real chat events. 25s sits
+    // comfortably under the SDK default 60s; even if the SDK timeout is
+    // tuned tighter on a specific client, the heartbeat will land before
+    // most reasonable thresholds.
+    const heartbeat = setInterval(() => {
+      void sendProgress(`waiting on ${input.chatId}…`);
+    }, 25_000);
+
+    try {
+      const result = await waitForChat(input, (event) => {
+        progressEvents.push(event);
+        // Fire progress immediately for every state-changing event the
+        // chat emits — most clients display the message field, which
+        // gives the user "still alive" feedback during a long review.
+        const status =
+          typeof event === "object" && event !== null
+            ? ((event as Record<string, unknown>).status as string | undefined)
+            : undefined;
+        const phase =
+          typeof event === "object" && event !== null
+            ? ((event as Record<string, unknown>).phase as string | undefined)
+            : undefined;
+        const msg =
+          status && phase
+            ? `${status} · ${phase}`
+            : status ?? "chat event";
+        void sendProgress(msg);
       });
-    });
 
-    const response = {
-      ...(result as Record<string, unknown>),
-      events: progressEvents,
-    };
+      const response = {
+        ...(result as Record<string, unknown>),
+        events: progressEvents,
+      };
 
-    return {
-      content: [{ type: "text" as const, text: JSON.stringify(response) }],
-    };
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(response) }],
+      };
+    } finally {
+      clearInterval(heartbeat);
+    }
   }
 );
 

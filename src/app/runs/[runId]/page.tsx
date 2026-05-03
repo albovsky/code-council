@@ -44,6 +44,13 @@ interface ParticipantSnapshot {
   findingsPreview?: string[];
   binaryUsed?: string;
   modelUsed?: string;
+  durationMs?: number;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+    costUsd?: number;
+  };
 }
 
 interface RoundSnapshot {
@@ -109,6 +116,49 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
             /* informational sidecar; ignore parse errors */
           }
         }
+        // Stats sidecar — runner writes `{durationMs, usage}` at
+        // participant_done. Without reading it here, terminal chats
+        // (which skip the live run-artifacts polling) render with
+        // empty time/tokens/cost chips. Mirrors the same parse in
+        // /api/run-artifacts/[chatId]/route.ts.
+        let durationMs: number | undefined;
+        let usage:
+          | {
+              inputTokens?: number;
+              outputTokens?: number;
+              cachedInputTokens?: number;
+              costUsd?: number;
+            }
+          | undefined;
+        const statsPath = path.join(roundDir, d.name, "_stats.json");
+        if (fs.existsSync(statsPath)) {
+          try {
+            const stats = JSON.parse(fs.readFileSync(statsPath, "utf-8")) as {
+              durationMs?: unknown;
+              usage?: {
+                inputTokens?: unknown;
+                outputTokens?: unknown;
+                cachedInputTokens?: unknown;
+                costUsd?: unknown;
+              };
+            };
+            if (typeof stats.durationMs === "number") durationMs = stats.durationMs;
+            if (stats.usage && typeof stats.usage === "object") {
+              const u: Record<string, number> = {};
+              if (typeof stats.usage.inputTokens === "number")
+                u.inputTokens = stats.usage.inputTokens;
+              if (typeof stats.usage.outputTokens === "number")
+                u.outputTokens = stats.usage.outputTokens;
+              if (typeof stats.usage.cachedInputTokens === "number")
+                u.cachedInputTokens = stats.usage.cachedInputTokens;
+              if (typeof stats.usage.costUsd === "number")
+                u.costUsd = stats.usage.costUsd;
+              if (Object.keys(u).length > 0) usage = u;
+            }
+          } catch {
+            /* informational sidecar; ignore parse errors */
+          }
+        }
         return {
           participant: d.name,
           role,
@@ -119,6 +169,8 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
           findingsPreview,
           binaryUsed,
           modelUsed,
+          durationMs,
+          usage,
         };
       });
 

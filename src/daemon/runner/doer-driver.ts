@@ -1,0 +1,320 @@
+import fs from 'fs';
+import path from 'path';
+import { DEFAULT_TMUX_PHASE_TIMEOUT_MS, type StandardPhase } from '../../lib/template-schema.js';
+import { recordHealth, kindToStatus, type CliLineage } from '../../lib/cli-health.js';
+import { precheckLineage } from '../../lib/cli-precheck.js';
+import { personas } from '../../lib/db/index.js';
+import { getPermissions } from '../../lib/settings/permissions.js';
+import { getTransport } from '../../lib/settings/transport.js';
+import { isHttpDispatchedShim, pickShimForVoice } from '../agents/index.js';
+import type { ErrorDetector } from '../error-detector.js';
+import { waitForAnswer } from '../output-watcher.js';
+import * as participantAborts from '../participant-aborts.js';
+import type { TmuxManager } from '../tmux-types.js';
+import { runDoerHeadless } from './doer.js';
+import { buildAsk } from './prompt-builder.js';
+import { runWithModelFallback } from './run-with-fallback.js';
+import { sanitizeName } from './sanitize-name.js';
+import { buildSlotFallbackChain } from './template-fallback.js';
+import type { RunnerEvent } from './types.js';
+
+export async function runDoer(
+  chatDir: string,
+  chatId: string,
+  phase: StandardPhase,
+  phaseIdx: number,
+  round: number,
+  work: string,
+  filesBlock: string,
+  tmuxMgr: TmuxManager,
+  errorDetector: ErrorDetector,
+  onEvent: (e: RunnerEvent) => void,
+  abortSignal: AbortSignal,
+  repoPath?: string,
+  templateFallbackDoer?: ReadonlyArray<{ lineage: string; models: string[] }>,
+): Promise<{ content: string; full: boolean } | null> {
+  const doerModel = phase.doer.models?.[0];
+  const shim = pickShimForVoice(phase.doer.lineage, doerModel);
+  const agentName = shim.name;
+
+  // Pre-spawn precheck: short-circuit doomed runs without paying the spawn
+  // tax. Two cheap layers: (1) recent quota_exhausted with future resetAt,
+  // (2) credential file missing → user not logged in. HTTP-dispatched shims
+  // (openrouter) skip this — their auth is the secrets table, checked
+  // inside the shim itself.
+  if (!isHttpDispatchedShim(shim)) {
+    const preDoer = await precheckLineage(phase.doer.lineage as CliLineage);
+    if (!preDoer.ok) {
+      onEvent({
+        chatId,
+        type: 'cli_warning',
+        payload: {
+          phaseId: phase.id,
+          round,
+          role: 'doer',
+          agent: agentName,
+          lineage: phase.doer.lineage,
+          reason: preDoer.reason,
+          message: preDoer.message,
+          cta: preDoer.cta,
+          resetAt: preDoer.resetAt,
+        },
+        ts: Date.now(),
+      });
+      return null;
+    }
+  }
+
+  const roundDir = path.join(chatDir, `round-${round}`);
+  const doerDir = path.join(roundDir, `doer-${agentName}`);
+
+  if (!fs.existsSync(doerDir)) {
+    fs.mkdirSync(doerDir, { recursive: true });
+  }
+
+  const askFile = path.join(doerDir, 'ask.md');
+  const answerFile = path.join(doerDir, 'answer.md');
+
+  // Resolve doer persona. Falls back to no-persona prompt when the id can't
+  // be resolved — emits cli_warning so the cockpit can surface the
+  // misconfiguration. Without the warning, retroactive PR #17 review
+  // (gemini + opencode-deepseek + opencode-kimi) flagged that a user
+  // typoing a persona id silently runs the chat with a generic prompt.
+  let doerPersonaPrompt: string | undefined;
+  if ('persona' in phase.doer && phase.doer.persona) {
+    const personaId = phase.doer.persona;
+    try {
+      const row = await personas.getById(personaId);
+      if (row) {
+        doerPersonaPrompt = row.system_prompt;
+      } else {
+        onEvent({
+          chatId,
+          type: 'cli_warning',
+          payload: {
+            phaseId: phase.id,
+            phaseIdx,
+            round,
+            role: 'doer',
+            agent: agentName,
+            kind: 'persona_missing',
+            message: `Doer persona "${personaId}" not found in personas table — running with generic prompt. Check the template's doer.persona field.`,
+          },
+          ts: Date.now(),
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onEvent({
+        chatId,
+        type: 'cli_warning',
+        payload: {
+          phaseId: phase.id,
+          phaseIdx,
+          round,
+          role: 'doer',
+          agent: agentName,
+          kind: 'persona_lookup_failed',
+          message: `Doer persona lookup for "${personaId}" failed: ${message} — running with generic prompt.`,
+        },
+        ts: Date.now(),
+      });
+    }
+  }
+
+  const ask = buildAsk(
+    phase,
+    phaseIdx,
+    round,
+    work,
+    phase.inputs,
+    filesBlock,
+    doerPersonaPrompt,
+  );
+  fs.writeFileSync(askFile, ask);
+
+  // When the chat was created with a repoPath, the doer's working tree
+  // becomes the user's repo (so it can read files + make real edits the
+  // ship phase will commit). Reviewers always stay in scratch — they're
+  // not allowed to write to the user's repo. ask.md/answer.md still live
+  // in the chat dir for artifact viewing.
+  const doerCwd = repoPath ?? doerDir;
+
+  // Transport branch: headless when settings + shim support it; else fall
+  // through to tmux. Mixed-mode in a single chat is OK — Claude can run
+  // headless while a Gemini reviewer falls back to tmux.
+  //
+  // Per-slot model fallback: phase.doer.models can list multiple models.
+  // The chain extends with template.fallback.doer (same lineage, dedup'd).
+  // Doer has only one slot, so the dedup just guards against re-trying
+  // the slot's own model.
+  const transport = await getTransport();
+  if (transport === 'headless' && shim.runHeadless) {
+    const handle = participantAborts.register(
+      chatId,
+      participantAborts.participantKey('doer', agentName),
+      abortSignal,
+    );
+    try {
+      const doerSlot = {
+        lineage: phase.doer.lineage,
+        models: phase.doer.models ?? [],
+      };
+      const extendedModels = buildSlotFallbackChain(
+        doerSlot,
+        [doerSlot],
+        templateFallbackDoer,
+      );
+      return await runWithModelFallback(
+        extendedModels,
+        async (model) =>
+          runDoerHeadless({
+            shim,
+            chatId,
+            phase,
+            round,
+            agentName,
+            askContent: ask,
+            answerFile,
+            doerCwd,
+            abortSignal: handle.signal,
+            onEvent,
+            modelOverride: model,
+          }),
+        (fromModel, toModel, fromIdx) => {
+          onEvent({
+            chatId,
+            type: 'cli_warning',
+            payload: {
+              phaseId: phase.id,
+              round,
+              role: 'doer',
+              agent: agentName,
+              reason: 'model_fallback',
+              fromModel: fromModel ?? '(default)',
+              toModel: toModel ?? '(default)',
+              fallbackIdx: fromIdx,
+              message: `Doer model "${fromModel ?? '(default)'}" produced no answer; retrying with "${toModel ?? '(default)'}".`,
+            },
+            ts: Date.now(),
+          });
+        },
+      );
+    } finally {
+      handle.release();
+    }
+  }
+
+  // Acquire session — fresh per chat by default; reuses across rounds when
+  // template policy says so (shareSessionAcrossRounds, default true).
+  const perms = await getPermissions();
+  const sessionName = sanitizeName(`chorus-${chatId}-${phase.id}-doer-${agentName}`);
+  const session = await tmuxMgr.acquire({
+    chatId,
+    phaseId: phase.id,
+    role: 'doer',
+    round,
+    shareSessionAcrossRounds: phase.iterate.shareSessionAcrossRounds,
+    shareSessionAcrossPhases: phase.iterate.shareSessionAcrossPhases,
+    shim,
+    spawnOpts: {
+      sessionName,
+      cwd: doerCwd,
+      model: phase.doer.models?.[0],
+      sandbox: perms.sandboxProfile,
+      autoApprove: perms.autoApprovePrompts,
+      networkAccess: perms.networkAccess,
+    },
+    agentName,
+  });
+
+  if (shim.clearKeys && shim.clearKeys.length > 0) {
+    tmuxMgr.sendKeys(session.name, [...shim.clearKeys]);
+  }
+  if (shim.preNudge) shim.preNudge(session.name);
+
+  const prompt = shim.formatPrompt({
+    promptFile: askFile,
+    answerFile,
+    task: phase.title,
+    expectDoneSentinel: true,
+  });
+
+  // Wait for the CLI's TUI to finish cold-start before pasting. 6s covers
+  // Codex's slow cold-start (it auths + paints panels); shorter and the
+  // Enter we send below races against the input box being ready and gets
+  // eaten. Raise if a slower box still misses the prompt.
+  await new Promise((r) => setTimeout(r, 6000));
+
+  tmuxMgr.pasteBuffer(session.name, prompt);
+  // Small gap between paste and Enter so the TUI registers the paste before
+  // we submit.
+  await new Promise((r) => setTimeout(r, 500));
+  tmuxMgr.sendKeys(session.name, ['Enter']);
+
+  // Poll capture-pane every 2s to surface known CLI failure modes while we
+  // wait for the answer file. The detector is stateful for opencode's
+  // sustained-error pattern.
+  const pollHandle = setInterval(() => {
+    try {
+      const pane = tmuxMgr.capturePane(session.name);
+      const err = errorDetector.inspect(session.name, phase.doer.lineage, pane);
+      if (err) {
+        const recoveryKeys =
+          err.kind === 'permission_prompt' ? shim.recoverKeys?.permission_prompt : undefined;
+        if (recoveryKeys && recoveryKeys.length > 0) {
+          // Layer 2 recovery: navigate the dialog, emit a warning (not error),
+          // skip health recording — we recovered, no degradation.
+          tmuxMgr.sendKeys(session.name, [...recoveryKeys]);
+          onEvent({
+            chatId,
+            type: 'cli_warning',
+            payload: {
+              phaseId: phase.id,
+              round,
+              role: 'doer',
+              agent: agentName,
+              recovered: err.kind,
+              keys: [...recoveryKeys],
+              detail: err.detail,
+            },
+            ts: Date.now(),
+          });
+        } else {
+          // Fire-and-forget — recordHealth became async in the libsql
+          // migration. Inside a setInterval callback we can't await without
+          // changing the callback shape; explicit .catch keeps unhandled
+          // rejections off the process and preserves the pre-migration
+          // semantics (non-blocking health record).
+          recordHealth({
+            lineage: phase.doer.lineage as CliLineage,
+            status: kindToStatus(err.kind),
+            message: err.message,
+            resetAt: err.resetAt,
+          }).catch((healthErr: unknown) => {
+            console.error(`[chorus] recordHealth failed for ${phase.doer.lineage}:`, healthErr);
+          });
+          onEvent({
+            chatId,
+            type: 'cli_error',
+            payload: { phaseId: phase.id, round, role: 'doer', agent: agentName, error: err },
+            ts: Date.now(),
+          });
+        }
+      }
+    } catch {
+      // ignore — the watcher will time out independently
+    }
+  }, 2000);
+
+  try {
+    return await waitForAnswer(answerFile, {
+      timeoutMs: phase.timeoutMs ?? DEFAULT_TMUX_PHASE_TIMEOUT_MS,
+      doneSentinel: '## DONE',
+    });
+  } catch {
+    return null;
+  } finally {
+    clearInterval(pollHandle);
+  }
+}

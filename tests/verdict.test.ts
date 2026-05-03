@@ -54,9 +54,13 @@ describe('verdictFromReviewerText', () => {
     expect(verdictFromReviewerText(text)).toBeNull();
   });
 
-  it('strips trailing ## DONE before length check', () => {
-    const tooShortAfterStrip = 'lgtm everywhere\n## DONE';
-    expect(verdictFromReviewerText(tooShortAfterStrip)).toBeNull();
+  it('terse but explicit verdict bypasses the length floor', () => {
+    // Pre-fix this returned null because the 20-char floor ran BEFORE the
+    // regex. That dropped valid short replies like "approve ## DONE" (15
+    // chars). Verdict keywords now win regardless of length.
+    expect(verdictFromReviewerText('lgtm everywhere\n## DONE')).toBe(true);
+    expect(verdictFromReviewerText('approve\n## DONE')).toBe(true);
+    expect(verdictFromReviewerText('reject\n## DONE')).toBe(false);
   });
 
   it('negative wins over positive when both appear', () => {

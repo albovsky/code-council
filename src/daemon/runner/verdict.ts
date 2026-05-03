@@ -17,23 +17,28 @@
  */
 export function verdictFromReviewerText(content: string): boolean | null {
   const stripped = content.replace(/##\s*DONE\s*$/i, '').trim();
-  if (stripped.length < 20) return null;
 
-  const tail = stripped.slice(-400).toLowerCase();
   const negatives =
     /\b(request changes|requesting changes|disagree|reject(?:ed|ing)?|blocker|do not approve|do not merge|nack|cannot approve)\b/;
   const positives =
     /\b(approve(?:d|s)?|lgtm|looks good to me|no concerns|ship it|ack)\b/;
 
+  // Check verdict keywords FIRST — a terse but explicit reply like
+  // "approve ## DONE" (15 chars after sentinel strip) is unambiguous and
+  // shouldn't be filtered out by the length floor. Tail wins over whole
+  // so an analytical review mentioning "good practice" mid-paragraph
+  // doesn't get auto-approved without an explicit verdict at the end.
+  const tail = stripped.slice(-400).toLowerCase();
   if (negatives.test(tail)) return false;
   if (positives.test(tail)) return true;
 
-  // Fall back to whole-text scan, but only let positives win when negatives
-  // are truly absent — protects against an analytical review that mentions
-  // "good practice" but ends with no explicit verdict.
   const whole = stripped.toLowerCase();
   if (negatives.test(whole)) return false;
   if (positives.test(whole)) return true;
 
+  // No verdict keyword anywhere — return null (ambiguous). The 20-char
+  // floor was previously applied BEFORE the regex, which dropped valid
+  // terse approvals like "approve ## DONE". It's no longer needed: short
+  // replies without a keyword still resolve to null here.
   return null;
 }

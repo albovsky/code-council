@@ -26,7 +26,7 @@ import type {
 } from './types.js';
 import { quoteValue, quotePath, validateValue } from './quote.js';
 import { spawnHeadless } from '../headless.js';
-import { parseOpencode, parseOpencodeExit, parseKimi } from './parsers.js';
+import { parseOpencode, parseOpencodeExit, parseKimi } from './parsers/index.js';
 import { atomicWriteJsonSync } from '../../lib/atomic-write.js';
 import { wrapWithPty } from './opencode.js';
 

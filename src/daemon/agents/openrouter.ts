@@ -27,7 +27,7 @@ import type {
   AgentEvent,
 } from './types.js';
 import { secrets } from '../../lib/db/index.js';
-import { parseOpenRouterSSE } from './parsers.js';
+import { parseOpenRouterSSE } from './parsers/index.js';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;

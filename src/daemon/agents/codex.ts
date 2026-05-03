@@ -14,7 +14,7 @@ import type {
 import { quoteValue, quotePath, validateValue } from './quote.js';
 import { preTrustCodexWorkspace } from './preflight.js';
 import { spawnHeadless } from '../headless.js';
-import { parseCodex, parseCodexExit } from './parsers.js';
+import { parseCodex, parseCodexExit } from './parsers/index.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';

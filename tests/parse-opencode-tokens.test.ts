@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseOpencode,
   parseOpencodeExit,
-} from "../src/daemon/agents/parsers.js";
+} from "../src/daemon/agents/parsers/index.js";
 
 const TEXT_LINE =
   '{"type":"text","timestamp":1,"sessionID":"ses_1","part":{"type":"text","text":"Hello!","time":{"start":0,"end":1}}}';

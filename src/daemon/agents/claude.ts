@@ -13,7 +13,7 @@ import type {
 import { quoteValue, quotePath } from './quote.js';
 import { preTrustClaudeWorkspace } from './preflight.js';
 import { spawnHeadless } from '../headless.js';
-import { parseClaude } from './parsers.js';
+import { parseClaude } from './parsers/index.js';
 
 export const claudeShim: AgentShim = {
   lineage: 'anthropic',

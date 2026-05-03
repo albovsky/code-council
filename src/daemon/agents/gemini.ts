@@ -14,7 +14,7 @@ import type {
 } from './types.js';
 import { quoteValue, quotePath, validateValue } from './quote.js';
 import { spawnHeadless } from '../headless.js';
-import { parseGemini } from './parsers.js';
+import { parseGemini } from './parsers/index.js';
 
 export const geminiShim: AgentShim = {
   lineage: 'google',

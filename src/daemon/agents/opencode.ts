@@ -14,7 +14,7 @@ import type {
 } from './types.js';
 import { quotePath, validateValue } from './quote.js';
 import { spawnHeadless } from '../headless.js';
-import { parseOpencode, parseOpencodeExit } from './parsers.js';
+import { parseOpencode, parseOpencodeExit } from './parsers/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';

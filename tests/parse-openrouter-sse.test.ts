@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { parseOpenRouterSSE } from "../src/daemon/agents/parsers.js";
+import { parseOpenRouterSSE } from "../src/daemon/agents/parsers/index.js";
 
 describe("parseOpenRouterSSE", () => {
   it("emits text_delta for delta.content", () => {

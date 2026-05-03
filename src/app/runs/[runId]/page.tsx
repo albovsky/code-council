@@ -13,13 +13,27 @@ interface RunPageProps {
 }
 
 async function getRunData(runId: string) {
+  // Chat row + template are loaded independently. Template lookup is allowed
+  // to fail (template deleted after the chat ran) — the chat is immutable
+  // history and shouldn't 500 just because the user removed the template.
+  // LiveRunReal accepts `template: Template | null` and degrades to a
+  // template-less render (no phase stepper labels) when it's missing.
+  let chat;
   try {
-    const chat = await getChat(runId);
-    const template = await getTemplate(chat.templateId);
-    return { chat, template };
+    chat = await getChat(runId);
   } catch (err) {
-    throw err instanceof DaemonError ? err : new Error("Failed to load run data");
+    throw err instanceof DaemonError ? err : new Error("Failed to load chat");
   }
+  let template = null;
+  try {
+    template = await getTemplate(chat.templateId);
+  } catch {
+    // Template was deleted — chat still renders, just without template-
+    // derived UI (placeholder reviewer cards from candidate definitions,
+    // phase names, etc.). Recorded participants still come from disk via
+    // /api/run-artifacts.
+  }
+  return { chat, template };
 }
 
 const AGENT_TO_LINEAGE: Record<string, "claude" | "codex" | "gemini" | "opencode" | "kimi" | "openrouter"> = {

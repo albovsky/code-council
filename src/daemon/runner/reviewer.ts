@@ -344,7 +344,22 @@ export async function runReviewerHeadless(args: {
     }
   }
 
-  const content = finalText && finalText.length > 0 ? finalText : accumulated;
+  // Prefer answer.md on disk over streamed text. Tool-using CLIs (gemini)
+  // put the actual review into the file via a Write tool call and only
+  // stream a confirmation message ("Changes have been requested...") that
+  // the verdict heuristic can't classify. Reading the file picks up both
+  // the tool-written verdict AND any text_delta-appended assistant text,
+  // matching what the cockpit and CLI both display to the user.
+  let onDisk = '';
+  try {
+    if (fs.existsSync(answerFile)) {
+      onDisk = fs.readFileSync(answerFile, 'utf-8');
+    }
+  } catch {
+    /* best-effort — fall through to streamed content */
+  }
+  const streamed = finalText && finalText.length > 0 ? finalText : accumulated;
+  const content = onDisk.trim().length > 0 ? onDisk : streamed;
   if (errored && content.trim().length === 0) return null;
   if (content.trim().length === 0) return null;
 

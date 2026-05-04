@@ -27,6 +27,7 @@ import type {
   AgentEvent,
 } from './types.js';
 import { secrets } from '../../lib/db/index.js';
+import { recordHealth } from '../../lib/cli-health.js';
 import { parseOpenRouterSSE } from './parsers/index.js';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
@@ -263,6 +264,15 @@ async function* runOpenRouterStream(
   }
 
   if (finishedNaturally) {
+    // Clear any stale auth/quota/rate-limit state — the dispatch just
+    // succeeded, so any prior badge on the home OpenRouter card no
+    // longer reflects reality. Best-effort.
+    recordHealth({
+      lineage: 'openrouter',
+      status: 'healthy',
+    }).catch(() => {
+      /* health write is informational; ignore */
+    });
     yield {
       type: 'message_done',
       finalText: accumulated,

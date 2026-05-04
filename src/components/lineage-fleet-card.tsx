@@ -21,10 +21,28 @@ import {
   ChevronDown,
   Check,
 } from "lucide-react";
-import { lineageDot } from "@/lib/lineage-maps";
+import { UI_LINEAGE_BRAND, type UILineage } from "@/lib/lineage-maps";
 import { updateVoice, type Voice } from "@/lib/api/voices";
 import { DaemonError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+
+const DAEMON_TO_UI_LINEAGE: Record<string, UILineage> = {
+  anthropic: "claude",
+  openai: "codex",
+  google: "gemini",
+  opencode: "opencode",
+  moonshot: "kimi",
+};
+
+const NEUTRAL_BRAND = {
+  dot: "bg-muted-foreground/40",
+  gradient: "bg-gradient-to-br from-muted/30 via-card to-card",
+} as const;
+
+function brandForDaemonLineage(lineage: string) {
+  const ui = DAEMON_TO_UI_LINEAGE[lineage];
+  return ui ? UI_LINEAGE_BRAND[ui] : NEUTRAL_BRAND;
+}
 
 interface LineageFleetCardProps {
   /** Daemon-side lineage name — "anthropic", "openai", "google", "moonshot". */
@@ -66,15 +84,21 @@ export function LineageFleetCard({
   }
 
   const enabledCount = voices.filter((v) => v.enabled).length;
+  const brand = brandForDaemonLineage(lineage);
 
   return (
-    <div className="rounded-lg border border-border bg-card transition-colors hover:border-foreground/20">
+    <div
+      className={cn(
+        "rounded-lg border border-border transition-colors hover:border-foreground/20",
+        brand.gradient,
+      )}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 p-3 text-left"
       >
-        <span className={`h-2 w-2 shrink-0 rounded-full ${lineageDot(lineage)}`} />
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", brand.dot)} />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">{label}</div>
           <div className="mt-0.5 flex items-center gap-2">

@@ -16,7 +16,8 @@ export type CliLineage =
   | 'openai'
   | 'google'
   | 'opencode'
-  | 'moonshot';
+  | 'moonshot'
+  | 'openrouter';
 
 export type HealthStatus =
   | 'healthy'
@@ -44,6 +45,7 @@ const ALL_LINEAGES: CliLineage[] = [
   'google',
   'opencode',
   'moonshot',
+  'openrouter',
 ];
 
 export async function recordHealth(input: {
@@ -92,4 +94,69 @@ export function kindToStatus(kind: string): HealthStatus {
     default:
       return 'unknown';
   }
+}
+
+/**
+ * Classify a headless-shim error kind (e.g. `openrouter_402`,
+ * `openrouter_401`, `openrouter_429`) into a health status + friendlier
+ * one-liner the cockpit can show on the fleet card and run-page error
+ * banner. Returns null when the kind isn't a known OpenRouter HTTP code,
+ * so callers can fall through to generic handling.
+ *
+ * Reference: https://openrouter.ai/docs/errors — 402 means "your account
+ * is out of credits", 401 a bad/revoked key, 429 a rate cap, 403 a model
+ * the key isn't allowed to call (paid tier / BYOK), 5xx an upstream
+ * outage. We deliberately collapse 401 + 403 to auth_invalid since the
+ * remediation is the same (fix the key).
+ */
+export function classifyOpenRouterError(
+  kind: string,
+  message?: string,
+): { status: HealthStatus; message: string; cta?: string } | null {
+  const m = (message ?? '').trim();
+  if (kind === 'auth_missing') {
+    return {
+      status: 'auth_invalid',
+      message: 'No OpenRouter API key saved.',
+      cta: 'Add your key on the Connect page.',
+    };
+  }
+  if (!kind.startsWith('openrouter_')) return null;
+  const statusCode = Number(kind.slice('openrouter_'.length));
+  if (statusCode === 402) {
+    return {
+      status: 'quota_exhausted',
+      message: m || 'OpenRouter account is out of credits.',
+      cta: 'Top up at openrouter.ai/credits.',
+    };
+  }
+  if (statusCode === 401 || statusCode === 403) {
+    return {
+      status: 'auth_invalid',
+      message: m || 'OpenRouter rejected the API key.',
+      cta: 'Replace the key on the Connect page.',
+    };
+  }
+  if (statusCode === 429) {
+    return {
+      status: 'rate_limited',
+      message: m || 'OpenRouter rate-limited the request.',
+      cta: 'Slow down or pick a higher-tier model.',
+    };
+  }
+  if (statusCode === 404) {
+    return {
+      status: 'unknown',
+      message: m || 'OpenRouter could not find the requested model.',
+      cta: 'Pick a different model on the Connect page.',
+    };
+  }
+  if (statusCode >= 500 && statusCode < 600) {
+    return {
+      status: 'rate_limited',
+      message: m || `OpenRouter upstream error (${statusCode}).`,
+      cta: 'Try again in a moment.',
+    };
+  }
+  return null;
 }

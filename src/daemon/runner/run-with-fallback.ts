@@ -45,3 +45,33 @@ export async function runWithModelFallback<T>(
   }
   return null;
 }
+
+/**
+ * v0.8 cross-lineage variant. Takes (lineage, model) tuples; each attempt
+ * gets the entry so the caller can pick a different shim when lineage
+ * changes. Same null-fallthrough semantics as runWithModelFallback.
+ *
+ * The chain is expected to be non-empty (at minimum one entry with
+ * `model: undefined` for the lineage default). buildSlotFallbackChain
+ * guarantees this.
+ */
+export interface ChainEntry {
+  lineage: string;
+  model: string | undefined;
+}
+
+export async function runWithChainFallback<T>(
+  chain: readonly ChainEntry[],
+  attempt: (entry: ChainEntry) => Promise<T | null>,
+  onFallback: (from: ChainEntry, to: ChainEntry, fromIdx: number) => void,
+): Promise<T | null> {
+  if (chain.length === 0) return null;
+  for (let i = 0; i < chain.length; i++) {
+    const result = await attempt(chain[i]);
+    if (result !== null) return result;
+    if (i < chain.length - 1) {
+      onFallback(chain[i], chain[i + 1], i);
+    }
+  }
+  return null;
+}

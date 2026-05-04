@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Link2, Repeat, RotateCw, Trash2, X } from "lucide-react";
+import { Repeat, RotateCw, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -24,7 +24,6 @@ export function HeaderActions({
   const router = useRouter();
   const [retrying, setRetrying] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [copiedShare, setCopiedShare] = useState(false);
 
   const handleRetry = async () => {
     setRetrying(true);
@@ -100,16 +99,6 @@ export function HeaderActions({
     }
   };
 
-  const handleShare = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopiedShare(true);
-      setTimeout(() => setCopiedShare(false), 2000);
-    } catch {
-      /* clipboard rejected (insecure ctx) — silent */
-    }
-  };
-
   return (
     <div className="flex shrink-0 items-center gap-2">
       {/* Pause button removed — was decorative, no backend support for
@@ -152,24 +141,6 @@ export function HeaderActions({
           Run again
         </Link>
       )}
-      <button
-        type="button"
-        onClick={handleShare}
-        title="Copy a link to this run"
-        className="flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary"
-      >
-        {copiedShare ? (
-          <>
-            <Check className="h-3.5 w-3.5" />
-            Copied
-          </>
-        ) : (
-          <>
-            <Link2 className="h-3.5 w-3.5" />
-            Share
-          </>
-        )}
-      </button>
       <button
         type="button"
         disabled={deleting}

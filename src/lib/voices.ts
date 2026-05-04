@@ -87,6 +87,35 @@ export function classifyOpencodeModel(qualified: string): {
 }
 
 /**
+ * Live model probe for Codex CLI — `codex debug models` renders the raw
+ * model catalog as JSON. Filter to `visibility=='list'` so we don't seed
+ * hidden internals (`codex-auto-review`, `gpt-oss-*`).
+ *
+ * Returns null on any failure (CLI absent, JSON parse, schema mismatch,
+ * timeout) so the caller falls back to the static catalog.
+ */
+async function probeCodexModelsLive(): Promise<string[] | null> {
+  try {
+    const { stdout } = await run('codex', ['debug', 'models'], { timeout: 5_000 });
+    const parsed = JSON.parse(stdout) as unknown;
+    if (
+      typeof parsed !== 'object' || parsed === null ||
+      !Array.isArray((parsed as { models?: unknown }).models)
+    ) {
+      return null;
+    }
+    const models = (parsed as { models: Array<{ slug?: unknown; visibility?: unknown }> }).models;
+    const out: string[] = [];
+    for (const m of models) {
+      if (typeof m.slug === 'string' && m.visibility === 'list') out.push(m.slug);
+    }
+    return out.length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Phase 1 — synchronous seed for single-model CLIs.
  *
  * - For each detected single-model CLI: upsert immutable voice row
@@ -98,6 +127,10 @@ export function classifyOpencodeModel(qualified: string): {
  * - First-boot migration: if voices table is empty AND <lineage>.enabled_models
  *   settings exist, seed disabled rows for non-enabled curated models so
  *   the user's prior toggles are preserved.
+ * - First-install (no migration data, no existing voices): seed every
+ *   curated/discovered model row as enabled so the user can opt out of
+ *   anything they don't want — vs. the prior "default model only enabled"
+ *   which left the home page looking sparse.
  *
  * Returns counts for logging.
  */
@@ -115,6 +148,13 @@ export async function seedCliVoices(): Promise<{
   const existingVoices = await voices.list();
   const isFirstBoot = existingVoices.length === 0;
   const migrationData = isFirstBoot ? await readMigrationSettings() : null;
+
+  // Live model discovery for CLIs that expose a programmatic catalog.
+  // Codex is the only single-model CLI that does (`codex debug models`).
+  // Claude / Gemini / Kimi don't, so they always use the static catalog.
+  const codexLive = detectedById.get('codex-cli')?.found
+    ? await probeCodexModelsLive()
+    : null;
 
   let added = 0;
   let updated = 0;
@@ -136,18 +176,26 @@ export async function seedCliVoices(): Promise<{
     const detected = detectedById.get(cli);
     const existingRow = existingVoices.find((v) => v.id === provider);
     const uiLineage = LINEAGE_TO_UI[lineage];
-    const models = UI_LINEAGE_AVAILABLE_MODELS[uiLineage] ?? [];
+    // Prefer live probe over static catalog; fall back to static when the
+    // CLI doesn't expose model listing or the probe failed.
+    const liveModels = cli === 'codex-cli' ? codexLive : null;
+    const staticModels = UI_LINEAGE_AVAILABLE_MODELS[uiLineage] ?? [];
+    const models = liveModels ?? staticModels;
     const latestModel = models[0] ?? `${cli}-default`;
     const label = `${humanLineageLabel(lineage)} (${latestModel})`;
 
     if (detected?.found) {
-      // First-boot migration logic: if migrating, set enabled per the
-      // user's prior settings (default model = enabled by default per
-      // absent-key semantics; explicit empty array = no model enabled;
-      // populated array = check membership).
+      // Default-enabled rule:
+      //   - With migration data → respect the user's prior setting per
+      //     migrationFor() (absent setting → default-only enabled).
+      //   - First install (no migration, fresh voices table) → ALL curated
+      //     models start enabled so the user can opt out, not opt in. Per
+      //     v0.8 onboarding UX request.
+      //   - Subsequent boots → voices.upsert preserves existing `enabled`
+      //     so user toggles are sticky.
       const enabledOverride = migrationData
         ? migrationFor(migrationData, uiLineage, latestModel)
-        : undefined;
+        : (isFirstBoot ? true : undefined);
 
       const before = await voices.getById(provider);
       await voices.upsert({
@@ -162,15 +210,21 @@ export async function seedCliVoices(): Promise<{
       if (before) updated++;
       else added++;
 
-      // First-boot migration: also seed the curated non-default models as
-      // disabled (or enabled per user's setting) so the fleet card lists
-      // them and the user can flip them on.
-      if (migrationData) {
-        for (const m of models.slice(1)) {
-          const id = `${provider}:${m}`;
-          // Skip if already exists (defensive); these are net-new on first boot.
-          if (await voices.getById(id)) continue;
-          const enabled = migrationFor(migrationData, uiLineage, m) ?? false;
+      // Reconcile non-default curated/discovered models on EVERY boot —
+      // not just first boot. Why: when the catalog changes (new model
+      // added in lineage-maps.ts, codex live probe surfaces a new slug),
+      // existing installs should pick up the additions automatically.
+      // The previous "first-boot only" guard left users stuck on the
+      // catalog snapshot from when they first installed.
+      const catalogIds = new Set(models.map((m) => `${provider}:${m}`));
+      for (const m of models.slice(1)) {
+        const id = `${provider}:${m}`;
+        const exists = await voices.getById(id);
+        if (exists) {
+          // Row already there — voices.upsert preserves enabled state, so
+          // don't pass `enabled` (would silently re-enable user-disabled
+          // rows on every boot). Just refresh the label in case
+          // humanLineageLabel changed.
           await voices.upsert({
             id,
             label: `${humanLineageLabel(lineage)} (${m})`,
@@ -178,10 +232,45 @@ export async function seedCliVoices(): Promise<{
             provider,
             model_id: m,
             lineage,
-            enabled,
           });
-          added++;
+          updated++;
+          continue;
         }
+        // Net-new row. enabled state:
+        //   - migration data present → respect user's prior intent
+        //   - first install → opt-out (enabled=true)
+        //   - subsequent boot picking up a NEW catalog entry → enabled=true
+        //     so users see "we added Sonnet 4.5" without having to opt in
+        const enabled = migrationData
+          ? (migrationFor(migrationData, uiLineage, m) ?? false)
+          : true;
+        await voices.upsert({
+          id,
+          label: `${humanLineageLabel(lineage)} (${m})`,
+          source: 'cli',
+          provider,
+          model_id: m,
+          lineage,
+          enabled,
+        });
+        added++;
+      }
+
+      // Catalog drift: delete rows whose model is no longer in the
+      // current catalog (deprecated entries cleaned out of
+      // lineage-maps.ts or vanished from a live probe). Hard delete,
+      // not disable — leaving deprecated model names like
+      // "claude-sonnet-4" hanging in the fleet UI confuses new users
+      // ("is this Sonnet 4.6?"). The immutable provider-id row at
+      // `id === provider` is intentionally skipped — that one rotates
+      // its model_id forward to the latest model and never gets dropped.
+      const sameProviderRows = existingVoices.filter(
+        (v) => v.provider === provider && v.id !== provider,
+      );
+      for (const row of sameProviderRows) {
+        if (catalogIds.has(row.id)) continue;
+        await voices.delete(row.id);
+        disabled++;
       }
     } else if (existingRow && existingRow.enabled) {
       // Regular boot, CLI was present last boot but is now absent —
@@ -275,12 +364,13 @@ export async function seedOpencodeVoicesAsync(): Promise<{
     return null;
   }
 
-  // Default picks for first-install (no migrated settings) — the fleet's
-  // chosen subset.
-  const FLEET_DEFAULTS = new Set([
-    'opencode-go/kimi-k2.6',
-    'opencode-go/deepseek-v4-pro',
-  ]);
+  // First-install default rule for OpenCode: enable every model in the
+  // user's Go plan (opencode-go/*) and leave the other gateways
+  // (opencode/*, opencode-zen/*) disabled. The Go plan is the paid tier
+  // most users will be on; other gateways are pay-as-you-go and shouldn't
+  // bill silently from a fresh install.
+  const isOpencodeGoModel = (qualified: string): boolean =>
+    qualified.startsWith('opencode-go/');
 
   const migration = await readOpencodeMigration();
   const isFirstBoot = existingOpencode.length === 0;
@@ -310,7 +400,7 @@ export async function seedOpencodeVoicesAsync(): Promise<{
     if (migration) {
       initialEnabled = migrationFor(migration, 'opencode', qualified) ?? false;
     } else if (isFirstBoot) {
-      initialEnabled = FLEET_DEFAULTS.has(qualified);
+      initialEnabled = isOpencodeGoModel(qualified);
     } else {
       // Defensive default for net-new models showing up later — disabled
       // so the user opts in via the fleet card.
@@ -345,8 +435,9 @@ interface MigrationData {
   byUiLineage: Map<UiLineage, string[] | undefined>;
 }
 
-async function readMigrationSettings(): Promise<MigrationData> {
+async function readMigrationSettings(): Promise<MigrationData | null> {
   const byUiLineage = new Map<UiLineage, string[] | undefined>();
+  let anySet = false;
   const lineages: UiLineage[] = ['claude', 'codex', 'gemini', 'kimi', 'opencode'];
   for (const ui of lineages) {
     const raw = await settings.get(`${ui}.enabled_models`);
@@ -354,11 +445,16 @@ async function readMigrationSettings(): Promise<MigrationData> {
       byUiLineage.set(ui, undefined);
     } else if (Array.isArray(raw)) {
       byUiLineage.set(ui, raw.filter((x): x is string => typeof x === 'string'));
+      anySet = true;
     } else {
       byUiLineage.set(ui, undefined);
     }
   }
-  return { byUiLineage };
+  // Returning null when zero settings exist is what makes the "fresh install
+  // = enable everything" branch fire in seedCliVoices. Any explicit setting
+  // (including empty array) means the user touched the config and we
+  // respect the prior intent.
+  return anySet ? { byUiLineage } : null;
 }
 
 async function readOpencodeMigration(): Promise<MigrationData | null> {

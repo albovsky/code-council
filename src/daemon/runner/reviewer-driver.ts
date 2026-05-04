@@ -13,9 +13,10 @@ import * as participantAborts from '../participant-aborts.js';
 import type { TmuxManager } from '../tmux-types.js';
 import { buildReviewerAsk } from './prompt-builder.js';
 import { runReviewerHeadless } from './reviewer.js';
-import { runWithModelFallback } from './run-with-fallback.js';
+import { runWithChainFallback, runWithModelFallback } from './run-with-fallback.js';
 import { sanitizeName } from './sanitize-name.js';
 import { buildSlotFallbackChain } from './template-fallback.js';
+import type { Lineage } from '../agents/types.js';
 import type { RunnerEvent } from './types.js';
 import { verdictFromReviewerText } from './verdict.js';
 
@@ -256,30 +257,40 @@ async function runReviewer(
         lineage: candidate.lineage,
         models: candidate.models ?? [],
       };
-      const extendedModels = buildSlotFallbackChain(
+      const chain = buildSlotFallbackChain(
         thisSlot,
         allReviewerSlots,
         templateFallbackReviewer,
       );
-      return await runWithModelFallback(
-        extendedModels,
-        async (model) =>
-          runReviewerHeadless({
-            shim,
+      return await runWithChainFallback(
+        chain,
+        async (entry) => {
+          // Cross-lineage swap: when the entry's lineage differs from the
+          // slot's primary, re-resolve the shim. The slot's identity
+          // (agentName, reviewerDir, participant key) stays bound to the
+          // primary lineage so the cockpit card doesn't re-key mid-run —
+          // the cli_warning below tells the UI a swap happened.
+          const entryShim = entry.lineage === candidate.lineage
+            ? shim
+            : pickShimForVoice(entry.lineage as Lineage, entry.model);
+          return runReviewerHeadless({
+            shim: entryShim,
             chatId,
             phase,
             round,
             reviewerIdx,
-            candidateLineage: candidate.lineage,
-            candidateModel: model,
+            candidateLineage: entry.lineage,
+            candidateModel: entry.model,
             agentName,
             askContent: ask,
             answerFile,
             reviewerDir,
             abortSignal: handle.signal,
             onEvent,
-          }),
-        (fromModel, toModel, fromIdx) => {
+          });
+        },
+        (from, to, fromIdx) => {
+          const sameLineage = from.lineage === to.lineage;
           onEvent({
             chatId,
             type: 'cli_warning',
@@ -288,11 +299,15 @@ async function runReviewer(
               round,
               role: 'reviewer',
               agent: `${agentName}-${reviewerIdx}`,
-              reason: 'model_fallback',
-              fromModel: fromModel ?? '(default)',
-              toModel: toModel ?? '(default)',
+              reason: sameLineage ? 'model_fallback' : 'lineage_fallback',
+              fromLineage: from.lineage,
+              toLineage: to.lineage,
+              fromModel: from.model ?? '(default)',
+              toModel: to.model ?? '(default)',
               fallbackIdx: fromIdx,
-              message: `Reviewer model "${fromModel ?? '(default)'}" produced no answer; retrying with "${toModel ?? '(default)'}".`,
+              message: sameLineage
+                ? `Reviewer model "${from.model ?? '(default)'}" produced no answer; retrying with "${to.model ?? '(default)'}".`
+                : `Reviewer ${from.lineage}/${from.model ?? '(default)'} failed; switching to ${to.lineage}/${to.model ?? '(default)'} (cross-lineage fallback).`,
             },
             ts: Date.now(),
           });

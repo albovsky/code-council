@@ -23,6 +23,13 @@ export interface ConnectedVoiceMap {
  * their model-family lineage AND under cockpit "opencode". Without
  * this, opencode-go/kimi only appeared under "Kimi" and never under
  * "OpenCode" even though the user picked OpenCode CLI as the path.
+ *
+ * OpenRouter voices are bucketed under their own cockpit "openrouter"
+ * lineage and the picker value is the prefixed voice id
+ * (`openrouter:<model_id>`) so the runner's pickShimForVoice can detect
+ * the prefix and route through the OpenRouter HTTP shim. The voice's
+ * underlying daemon lineage (anthropic/openai/...) stays on the row
+ * for diversity scoring but isn't used for grouping.
  */
 export function useConnectedVoices(): ConnectedVoiceMap {
   const [state, setState] = useState<ConnectedVoiceMap>({
@@ -36,6 +43,11 @@ export function useConnectedVoices(): ConnectedVoiceMap {
         const byLineage: Partial<Record<ReviewerLineage, string[]>> = {};
         const connectedLineages = new Set<ReviewerLineage>();
         for (const v of voices) {
+          if (v.provider === "openrouter") {
+            connectedLineages.add("openrouter");
+            (byLineage["openrouter"] ??= []).push(v.id);
+            continue;
+          }
           const cockpitLineage = DAEMON_TO_COCKPIT_LINEAGE[v.lineage];
           if (cockpitLineage) {
             connectedLineages.add(cockpitLineage);

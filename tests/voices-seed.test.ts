@@ -185,19 +185,16 @@ describe('seedCliVoices', () => {
     expect(haiku?.enabled).toBe(true);
   });
 
-  it('first-boot migration with absent setting → default model enabled, others disabled', async () => {
-    // No claude.enabled_models setting at all.
+  it('first-install with no migration data → all curated models enabled', async () => {
+    // No <lineage>.enabled_models setting at all → treated as a fresh
+    // install. Every curated/discovered model row starts enabled so the
+    // user opts out of what they don't want, rather than opting in.
     await seedCliVoices();
     const claudeVoices = await voices.list({ source: 'cli', provider: 'claude-code' });
     if (claudeVoices.length === 0) return;
 
-    const opus = claudeVoices.find((v) => v.id === 'claude-code');
-    expect(opus?.enabled).toBe(true);
-
-    // Other curated models should be disabled.
-    const others = claudeVoices.filter((v) => v.id !== 'claude-code');
-    for (const v of others) {
-      expect(v.enabled).toBe(false);
+    for (const v of claudeVoices) {
+      expect(v.enabled).toBe(true);
     }
   });
 
@@ -236,6 +233,46 @@ describe('seedCliVoices', () => {
     for (const v of claudeVoices) {
       expect(v.enabled).toBe(false);
     }
+  });
+
+  it('catalog drift: stale model rows get deleted on re-seed', async () => {
+    // First seed creates rows for whatever's in the current catalog.
+    await seedCliVoices();
+    const claudeRows = await voices.list({ provider: 'claude-code' });
+    if (claudeRows.length === 0) return; // claude not on this host
+
+    // Inject a stale row simulating a model that USED to be in the catalog.
+    await voices.upsert({
+      id: 'claude-code:claude-stale-deprecated',
+      label: 'Claude (claude-stale-deprecated)',
+      source: 'cli',
+      provider: 'claude-code',
+      model_id: 'claude-stale-deprecated',
+      lineage: 'anthropic',
+      enabled: true,
+    });
+    expect(await voices.getById('claude-code:claude-stale-deprecated')).toBeDefined();
+
+    // Re-seed should delete it (not in current catalog).
+    await seedCliVoices();
+    expect(await voices.getById('claude-code:claude-stale-deprecated')).toBeNull();
+  });
+
+  it('catalog drift: immutable provider row never gets deleted even when its model_id is stale', async () => {
+    await seedCliVoices();
+    const before = await voices.getById('claude-code');
+    if (!before) return;
+
+    // Force the immutable row to a model id that's NOT in the catalog.
+    // Re-seed should rewrite model_id to the latest, NOT delete the row.
+    await voices.update('claude-code', { model_id: 'claude-stale-deprecated' });
+    await seedCliVoices();
+    const after = await voices.getById('claude-code');
+    expect(after).not.toBeNull();
+    expect(after!.id).toBe('claude-code');
+    // model_id should have been rotated forward to whatever's at index 0
+    // of the current catalog.
+    expect(after!.model_id).not.toBe('claude-stale-deprecated');
   });
 
   it('immutable single-model CLI ID survives seed cycle (no ghost rows)', async () => {

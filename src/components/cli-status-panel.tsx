@@ -24,6 +24,7 @@ import type { Voice } from "@/lib/api/voices";
 import Link from "next/link";
 import { OpencodeFleetCard } from "./opencode-fleet-card";
 import { LineageFleetCard } from "./lineage-fleet-card";
+import { OpenRouterFleetCard } from "./openrouter-fleet-card";
 
 interface OrchestratorStatus {
   name: string;
@@ -123,6 +124,7 @@ export async function CliStatusPanel() {
   let orchestrators: OrchestratorStatus[] = [];
   let healths: CliHealth[] = [];
   let allVoices: Voice[] = [];
+  let openrouterVoices: Voice[] = [];
   try {
     orchestrators = await fetchFromDaemon<OrchestratorStatus[]>("/orchestrators");
   } catch {
@@ -140,6 +142,13 @@ export async function CliStatusPanel() {
   } catch {
     /* voices load is best-effort */
   }
+  try {
+    openrouterVoices = await fetchFromDaemon<Voice[]>(
+      "/voices?source=api&provider=openrouter",
+    );
+  } catch {
+    /* best-effort */
+  }
 
   function voicesForProvider(provider: string): Voice[] {
     return allVoices.filter((v) => v.provider === provider);
@@ -150,7 +159,10 @@ export async function CliStatusPanel() {
 
   const connectedOrchestrators = orchestrators.filter((o) => o.connected);
 
-  if (connectedOrchestrators.length === 0) return null;
+  // Render the panel if there's any reviewer-eligible voice source —
+  // a connected CLI orchestrator OR at least one OpenRouter voice.
+  if (connectedOrchestrators.length === 0 && openrouterVoices.length === 0)
+    return null;
 
   return (
     <section className="mt-10">
@@ -223,6 +235,19 @@ export async function CliStatusPanel() {
             </div>
           );
         })}
+        {openrouterVoices.length > 0 && (
+          <OpenRouterFleetCard
+            voices={openrouterVoices}
+            health={
+              healthByLineage["openrouter"]
+                ? {
+                    status: healthByLineage["openrouter"].status,
+                    message: healthByLineage["openrouter"].message,
+                  }
+                : undefined
+            }
+          />
+        )}
       </div>
     </section>
   );

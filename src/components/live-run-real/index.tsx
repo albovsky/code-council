@@ -41,6 +41,10 @@ interface Props {
   initialStatus: string;
   initialRounds: RoundSnapshot[];
   template: Template | null;
+  /** Raw template id from the chat row. Used as a header fallback when
+   * `template` resolved to null (template deleted after the chat was
+   * created). Optional for forward-compat with callers that don't have it. */
+  templateId?: string;
   work: string;
   projectName?: string;
   /** PR URL when ship phase succeeded (chat status=merged). */
@@ -57,6 +61,7 @@ export function LiveRunReal({
   chatId,
   initialStatus,
   initialRounds,
+  templateId,
   template,
   work,
   projectName,
@@ -291,28 +296,56 @@ export function LiveRunReal({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur-sm px-4 py-2 sm:px-8">
-        <div className="flex w-full items-center gap-3">
-          <Link
-            href="/runs"
-            className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
-          >
-            <ArrowLeft className="h-3 w-3" />
-            <span className="hidden sm:inline">{projectName ?? "Runs"}</span>
-          </Link>
+      <div className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur-sm px-4 py-3 sm:px-8">
+        {/* Two-row header: meta-bar on top (status pill + template badge
+            on the left, action buttons on the right, fixed-height row that
+            never shifts), then the title/brief block below — gives both
+            rows independent layout so a long title or expanded brief
+            never pushes the action buttons around. */}
+        <div className="mb-2 flex w-full items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Link
+              href="/runs"
+              className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              <span>{projectName ?? "Runs"}</span>
+            </Link>
 
-          {/* Status dot — text label dropped as redundant with the
-              phase stepper. Tooltip carries the long form for screen
-              readers / hover. */}
-          <span
-            title={meta.text}
-            className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT_COLOR[meta.color]} ${
-              isTerminal ? "" : "animate-pulse-soft"
-            }`}
-          />
+            <span className="text-muted-foreground/40">·</span>
 
-          <div className="min-w-0 flex-1">
-            <BriefHeading work={work} />
+            {/* Status pill — dot + label together; reads cleanly in
+                isolation rather than the orphan dot floating next to the
+                title. */}
+            <span
+              title={meta.text}
+              className="inline-flex shrink-0 items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground"
+            >
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT_COLOR[meta.color]} ${
+                  isTerminal ? "" : "animate-pulse-soft"
+                }`}
+              />
+              {status}
+            </span>
+
+            {/* Template badge. Falls back to the raw templateId when the
+                template row was deleted out from under the chat. */}
+            {(template || templateId) && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <Link
+                  href={`/templates${template ? `#${encodeURIComponent(template.id)}` : ""}`}
+                  title={template ? `Template: ${template.name}` : `Template (deleted): ${templateId}`}
+                  className="inline-flex min-w-0 shrink items-center gap-1.5 text-[11px] text-muted-foreground transition hover:text-primary"
+                >
+                  <span className="font-mono uppercase tracking-wider">tpl</span>
+                  <span className="truncate font-medium text-foreground">
+                    {template?.name ?? templateId}
+                  </span>
+                </Link>
+              </>
+            )}
           </div>
 
           <HeaderActions
@@ -322,6 +355,13 @@ export function LiveRunReal({
             template={template}
             onCancel={() => setStatus("cancelled")}
           />
+        </div>
+
+        {/* Title row — full width, BriefHeading owns its own truncation
+            and "Show full brief" expander without competing with the
+            action buttons for vertical space. */}
+        <div className="min-w-0">
+          <BriefHeading work={work} />
         </div>
       </div>
 

@@ -141,6 +141,66 @@ describe('ErrorDetector.inspect — non-matching lineages', () => {
   });
 });
 
+describe('ErrorDetector.inspect — quota_exhausted (anthropic)', () => {
+  it('parses Claude usage-limit text and surfaces a CTA', () => {
+    const detector = new ErrorDetector();
+    const paneText =
+      'Claude usage limit reached. Your limit will reset at Mar 5th, 2026 9:00 PM.';
+    const error = detector.inspect('claude-1', 'anthropic', paneText);
+    expect(error).not.toBeNull();
+    expect(error!.kind).toBe('quota_exhausted');
+    expect(error!.lineage).toBe('anthropic');
+    expect(error!.cta).toContain('Switch to a different Claude account');
+  });
+});
+
+describe('ErrorDetector.inspect — quota_exhausted (gemini)', () => {
+  it('flags RESOURCE_EXHAUSTED as quota_exhausted', () => {
+    const detector = new ErrorDetector();
+    const paneText = '{"code":429,"message":"RESOURCE_EXHAUSTED: Quota exceeded"}';
+    const error = detector.inspect('gem-1', 'google', paneText);
+    expect(error).not.toBeNull();
+    expect(error!.kind).toBe('quota_exhausted');
+    expect(error!.lineage).toBe('google');
+  });
+
+  it('surfaces ModelNotFoundError as a Connect-page CTA', () => {
+    const detector = new ErrorDetector();
+    const paneText =
+      'ModelNotFoundError: 404 Not Found: model gemini-3-flash does not exist';
+    const error = detector.inspect('gem-2', 'google', paneText);
+    expect(error).not.toBeNull();
+    expect(error!.cta).toContain('Pick a different Gemini model');
+  });
+});
+
+describe('ErrorDetector.inspect — quota_exhausted (opencode)', () => {
+  it('detects OpenCode-Go subscription out of credits', () => {
+    const detector = new ErrorDetector();
+    const paneText = 'Error: subscription quota exceeded — please top up';
+    const error = detector.inspect('oc-1', 'opencode', paneText);
+    expect(error).not.toBeNull();
+    expect(error!.kind).toBe('quota_exhausted');
+    expect(error!.cta).toContain('Top up at opencode.ai');
+  });
+});
+
+describe('ErrorDetector.inspect — generic auth prompt across CLIs', () => {
+  it.each([
+    ['anthropic', 'Please run `claude login` to authenticate.'],
+    ['openai', 'Run `codex login` to sign in to ChatGPT.'],
+    ['google', 'Authentication required. Run gcloud auth.'],
+    ['opencode', 'Error: not logged in — run opencode auth login'],
+    ['moonshot', 'kimi: not logged in. Please log in to continue.'],
+  ])('flags %s "please log in" prompts', (lineage, paneText) => {
+    const detector = new ErrorDetector();
+    const error = detector.inspect(`auth-${lineage}`, lineage, paneText);
+    expect(error).not.toBeNull();
+    expect(error!.kind).toBe('token_refresh_lost');
+    expect(error!.cta).toContain('login');
+  });
+});
+
 describe('Codex quota reset-time parsing (via inspect)', () => {
   it.each([
     'Apr 30th, 2026 10:05 PM',

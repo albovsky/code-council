@@ -25,6 +25,7 @@ import {
   registerSecretRoutes,
   registerSettingsRoutes,
 } from './routes/settings.js';
+import { registerStatsRoutes } from './routes/stats.js';
 import { registerSystemRoutes } from './routes/system.js';
 import { registerVoiceRoutes } from './routes/voices.js';
 import { TmuxManagerImpl } from './tmux.js';
@@ -152,6 +153,7 @@ async function main(): Promise<void> {
   registerSystemRoutes(fastify, { chorusBinPath: CHORUS_BIN_PATH });
   registerVoiceRoutes(fastify);
   registerOpenRouterRoutes(fastify);
+  registerStatsRoutes(fastify);
 
   await seedBuiltinTemplates();
 

@@ -18,6 +18,7 @@ const SHIMS: Record<Lineage, AgentShim> = {
   google: geminiShim,
   opencode: opencodeShim,
   moonshot: kimiShim,
+  openrouter: openrouterShim,
   any: claudeShim, // Fallback to Claude
 };
 

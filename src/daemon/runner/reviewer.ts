@@ -13,6 +13,10 @@ import type { StandardPhase } from '../../lib/template-schema.js';
 import { DEFAULT_PHASE_TIMEOUT_MS } from '../../lib/template-schema.js';
 import type { AgentShim } from '../agents/types.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
+import {
+  classifyOpenRouterError,
+  recordHealth,
+} from '../../lib/cli-health.js';
 import { StreamFileWriter } from './stream-file-writer.js';
 import { verdictFromReviewerText } from './verdict.js';
 import type { RunnerEvent } from './types.js';
@@ -192,8 +196,26 @@ export async function runReviewerHeadless(args: {
         });
       } else if (event.type === 'error') {
         errored = true;
+        // Surface OpenRouter HTTP failures (insufficient credits, bad key,
+        // rate-limit, upstream outage) as health state so the home-page
+        // OpenRouter card flips to a quota/auth/rate-limit badge — same
+        // surfacing tmux CLIs already get via error-detector. Best-effort:
+        // health write doesn't block the run-page error event.
+        const classified = classifyOpenRouterError(event.kind, event.message);
+        if (classified) {
+          recordHealth({
+            lineage: 'openrouter',
+            status: classified.status,
+            message: classified.message,
+          }).catch((healthErr: unknown) => {
+            console.error('[chorus] recordHealth failed for openrouter:', healthErr);
+          });
+        }
         if (!errorSummary) {
-          errorSummary = { kind: event.kind, message: event.message };
+          errorSummary = {
+            kind: event.kind,
+            message: classified?.message ?? event.message,
+          };
         }
         onEvent({
           chatId,
@@ -207,7 +229,8 @@ export async function runReviewerHeadless(args: {
             agent: `${agentName}-${reviewerIdx}`,
             error: {
               kind: event.kind,
-              message: event.message,
+              message: classified?.message ?? event.message,
+              ...(classified?.cta ? { cta: classified.cta } : {}),
               lineage: candidateLineage,
             },
           },

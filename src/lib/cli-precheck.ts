@@ -71,6 +71,10 @@ const CRED_PATHS: Record<CliLineage, () => string[]> = {
     path.join(os.homedir(), '.opencode', 'auth.json'),
     path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json'),
   ],
+  // OpenRouter has no on-disk credential file — its API key lives in
+  // the secrets table. The shim itself returns auth_missing when the
+  // key is unset, which surfaces the same UX without a file probe.
+  openrouter: () => [],
 };
 
 const LOGIN_HINT: Record<CliLineage, string> = {
@@ -79,6 +83,7 @@ const LOGIN_HINT: Record<CliLineage, string> = {
   google: 'Run `gemini` once interactively to complete OAuth.',
   opencode: 'Run `opencode auth login` in a terminal.',
   moonshot: 'Run `kimi` once interactively, or set up opencode if you use the kimi-via-opencode transport.',
+  openrouter: 'Save an OpenRouter API key on the Connect page.',
 };
 
 /**
@@ -121,6 +126,12 @@ export async function precheckLineage(lineage: CliLineage): Promise<PrecheckResu
     }
     // resetAt missing or already past — fall through and let the spawn try.
     // Stale health markers self-clear when a successful run records 'healthy'.
+  }
+
+  // OpenRouter has no on-disk creds — the shim itself errors with
+  // auth_missing when the secrets-table key is absent. Skip the file probe.
+  if (lineage === 'openrouter') {
+    return { ok: true };
   }
 
   // Layer 2: credential file presence. Cheap, catches "logged out" without

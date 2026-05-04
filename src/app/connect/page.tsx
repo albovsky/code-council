@@ -6,6 +6,7 @@ import {
   type OrchestratorStatus,
 } from "@/lib/api";
 import { OrchestratorCard } from "@/components/orchestrator-card";
+import { OpenRouterCard } from "@/components/openrouter-card";
 import { fetchFromDaemon } from "@/lib/api/client";
 import type { Voice } from "@/lib/api/voices";
 
@@ -21,23 +22,28 @@ export const dynamic = "force-dynamic";
 
 interface PageData {
   orchestrators: OrchestratorStatus[];
-  voices: Voice[];
+  cliVoices: Voice[];
+  openrouterVoices: Voice[];
   error: string | null;
 }
 
 async function getPageData(): Promise<PageData> {
   try {
-    const [orchestrators, voices] = await Promise.all([
+    const [orchestrators, cliVoices, openrouterVoices] = await Promise.all([
       listOrchestrators().catch(() => []),
       // Default GET /voices returns ALL rows (enabled + disabled) — fleet
       // cards need both for the re-enable workflow.
       fetchFromDaemon<Voice[]>("/voices?source=cli").catch(() => [] as Voice[]),
+      fetchFromDaemon<Voice[]>("/voices?source=api&provider=openrouter").catch(
+        () => [] as Voice[],
+      ),
     ]);
-    return { orchestrators, voices, error: null };
+    return { orchestrators, cliVoices, openrouterVoices, error: null };
   } catch (err) {
     return {
       orchestrators: [],
-      voices: [],
+      cliVoices: [],
+      openrouterVoices: [],
       error:
         err instanceof DaemonError ? err.message : "Failed to reach the daemon",
     };
@@ -45,12 +51,13 @@ async function getPageData(): Promise<PageData> {
 }
 
 export default async function ConnectPage() {
-  const { orchestrators, voices, error } = await getPageData();
+  const { orchestrators, cliVoices, openrouterVoices, error } =
+    await getPageData();
 
   function voicesForOrchestrator(name: string): Voice[] {
     const provider = ORCHESTRATOR_TO_PROVIDER[name];
     if (!provider) return [];
-    return voices.filter((v) => v.provider === provider);
+    return cliVoices.filter((v) => v.provider === provider);
   }
 
   return (
@@ -74,14 +81,26 @@ export default async function ConnectPage() {
               Daemon unreachable — orchestrator status will appear once it&apos;s up.
             </div>
           ) : (
-            <div className="space-y-3">
-              {orchestrators.map((o) => (
-                <OrchestratorCard
-                  key={o.name}
-                  initial={o}
-                  voices={voicesForOrchestrator(o.name)}
-                />
-              ))}
+            <div className="grid grid-cols-1 items-start gap-2 lg:grid-cols-2">
+              {orchestrators
+                .filter((o) => o.supported)
+                .map((o) => (
+                  <OrchestratorCard
+                    key={o.name}
+                    initial={o}
+                    voices={voicesForOrchestrator(o.name)}
+                  />
+                ))}
+              <OpenRouterCard voices={openrouterVoices} />
+              {orchestrators
+                .filter((o) => !o.supported)
+                .map((o) => (
+                  <OrchestratorCard
+                    key={o.name}
+                    initial={o}
+                    voices={voicesForOrchestrator(o.name)}
+                  />
+                ))}
             </div>
           )}
         </section>

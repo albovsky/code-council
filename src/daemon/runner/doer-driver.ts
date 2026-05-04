@@ -13,9 +13,10 @@ import * as participantAborts from '../participant-aborts.js';
 import type { TmuxManager } from '../tmux-types.js';
 import { runDoerHeadless } from './doer.js';
 import { buildAsk } from './prompt-builder.js';
-import { runWithModelFallback } from './run-with-fallback.js';
+import { runWithChainFallback, runWithModelFallback } from './run-with-fallback.js';
 import { sanitizeName } from './sanitize-name.js';
 import { buildSlotFallbackChain } from './template-fallback.js';
+import type { Lineage } from '../agents/types.js';
 import type { RunnerEvent } from './types.js';
 
 export async function runDoer(
@@ -160,16 +161,23 @@ export async function runDoer(
         lineage: phase.doer.lineage,
         models: phase.doer.models ?? [],
       };
-      const extendedModels = buildSlotFallbackChain(
+      const chain = buildSlotFallbackChain(
         doerSlot,
         [doerSlot],
         templateFallbackDoer,
       );
-      return await runWithModelFallback(
-        extendedModels,
-        async (model) =>
-          runDoerHeadless({
-            shim,
+      return await runWithChainFallback(
+        chain,
+        async (entry) => {
+          // Cross-lineage swap: when the entry's lineage differs from the
+          // doer's primary, re-resolve the shim. Slot identity (agentName,
+          // doerDir) stays bound to the primary lineage; cli_warning below
+          // surfaces the swap to the cockpit.
+          const entryShim = entry.lineage === phase.doer.lineage
+            ? shim
+            : pickShimForVoice(entry.lineage as Lineage, entry.model);
+          return runDoerHeadless({
+            shim: entryShim,
             chatId,
             phase,
             round,
@@ -179,9 +187,11 @@ export async function runDoer(
             doerCwd,
             abortSignal: handle.signal,
             onEvent,
-            modelOverride: model,
-          }),
-        (fromModel, toModel, fromIdx) => {
+            modelOverride: entry.model,
+          });
+        },
+        (from, to, fromIdx) => {
+          const sameLineage = from.lineage === to.lineage;
           onEvent({
             chatId,
             type: 'cli_warning',
@@ -190,11 +200,15 @@ export async function runDoer(
               round,
               role: 'doer',
               agent: agentName,
-              reason: 'model_fallback',
-              fromModel: fromModel ?? '(default)',
-              toModel: toModel ?? '(default)',
+              reason: sameLineage ? 'model_fallback' : 'lineage_fallback',
+              fromLineage: from.lineage,
+              toLineage: to.lineage,
+              fromModel: from.model ?? '(default)',
+              toModel: to.model ?? '(default)',
               fallbackIdx: fromIdx,
-              message: `Doer model "${fromModel ?? '(default)'}" produced no answer; retrying with "${toModel ?? '(default)'}".`,
+              message: sameLineage
+                ? `Doer model "${from.model ?? '(default)'}" produced no answer; retrying with "${to.model ?? '(default)'}".`
+                : `Doer ${from.lineage}/${from.model ?? '(default)'} failed; switching to ${to.lineage}/${to.model ?? '(default)'} (cross-lineage fallback).`,
             },
             ts: Date.now(),
           });

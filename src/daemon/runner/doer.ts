@@ -21,6 +21,10 @@ import type { StandardPhase } from '../../lib/template-schema.js';
 import { DEFAULT_PHASE_TIMEOUT_MS } from '../../lib/template-schema.js';
 import type { AgentShim } from '../agents/types.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
+import {
+  classifyOpenRouterError,
+  recordHealth,
+} from '../../lib/cli-health.js';
 import { StreamFileWriter } from './stream-file-writer.js';
 import type { RunnerEvent } from './types.js';
 
@@ -213,8 +217,24 @@ export async function runDoerHeadless(args: {
         });
       } else if (event.type === 'error') {
         errored = true;
+        // Mirror reviewer.ts: persist OpenRouter HTTP-error state into
+        // cli-health so the home-page card flips to quota/auth/rate-limit
+        // and so the run-page error event carries a remediation CTA.
+        const classified = classifyOpenRouterError(event.kind, event.message);
+        if (classified) {
+          recordHealth({
+            lineage: 'openrouter',
+            status: classified.status,
+            message: classified.message,
+          }).catch((healthErr: unknown) => {
+            console.error('[chorus] recordHealth failed for openrouter:', healthErr);
+          });
+        }
         if (!errorSummary) {
-          errorSummary = { kind: event.kind, message: event.message };
+          errorSummary = {
+            kind: event.kind,
+            message: classified?.message ?? event.message,
+          };
         }
         onEvent({
           chatId,
@@ -228,7 +248,8 @@ export async function runDoerHeadless(args: {
             agent: agentName,
             error: {
               kind: event.kind,
-              message: event.message,
+              message: classified?.message ?? event.message,
+              ...(classified?.cta ? { cta: classified.cta } : {}),
               lineage: phase.doer.lineage,
             },
           },

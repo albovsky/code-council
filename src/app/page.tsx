@@ -1,23 +1,25 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, Plus, Sparkles, Users } from "lucide-react";
+import { Plus, Sparkles, Users } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { CliStatusPanel } from "@/components/cli-status-panel";
+import { HomeStatsCards } from "@/components/home-stats-cards";
 import { PageHeader } from "@/components/page-header";
 
 export const dynamic = "force-dynamic";
 
 import {
-  listChats,
   listTemplates,
   listSecrets,
   getSettings,
+  getStats,
   DaemonError,
 } from "@/lib/api";
-import type { Chat, Template, Secret, Settings as SettingsType } from "@/lib/types";
+import type { StatsSummary } from "@/lib/api/stats";
+import type { Template, Secret, Settings as SettingsType } from "@/lib/types";
 
 interface HomeData {
-  chats: Chat[];
+  stats: StatsSummary | null;
   templates: Template[];
   secrets: Secret[];
   settings: SettingsType | null;
@@ -26,24 +28,24 @@ interface HomeData {
 
 async function getHomePageData(): Promise<HomeData> {
   try {
-    const [chats, templates, secrets, settings] = await Promise.all([
-      listChats({ limit: 8 }),
+    const [stats, templates, secrets, settings] = await Promise.all([
+      getStats().catch(() => null),
       listTemplates(),
       listSecrets(),
       getSettings().catch(() => null),
     ]);
-    return { chats, templates, secrets, settings, error: null };
+    return { stats, templates, secrets, settings, error: null };
   } catch (err) {
     const error =
       err instanceof DaemonError
         ? err.message
         : "Failed to reach the Chorus daemon.";
-    return { chats: [], templates: [], secrets: [], settings: null, error };
+    return { stats: null, templates: [], secrets: [], settings: null, error };
   }
 }
 
 export default async function HomePage() {
-  const { chats, templates, secrets, settings, error } = await getHomePageData();
+  const { stats, templates, secrets, settings, error } = await getHomePageData();
 
   // First-run gate: redirect to /onboarding if user has no credentials
   // and hasn't explicitly marked the wizard as completed.
@@ -53,7 +55,7 @@ export default async function HomePage() {
     redirect("/onboarding");
   }
 
-  const hasChats = chats.length > 0;
+  const hasRuns = (stats?.totalRuns ?? 0) > 0;
 
   return (
     <AppShell>
@@ -69,7 +71,7 @@ export default async function HomePage() {
           </div>
         )}
 
-        {!hasChats ? <EmptyHero /> : <ActiveHome chats={chats} />}
+        {!hasRuns || !stats ? <EmptyHero /> : <ActiveHome stats={stats} />}
 
         <CliStatusPanel />
 
@@ -143,15 +145,15 @@ function EmptyHero() {
 }
 
 interface ActiveHomeProps {
-  chats: Chat[];
+  stats: StatsSummary;
 }
 
-function ActiveHome({ chats }: ActiveHomeProps) {
+function ActiveHome({ stats }: ActiveHomeProps) {
   return (
     <>
       <PageHeader
         eyebrow="Home"
-        title="Today's runs"
+        title="Overview"
         action={
           <Link
             href="/new"
@@ -164,59 +166,9 @@ function ActiveHome({ chats }: ActiveHomeProps) {
       />
 
       <section>
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Recent runs
-          </h2>
-          <Link
-            href="/runs"
-            className="text-xs text-muted-foreground transition hover:text-foreground"
-          >
-            View all →
-          </Link>
-        </div>
-        <div className="space-y-2">
-          {chats.slice(0, 3).map((chat) => (
-            <Link
-              key={chat.id}
-              href={`/runs/${chat.slug || chat.id}`}
-              className="group flex items-start gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-muted-foreground/30"
-            >
-              <span
-                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotColor(chat.status)}`}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="line-clamp-1 text-sm font-medium">{chat.work}</p>
-                <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="uppercase tracking-wider">{chat.status}</span>
-                  <span>·</span>
-                  <span className="font-mono">{chat.templateId}</span>
-                </p>
-              </div>
-              <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 transition group-hover:translate-x-0.5 group-hover:text-foreground" />
-            </Link>
-          ))}
-        </div>
+        <HomeStatsCards stats={stats} />
       </section>
     </>
   );
 }
 
-function dotColor(status: Chat["status"]): string {
-  switch (status) {
-    case "drafting":
-      return "bg-amber-400";
-    case "reviewing":
-      return "bg-primary animate-pulse-soft";
-    case "approved":
-      return "bg-emerald-400";
-    case "merged":
-      return "bg-emerald-500";
-    case "blocked":
-      return "bg-amber-500 animate-pulse-soft";
-    case "failed":
-      return "bg-destructive";
-    default:
-      return "bg-muted-foreground";
-  }
-}

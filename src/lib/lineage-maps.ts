@@ -117,44 +117,65 @@ export const UI_LINEAGE_DEFAULT_MODEL: Record<UILineage, string> = {
 };
 
 /**
- * Curated model lists per CLI. Used by the home-page fleet cards so users
- * can pick which models they want chorus to expose as voices, the same way
- * the OpenCode card already does (just without gateway grouping — single
- * subscription per CLI, flat list).
+ * Curated model lists per CLI. Used as a fallback when the CLI doesn't
+ * expose a live model-listing command (claude / gemini / kimi today). For
+ * codex we run `codex debug models` at seed time and prefer the live
+ * catalog; the list below is the safety net if that probe fails.
  *
- * Update when a new model drops. Order = recommended first; the first
- * entry in each list is the canonical default and matches
- * UI_LINEAGE_DEFAULT_MODEL.
+ * Cross-checked against `opencode models` (which aggregates upstream
+ * provider names) and `codex debug models` so entries here are real
+ * model ids the corresponding CLI accepts. Don't list speculative names —
+ * a wrong entry here is what makes the home page look unprofessional.
  *
- * OpenCode is omitted because it's discovered live via `opencode models`
- * (gateway-aware). Cursor/Windsurf are IDE orchestrators with no model
- * selection of their own.
+ * Order = recommended first; the first entry is the canonical default
+ * and matches UI_LINEAGE_DEFAULT_MODEL.
+ *
+ * OpenCode is omitted because it's always discovered live via
+ * `opencode models` (gateway-aware). Cursor/Windsurf are IDE
+ * orchestrators with no model selection of their own.
  */
 export const UI_LINEAGE_AVAILABLE_MODELS: Partial<Record<UILineage, string[]>> = {
   claude: [
     "claude-opus-4-7",
     "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
     "claude-haiku-4-5",
     "claude-opus-4-5",
-    "claude-sonnet-4",
   ],
   codex: [
     "gpt-5.5",
-    "gpt-5.5-pro",
     "gpt-5.4",
-    "gpt-5.4-pro",
     "gpt-5.4-mini",
     "gpt-5.3-codex",
     "gpt-5.2",
-    "gpt-5.1",
   ],
+  // Gemini list verified 2026-05-04 by `gemini -p "ok" --model <X>`.
+  // gemini-3-flash returned ModelNotFoundError; only the names below
+  // are accepted by the current Gemini CLI version.
   gemini: [
     "gemini-3.1-pro-preview",
-    "gemini-3-flash",
     "gemini-2.5-pro",
+    "gemini-2.5-flash",
   ],
+  // Kimi list cross-checked against the official kimi-cli docs +
+  // source (2026-05-04):
+  //   - CHANGELOG.md: kimi-k2.6, kimi-k2-thinking
+  //   - klips/klip-6: kimi-k2-thinking-turbo (recommended turbo flagship)
+  //   - sdks/kimi-sdk/README.md, klips/klip-7: kimi-k2-turbo-preview
+  //   - Welcome screen dropped hardcoded kimi-k2.5, but it still works
+  // Not end-to-end probed because the dedicated kimi CLI needs a
+  // separate Moonshot account login; cross-referenced from official docs
+  // is the next-best signal.
+  // Index 0 must match UI_LINEAGE_DEFAULT_MODEL.kimi to keep the seed's
+  // immutable provider row pointed at the same default. kimi-k2.6 has
+  // been the chorus default since v0.7; not auto-rotating to the
+  // turbo-thinking variant here so existing installs don't silently
+  // change behavior. Users can still toggle the turbo entries on.
   kimi: [
     "kimi-k2.6",
+    "kimi-k2-thinking-turbo",
+    "kimi-k2-turbo-preview",
+    "kimi-k2-thinking",
     "kimi-k2.5",
   ],
 };

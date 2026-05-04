@@ -211,6 +211,7 @@ export default async function RunPage({ params }: RunPageProps) {
         initialStatus={chat.status}
         initialRounds={initialRounds}
         template={template}
+        templateId={chat.templateId}
         work={chat.work}
         initialPrUrl={chat.prUrl}
         initialShipError={chat.shipError}

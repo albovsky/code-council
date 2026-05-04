@@ -15,7 +15,7 @@
 
 import { useState } from "react";
 import { CheckCircle2, AlertTriangle, ChevronDown, Check } from "lucide-react";
-import { lineageDot } from "@/lib/lineage-maps";
+import { UI_LINEAGE_BRAND } from "@/lib/lineage-maps";
 import { updateVoice, type Voice } from "@/lib/api/voices";
 import { DaemonError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
@@ -67,13 +67,23 @@ export function OpencodeFleetCard({ health, voices: initialVoices }: OpencodeFle
   const enabledCount = voices.filter((v) => v.enabled).length;
 
   return (
-    <div className="rounded-lg border border-border bg-card transition-colors hover:border-foreground/20">
+    <div
+      className={cn(
+        "rounded-lg border border-border transition-colors hover:border-foreground/20",
+        UI_LINEAGE_BRAND.opencode.gradient,
+      )}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 p-3 text-left"
       >
-        <span className={`h-2 w-2 shrink-0 rounded-full ${lineageDot("opencode")}`} />
+        <span
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            UI_LINEAGE_BRAND.opencode.dot,
+          )}
+        />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">OpenCode</div>
           <div className="mt-0.5 flex items-center gap-2">

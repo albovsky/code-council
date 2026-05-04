@@ -136,6 +136,102 @@ export class ErrorDetector {
       }
     }
 
+    // Pattern 1b: Anthropic Claude usage limit (Pro/Max subscriptions
+    // have rolling 5-hour message caps). Phrasing covers both the
+    // older "Claude usage limit reached" and the explicit reset variant.
+    if (lineage === 'anthropic') {
+      const claudeQuota =
+        /(?:Claude (?:AI )?usage limit reached|5-hour (?:message|usage) limit|message limit reached)[\s\S]*?(?:reset|try again)\s*(?:at)?\s*([^\n.]+)?/i.exec(paneText);
+      if (claudeQuota) {
+        const reset = claudeQuota[1]?.trim();
+        return {
+          kind: 'quota_exhausted',
+          lineage,
+          message: reset
+            ? `Claude usage limit reached. Resets ${reset}.`
+            : 'Claude usage limit reached.',
+          cta: 'Switch to a different Claude account, or wait for reset.',
+          resetAt: parseResetTime(reset),
+          detail: claudeQuota[0].slice(0, 200),
+        };
+      }
+    }
+
+    // Pattern 1c: Gemini RESOURCE_EXHAUSTED — the Google API's standard
+    // quota signal across the free tier and paid tiers. Surfaces in the
+    // Gemini CLI as either the raw code or the friendlier "Quota exceeded".
+    if (lineage === 'google') {
+      const geminiQuota =
+        /(RESOURCE_EXHAUSTED|429.*Quota exceeded|Quota exceeded for quota metric|"code"\s*:\s*429)/i.exec(paneText);
+      if (geminiQuota) {
+        return {
+          kind: 'quota_exhausted',
+          lineage,
+          message: 'Gemini quota exhausted (free-tier or daily cap).',
+          cta: 'Wait for the daily reset, switch projects, or use a different model.',
+          detail: geminiQuota[0].slice(0, 200),
+        };
+      }
+      // ModelNotFoundError — bad model id (e.g. user picked a model that
+      // got deprecated). Surface as auth_invalid-equivalent so the run
+      // card shows a clear CTA rather than silent 0-byte answer.md.
+      if (/ModelNotFoundError|404\s*Not Found.*model/i.test(paneText)) {
+        return {
+          kind: 'mcp_handshake_failed', // reuses auth_invalid status mapping
+          lineage,
+          message: 'Gemini rejected the requested model id.',
+          cta: 'Pick a different Gemini model on the Connect page.',
+        };
+      }
+    }
+
+    // Pattern 1d: OpenCode-Go subscription out of credits. opencode-go's
+    // `/usage` endpoint returns "Out of credits" / "subscription quota
+    // exceeded"; the TUI surfaces the same string. Distinct from
+    // opencode_db_corrupt (Pattern 4) which is a session-replay failure.
+    if (lineage === 'opencode') {
+      if (/subscription quota exceeded|Out of credits|insufficient credits/i.test(paneText)) {
+        return {
+          kind: 'quota_exhausted',
+          lineage,
+          message: 'OpenCode subscription is out of credits.',
+          cta: 'Top up at opencode.ai/billing or switch to a different model.',
+          detail: 'opencode-go subscription quota signal in pane.',
+        };
+      }
+    }
+
+    // Pattern 1e: Generic "please log in" auth signal across every
+    // interactive CLI we drive. Catches the common phrasings:
+    //   - claude: "Please run `claude login`"
+    //   - codex:  "Run `codex login` to sign in"
+    //   - gemini: "Authentication required" / "gcloud auth"
+    //   - opencode: "opencode auth login"
+    //   - kimi:   "kimi: not logged in"
+    // Done after the per-CLI patterns above so the more-specific
+    // detectors (token_refresh_lost, mcp_handshake_failed) take priority.
+    if (
+      lineage === 'anthropic' ||
+      lineage === 'openai' ||
+      lineage === 'google' ||
+      lineage === 'opencode' ||
+      lineage === 'moonshot'
+    ) {
+      const authPrompt =
+        /(?:please (?:run|log\s*in|sign\s*in)|run\s+`?(?:claude|codex|gemini|opencode|kimi)\s+login|to\s+sign\s+in|not logged in|not authenticated|no active session|authentication required|api key (?:invalid|missing|expired|revoked))/i.exec(
+          paneText,
+        );
+      if (authPrompt) {
+        return {
+          kind: 'token_refresh_lost', // maps to auth_invalid health status
+          lineage,
+          message: `${lineage} CLI is asking you to re-authenticate.`,
+          cta: 'Re-run the CLI login (e.g. `claude login`, `codex login`, `gemini` interactive setup).',
+          detail: authPrompt[0].slice(0, 200),
+        };
+      }
+    }
+
     // Pattern 4: Opencode DB corruption (stateful)
     // Accept both 'opencode' (current) and 'xai' (legacy alias) lineage tags
     // so older templates / sessions don't silently lose detection.

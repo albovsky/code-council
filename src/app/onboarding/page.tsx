@@ -212,7 +212,7 @@ export default function OnboardingPage() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6 sm:py-14">
+      <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
         <div className="mb-8 flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-md bg-primary/15 text-primary">
             <TriadLogo className="h-6 w-6" />

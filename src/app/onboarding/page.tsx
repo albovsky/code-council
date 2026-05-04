@@ -37,6 +37,10 @@ export default function OnboardingPage() {
   const [autoApprovePrompts, setAutoApprovePrompts] = useState<boolean>(true);
   const [networkAccess, setNetworkAccess] = useState<boolean>(false);
   const [detection, setDetection] = useState<Record<string, CliDetection>>({});
+  // Tracks the initial detect-clis call so the UI can show "Searching…"
+  // instead of falsely rendering every CLI as "Not found" before the
+  // probe completes. Flips false on both success + failure paths.
+  const [detecting, setDetecting] = useState(true);
   const [manualOpen, setManualOpen] = useState<Set<string>>(new Set());
   const [manualPath, setManualPath] = useState<Record<string, string>>({});
   const [manualError, setManualError] = useState<Record<string, string>>({});
@@ -70,7 +74,8 @@ export default function OnboardingPage() {
       .catch(() => {
         // Detection is best-effort; if the daemon probe fails the user
         // can still tick boxes manually. No need to surface an error.
-      });
+      })
+      .finally(() => setDetecting(false));
     // Voices are seeded server-side on daemon boot — fetch the current
     // state so each CLI card can render its actual model list with
     // toggles, not just "default model auto-enabled."
@@ -272,6 +277,7 @@ export default function OnboardingPage() {
           selectedClis={selectedClis}
           toggleCli={toggleCli}
           detection={detection}
+          detecting={detecting}
           cliVoices={cliVoices}
           savingVoiceId={savingVoiceId}
           voiceSaveError={voiceSaveError}

@@ -56,6 +56,10 @@ interface CliSectionProps {
   selectedClis: Set<string>;
   toggleCli: (id: string) => void;
   detection: Record<string, CliDetection>;
+  /** True while the initial detect-clis probe is in flight. Cards
+   *  render in a "searching…" placeholder state — without this every
+   *  CLI looks "not found" for ~200-500ms on first paint. */
+  detecting: boolean;
   /** All CLI-source voices, fetched on the page. The card filters by
    *  provider locally so its model list reflects the live DB state. */
   cliVoices: Voice[];
@@ -94,7 +98,11 @@ export function CliSection(props: CliSectionProps) {
           const checked = props.selectedClis.has(cli.id);
           const probe = props.detection[cli.id];
           const found = probe?.found === true;
-          const showManual = !found && props.manualOpen.has(cli.id);
+          // While the initial probe is in flight we don't yet know if
+          // this CLI is installed — render a neutral "searching" state
+          // instead of falsely declaring "Not found".
+          const searching = props.detecting && !probe;
+          const showManual = !found && !searching && props.manualOpen.has(cli.id);
           const isBusy = props.manualBusy.has(cli.id);
           const brand = found
             ? (UI_LINEAGE_BRAND[CLI_TO_UI_LINEAGE[cli.id]] ?? NEUTRAL_BRAND)
@@ -145,6 +153,10 @@ export function CliSection(props: CliSectionProps) {
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-300">
                       <Check className="h-3 w-3" /> Installed
                     </span>
+                  ) : searching ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Searching…
+                    </span>
                   ) : (
                     <span className="inline-flex items-center rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                       Not found
@@ -160,12 +172,17 @@ export function CliSection(props: CliSectionProps) {
                     <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono">
                       {probe.path}
                     </code>
+                  ) : searching ? (
+                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Probing PATH and known install dirs…
+                    </span>
                   ) : (
                     cli.hint
                   )}
                 </p>
 
-                {!found && (
+                {!found && !searching && (
                   <div className="space-y-2">
                     <button
                       type="button"

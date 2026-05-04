@@ -15,7 +15,9 @@ import type { AgentShim } from '../agents/types.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
 import {
   classifyOpenRouterError,
+  getHealth,
   recordHealth,
+  type CliLineage,
 } from '../../lib/cli-health.js';
 import { StreamFileWriter } from './stream-file-writer.js';
 import { verdictFromReviewerText } from './verdict.js';
@@ -291,13 +293,29 @@ export async function runReviewerHeadless(args: {
     // failure on the PR #10 review chat.
     if (errored && accumulated.length === 0 && (!finalText || finalText.length === 0) && errorSummary) {
       try {
+        // For quota / rate-limit failures, the error-detector (tmux path)
+        // or recordHealth call (HTTP shim path) has already stamped the
+        // lineage's cli-health row with `resetAt` if it's known. Pull
+        // that here so the cockpit's failure card can render a "Resets
+        // at HH:MM" countdown without a second round-trip. Best-effort:
+        // resolves to undefined for unknown lineages or cleared health.
+        let resetAt: number | undefined;
+        try {
+          const h = await getHealth(candidateLineage as CliLineage);
+          if (typeof h.resetAt === 'number' && h.resetAt > Date.now()) {
+            resetAt = h.resetAt;
+          }
+        } catch {
+          /* health lookup is informational */
+        }
         fs.writeFileSync(
           answerFile,
           `## REVIEWER FAILED\n\n` +
             `**Kind:** ${errorSummary.kind}\n` +
             `**Lineage:** ${candidateLineage}\n` +
-            `**Model:** ${candidateModel ?? '(default)'}\n\n` +
-            `${errorSummary.message}\n`,
+            `**Model:** ${candidateModel ?? '(default)'}\n` +
+            (resetAt ? `**Resets:** ${new Date(resetAt).toISOString()}\n` : '') +
+            `\n${errorSummary.message}\n`,
         );
       } catch {
         /* best-effort — don't fail the runner because of a write error */

@@ -1,4 +1,5 @@
 import type { TmuxManager } from './tmux-types.js';
+import { clearStaleHealth } from '../lib/cli-health.js';
 
 /**
  * Reaper configuration.
@@ -37,6 +38,14 @@ export function startReaper(
 
         if (result.killed.length > 0) {
           console.log(`[reaper] Killed ${result.killed.length} session(s): ${result.killed.join(', ')}`);
+        }
+
+        // Auto-clear stale quota / rate-limit state. Without this, the
+        // home-page fleet card stays red after the upstream window passes
+        // until the next failed call would otherwise overwrite health.
+        const cleared = await clearStaleHealth();
+        if (cleared.length > 0) {
+          console.log(`[reaper] Cleared stale health: ${cleared.join(', ')}`);
         }
       } catch (error) {
         console.error('[reaper] Error during sweep:', error);

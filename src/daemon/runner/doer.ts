@@ -23,7 +23,9 @@ import type { AgentShim } from '../agents/types.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
 import {
   classifyOpenRouterError,
+  getHealth,
   recordHealth,
+  type CliLineage,
 } from '../../lib/cli-health.js';
 import { StreamFileWriter } from './stream-file-writer.js';
 import type { RunnerEvent } from './types.js';
@@ -288,13 +290,25 @@ export async function runDoerHeadless(args: {
     // Same pattern as runReviewerHeadless — see comment there.
     if (errored && accumulated.length === 0 && (!finalText || finalText.length === 0) && errorSummary) {
       try {
+        // Mirror reviewer.ts: include cli-health resetAt for quota /
+        // rate-limit failures so the cockpit can render a countdown.
+        let resetAt: number | undefined;
+        try {
+          const h = await getHealth(phase.doer.lineage as CliLineage);
+          if (typeof h.resetAt === 'number' && h.resetAt > Date.now()) {
+            resetAt = h.resetAt;
+          }
+        } catch {
+          /* health lookup is informational */
+        }
         fs.writeFileSync(
           answerFile,
           `## DOER FAILED\n\n` +
             `**Kind:** ${errorSummary.kind}\n` +
             `**Lineage:** ${phase.doer.lineage}\n` +
-            `**Model:** ${modelOverride ?? phase.doer.models?.[0] ?? '(default)'}\n\n` +
-            `${errorSummary.message}\n`,
+            `**Model:** ${modelOverride ?? phase.doer.models?.[0] ?? '(default)'}\n` +
+            (resetAt ? `**Resets:** ${new Date(resetAt).toISOString()}\n` : '') +
+            `\n${errorSummary.message}\n`,
         );
       } catch {
         /* best-effort — don't fail the runner because of a write error */

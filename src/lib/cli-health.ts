@@ -81,6 +81,35 @@ export async function getAllHealth(): Promise<CliHealth[]> {
 }
 
 /**
+ * Sweep cli-health entries and reset any whose `resetAt` has passed.
+ * Called periodically from the reaper so the home-page fleet card flips
+ * back to green automatically once a quota window expires — no refresh,
+ * no manual intervention. Bounded by ALL_LINEAGES so this is O(7) DB
+ * roundtrips per tick (six writes max even in the worst case).
+ *
+ * Returns the list of lineages whose state was cleared so the caller
+ * can log them.
+ */
+export async function clearStaleHealth(): Promise<CliLineage[]> {
+  const now = Date.now();
+  const cleared: CliLineage[] = [];
+  for (const lineage of ALL_LINEAGES) {
+    const h = await getHealth(lineage);
+    if (
+      h.status !== 'healthy' &&
+      h.status !== 'unknown' &&
+      typeof h.resetAt === 'number' &&
+      h.resetAt > 0 &&
+      h.resetAt <= now
+    ) {
+      await recordHealth({ lineage, status: 'healthy' });
+      cleared.push(lineage);
+    }
+  }
+  return cleared;
+}
+
+/**
  * Translate an error-detector CliErrorKind into a HealthStatus.
  * Used by the runner when forwarding cli_error events.
  */

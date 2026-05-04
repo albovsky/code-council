@@ -213,8 +213,15 @@ export function ParticipantCard({
         ) : state === "errored" ? (
           failure ? (
             <div className="space-y-1.5 text-destructive/90">
-              <div className="text-[10px] font-semibold uppercase tracking-wider">
-                {failure.kind}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider">
+                  {failure.kind}
+                </span>
+                {failure.resetAt && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                    Resets {formatResetAt(failure.resetAt)}
+                  </span>
+                )}
               </div>
               <div className="whitespace-pre-wrap break-words text-foreground/85">
                 {failure.message}
@@ -338,20 +345,52 @@ function tokensTitle(u: NonNullable<ParticipantSnapshot["usage"]>): string {
  */
 function parseFailureSummary(
   answer: string | undefined,
-): { kind: string; message: string; cta?: string } | null {
+): { kind: string; message: string; cta?: string; resetAt?: number } | null {
   if (!answer) return null;
   const trimmed = answer.trimStart();
   if (!/^##\s+(?:REVIEWER|DOER)\s+FAILED/i.test(trimmed)) return null;
   const kindMatch = trimmed.match(/\*\*Kind:\*\*\s*(.+?)(?:\n|$)/);
   const kind = kindMatch ? kindMatch[1].trim() : "failed";
+  // Optional `**Resets:** <iso-time>` line written by reviewer.ts/doer.ts
+  // when cli-health knows when the upstream quota window expires.
+  const resetMatch = trimmed.match(/\*\*Resets:\*\*\s*(.+?)(?:\n|$)/);
+  let resetAt: number | undefined;
+  if (resetMatch) {
+    const t = Date.parse(resetMatch[1].trim());
+    if (Number.isFinite(t)) resetAt = t;
+  }
   // Body = everything after the first blank line that follows the
-  // header block. The header block has Kind/Lineage/Model lines.
+  // header block. The header block has Kind/Lineage/Model[/Resets] lines.
   const headerEnd = trimmed.search(/\n\n[^*]/);
   const body = headerEnd >= 0 ? trimmed.slice(headerEnd + 2).trim() : "";
   const message = body.length > 0 ? body : "(no error message reported)";
   // Map common kinds to a short call-to-action so the user knows what to do.
   const cta = ctaForKind(kind);
-  return { kind, message, ...(cta ? { cta } : {}) };
+  return {
+    kind,
+    message,
+    ...(cta ? { cta } : {}),
+    ...(resetAt ? { resetAt } : {}),
+  };
+}
+
+function formatResetAt(ms: number): string {
+  const diff = ms - Date.now();
+  if (diff <= 0) return "now";
+  const sec = Math.round(diff / 1000);
+  if (sec < 60) return `in ${sec}s`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `in ${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) {
+    const at = new Date(ms);
+    return `at ${at.getHours().toString().padStart(2, "0")}:${at
+      .getMinutes()
+      .toString()
+      .padStart(2, "0")}`;
+  }
+  const days = Math.round(hr / 24);
+  return `in ${days}d`;
 }
 
 function ctaForKind(kind: string): string | undefined {

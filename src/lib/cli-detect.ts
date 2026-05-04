@@ -217,6 +217,29 @@ interface VerifyResult {
   reason?: string;
 }
 
+/**
+ * Basename allowlist — the binary's filename must match the expected
+ * name (case-insensitive, .exe/.cmd suffixes stripped) before we even
+ * try to verify the version output. This is the primary guard against
+ * the STARTS_WITH_VERSION regex being too permissive: `npm --version`
+ * prints "11.7.0" and would otherwise pass as gemini/opencode. The
+ * regex stays as a secondary check — a binary that's named correctly
+ * but whose --version output is total junk still gets rejected.
+ *
+ * Validated locally before adding (2026-05-04):
+ *   npm 11.7.0   → matches version regex (would've false-passed)
+ *   pip 24.0     → no (starts with "pip ")
+ *   node v20.19  → no (starts with "v")
+ *   python 3.12  → no (starts with "Python ")
+ */
+function basenameMatches(cli: DetectableCli, binPath: string): boolean {
+  const expected = BINARY_NAME[cli].toLowerCase();
+  const base = path.basename(binPath).toLowerCase();
+  // Strip Windows extensions so claude.exe / claude.cmd both match "claude".
+  const stripped = base.replace(/\.(exe|cmd|bat|ps1)$/i, '');
+  return stripped === expected;
+}
+
 function verifyRunnable(
   cli: DetectableCli,
   binPath: string,
@@ -224,6 +247,12 @@ function verifyRunnable(
 ): VerifyResult {
   if (!existsSync(binPath)) {
     return { ok: false, reason: 'no file at that path' };
+  }
+  if (!basenameMatches(cli, binPath)) {
+    return {
+      ok: false,
+      reason: `expected a binary named "${BINARY_NAME[cli]}" — got "${path.basename(binPath)}"`,
+    };
   }
   let result;
   try {
@@ -270,8 +299,35 @@ function detectOne(cli: DetectableCli): CliDetection {
   return { id: cli, found: false };
 }
 
-export function detectAllClis(): CliDetection[] {
-  return (Object.keys(BINARY_NAME) as DetectableCli[]).map(detectOne);
+/**
+ * Cache for `detectAllClis` — every detect spawns up to 5 child
+ * processes (one `--version` per CLI), so when a daemon route resolves
+ * a CLI path on every HTTP poll (e.g. /orchestrators/opencode/models
+ * during onboarding), we'd fork ~50 processes/second without a cache.
+ *
+ * 30s TTL is short enough that a `chorus install <cli>` run from a
+ * different shell shows up before the user finishes onboarding, but
+ * long enough that a polling UI doesn't keep retriggering scans.
+ * Tests can call detectAllClis with `force: true` to bypass.
+ */
+let detectCache: { results: CliDetection[]; expiresAt: number } | null = null;
+const DETECT_CACHE_TTL_MS = 30_000;
+
+export function detectAllClis(force = false): CliDetection[] {
+  const now = Date.now();
+  if (!force && detectCache && detectCache.expiresAt > now) {
+    return detectCache.results;
+  }
+  const results = (Object.keys(BINARY_NAME) as DetectableCli[]).map(detectOne);
+  detectCache = { results, expiresAt: now + DETECT_CACHE_TTL_MS };
+  return results;
+}
+
+/** Clear the detection cache. Used by callers that mutated state we
+ *  know will change the answer (e.g. user just supplied a manual path,
+ *  or installed a new CLI via the cockpit). */
+export function clearDetectionCache(): void {
+  detectCache = null;
 }
 
 /**

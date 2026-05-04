@@ -7,6 +7,7 @@ import type {
   DetectableCliId,
 } from "@/lib/api/settings";
 import type { OpencodeModelsResult } from "@/lib/api/orchestrators";
+import type { Voice } from "@/lib/api/voices";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UI_LINEAGE_BRAND, type UILineage } from "@/lib/lineage-maps";
@@ -36,6 +37,16 @@ const CLI_TO_UI_LINEAGE: Record<string, UILineage> = {
   "kimi-cli": "kimi",
 };
 
+// `voices.provider` mirrors the CLI id 1:1 for the single-model CLIs.
+// Kept as a Record for symmetry with CLI_TO_UI_LINEAGE.
+const CLI_TO_PROVIDER: Record<string, string> = {
+  "claude-code": "claude-code",
+  "codex-cli": "codex-cli",
+  "gemini-cli": "gemini-cli",
+  "opencode-cli": "opencode-cli",
+  "kimi-cli": "kimi-cli",
+};
+
 const NEUTRAL_BRAND = {
   dot: "bg-muted-foreground/40",
   gradient: "bg-gradient-to-br from-muted/30 via-card to-card",
@@ -45,6 +56,12 @@ interface CliSectionProps {
   selectedClis: Set<string>;
   toggleCli: (id: string) => void;
   detection: Record<string, CliDetection>;
+  /** All CLI-source voices, fetched on the page. The card filters by
+   *  provider locally so its model list reflects the live DB state. */
+  cliVoices: Voice[];
+  savingVoiceId: string | null;
+  voiceSaveError: string | null;
+  toggleVoice: (v: Voice) => void;
   manualOpen: Set<string>;
   toggleManual: (id: string) => void;
   manualPath: Record<string, string>;
@@ -189,13 +206,15 @@ export function CliSection(props: CliSectionProps) {
                   />
                 )}
 
-                {found &&
-                  cli.id !== "opencode-cli" &&
-                  checked && (
-                    <p className="text-[11px] italic text-muted-foreground/80">
-                      Default model auto-enabled.
-                    </p>
-                  )}
+                {found && cli.id !== "opencode-cli" && checked && (
+                  <SingleCliVoiceList
+                    cliId={cli.id}
+                    voices={props.cliVoices}
+                    savingVoiceId={props.savingVoiceId}
+                    saveError={props.voiceSaveError}
+                    onToggle={props.toggleVoice}
+                  />
+                )}
               </div>
             </div>
           );
@@ -206,6 +225,104 @@ export function CliSection(props: CliSectionProps) {
         wire them up on the Connect page after onboarding.
       </p>
     </section>
+  );
+}
+
+/**
+ * Model toggle list for single-model CLIs (claude/codex/gemini/kimi).
+ * Mirrors the OpenCode picker shape so all five cards feel consistent.
+ * Each row is a real voices.upsert toggle — clicking saves immediately.
+ */
+interface SingleCliVoiceListProps {
+  cliId: string;
+  voices: Voice[];
+  savingVoiceId: string | null;
+  saveError: string | null;
+  onToggle: (v: Voice) => void;
+}
+
+function SingleCliVoiceList({
+  cliId,
+  voices,
+  savingVoiceId,
+  saveError,
+  onToggle,
+}: SingleCliVoiceListProps) {
+  const provider = CLI_TO_PROVIDER[cliId];
+  // Filter to this CLI's voices and stable-sort: immutable provider row
+  // first (current model), versioned variants alphabetically after.
+  const ours = voices
+    .filter((v) => v.provider === provider)
+    .slice()
+    .sort((a, b) => {
+      if (a.id === provider) return -1;
+      if (b.id === provider) return 1;
+      return a.model_id.localeCompare(b.model_id);
+    });
+
+  if (ours.length === 0) {
+    return (
+      <p className="text-[11px] italic text-muted-foreground/70">
+        Models will populate after the daemon finishes seeding (refresh
+        in a few seconds).
+      </p>
+    );
+  }
+
+  const enabledCount = ours.filter((v) => v.enabled).length;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          Models
+        </p>
+        <p className="text-[11px] text-muted-foreground/70">
+          {enabledCount}/{ours.length} enabled
+        </p>
+      </div>
+      {saveError && (
+        <p className="text-[11px] text-destructive">{saveError}</p>
+      )}
+      <div className="grid grid-cols-1 gap-1">
+        {ours.map((v) => {
+          const sel = v.enabled;
+          const isCurrent = v.id === provider;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              disabled={savingVoiceId === v.id}
+              onClick={() => onToggle(v)}
+              title={v.model_id}
+              className={cn(
+                "flex items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] transition disabled:opacity-60",
+                sel
+                  ? "border-primary/50 bg-primary/10 text-foreground"
+                  : "border-border bg-card text-muted-foreground hover:border-muted-foreground/30",
+              )}
+            >
+              <div
+                className={cn(
+                  "grid h-3 w-3 shrink-0 place-items-center rounded-sm border transition",
+                  sel
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border",
+                )}
+              >
+                {sel && <Check className="h-2 w-2" />}
+              </div>
+              <span className="truncate font-mono">{v.model_id}</span>
+              {isCurrent && (
+                <span className="shrink-0 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-emerald-300">
+                  current
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -327,13 +444,16 @@ function ManualPath({
         <code className="rounded bg-muted px-1">{bin}</code> binary. Run{" "}
         <code className="rounded bg-muted px-1">which {bin}</code> (macOS /
         Linux) or <code className="rounded bg-muted px-1">where {bin}</code>{" "}
-        (Windows) to find it.
+        (Windows) to find it. The daemon will run{" "}
+        <code className="rounded bg-muted px-1">{bin} --version</code> with
+        a 2s timeout to confirm the binary works and identifies as the{" "}
+        {bin} CLI.
       </p>
       <div className="flex gap-2">
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="/usr/local/bin/claude"
+          placeholder={`/full/path/to/${bin}`}
           className="flex-1 font-mono text-xs"
           spellCheck={false}
           autoComplete="off"

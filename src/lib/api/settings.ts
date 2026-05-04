@@ -27,6 +27,10 @@ export interface CliDetection {
   found: boolean;
   path?: string;
   source?: "path" | "fallback" | "manual";
+  /** Populated on manual validation failures — surfaces "no file at
+   *  that path", "binary doesn't look like the claude CLI", etc. so
+   *  the UI can show a concrete reason inline. */
+  reason?: string;
 }
 
 export async function detectInstalledClis(): Promise<CliDetection[]> {

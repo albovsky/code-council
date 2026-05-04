@@ -168,6 +168,9 @@ export interface CliDetection {
   path?: string;
   /** "path" = found via PATH lookup, "fallback" = found via known dirs, "manual" = user-supplied */
   source?: 'path' | 'fallback' | 'manual';
+  /** Populated when found=false on manual validation — explains why
+   *  (e.g. "no file at that path", "doesn't look like the claude CLI"). */
+  reason?: string;
 }
 
 function pathLookup(name: string): string | null {
@@ -180,37 +183,86 @@ function pathLookup(name: string): string | null {
 }
 
 /**
- * Verify a binary is runnable by invoking `--version` with a short timeout.
- * Returns true if the binary exits 0 within the timeout, false otherwise.
+ * Per-CLI version-output signatures. The shape varies wildly between
+ * CLIs — claude prints "2.1.126 (Claude Code)", codex prints
+ * "codex-cli 0.128.0", but gemini / opencode print just a bare
+ * version like "0.40.1" with NO CLI name. So each CLI gets its own
+ * matcher rather than a uniform name-substring regex.
  *
- * Some CLIs print version on stderr or use `version` instead of `--version`,
- * so we treat any exit code 0 as success without inspecting output.
+ * Strategy:
+ *   - CLIs whose output includes the name → match the name (case-insensitive).
+ *   - CLIs that print a bare version → accept output that STARTS with a
+ *     digit-dot-digit (semver-ish). This rules out e.g. `cat --version`
+ *     (output starts with "cat (GNU…") while accepting any reasonable
+ *     `<bin> --version` from a real install.
+ *
+ * False positives here (a runnable binary that happens to print a bare
+ * version) are still better than rubber-stamping `cat --version` as a
+ * valid Claude install — which is what the original exit-0-only check
+ * did.
  */
-function verifyRunnable(binPath: string, timeoutMs = 2000): boolean {
-  if (!existsSync(binPath)) return false;
+const STARTS_WITH_VERSION = /^\s*\d+\.\d+/;
+const CLI_SIGNATURES: Record<DetectableCli, RegExp> = {
+  'claude-code': /\bclaude\b/i,
+  'codex-cli': /\bcodex\b/i,
+  // Bare version output — "0.40.1" — no CLI name to grep for.
+  'gemini-cli': STARTS_WITH_VERSION,
+  // Bare version output — "1.14.30" — same as gemini.
+  'opencode-cli': STARTS_WITH_VERSION,
+  'kimi-cli': /\bkimi\b/i,
+};
+
+interface VerifyResult {
+  ok: boolean;
+  reason?: string;
+}
+
+function verifyRunnable(
+  cli: DetectableCli,
+  binPath: string,
+  timeoutMs = 2000,
+): VerifyResult {
+  if (!existsSync(binPath)) {
+    return { ok: false, reason: 'no file at that path' };
+  }
+  let result;
   try {
-    const result = spawnSync(binPath, ['--version'], {
+    result = spawnSync(binPath, ['--version'], {
       encoding: 'utf-8',
       timeout: timeoutMs,
-      // Suppress any interactive prompts that might block.
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return result.status === 0;
-  } catch {
-    return false;
+  } catch (err) {
+    return { ok: false, reason: `failed to spawn (${(err as Error).message})` };
   }
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      reason: `${path.basename(binPath)} --version exited ${result.status}`,
+    };
+  }
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  const signature = CLI_SIGNATURES[cli];
+  if (!signature.test(output)) {
+    return {
+      ok: false,
+      reason:
+        `that binary ran, but its --version output doesn't look like the ${BINARY_NAME[cli]} CLI`,
+    };
+  }
+  return { ok: true };
 }
 
 function detectOne(cli: DetectableCli): CliDetection {
   // 1. PATH lookup
   const onPath = pathLookup(BINARY_NAME[cli]);
-  if (onPath && verifyRunnable(onPath)) {
+  if (onPath && verifyRunnable(cli, onPath).ok) {
     return { id: cli, found: true, path: onPath, source: 'path' };
   }
 
   // 2. Fallback known dirs
   for (const candidate of fallbackPaths(cli)) {
-    if (existsSync(candidate) && verifyRunnable(candidate)) {
+    if (existsSync(candidate) && verifyRunnable(cli, candidate).ok) {
       return { id: cli, found: true, path: candidate, source: 'fallback' };
     }
   }
@@ -225,11 +277,21 @@ export function detectAllClis(): CliDetection[] {
 /**
  * Validate a user-supplied path for a given CLI. Used by the
  * "Set path manually" fallback when auto-detect misses.
+ *
+ * Surfaces the reason when validation fails so the UI can show it
+ * inline (e.g. "no file at that path", "exit 127", "doesn't look like
+ * the gemini CLI"). Caller treats `found: false` + `reason` as a
+ * definite "this path is wrong" rather than a transient probe failure.
  */
-export function validateCliPath(cli: DetectableCli, customPath: string): CliDetection {
+export function validateCliPath(
+  cli: DetectableCli,
+  customPath: string,
+): CliDetection & { reason?: string } {
   const trimmed = customPath.trim();
-  if (!trimmed) return { id: cli, found: false };
-  if (!existsSync(trimmed)) return { id: cli, found: false };
-  if (!verifyRunnable(trimmed)) return { id: cli, found: false };
+  if (!trimmed) return { id: cli, found: false, reason: 'path is empty' };
+  if (!existsSync(trimmed))
+    return { id: cli, found: false, reason: `no file at ${trimmed}` };
+  const v = verifyRunnable(cli, trimmed);
+  if (!v.ok) return { id: cli, found: false, reason: v.reason };
   return { id: cli, found: true, path: trimmed, source: 'manual' };
 }

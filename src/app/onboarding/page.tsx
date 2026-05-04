@@ -16,6 +16,7 @@ import {
   listOpencodeModels,
   type OpencodeModelsResult,
 } from "@/lib/api/orchestrators";
+import { listVoices, updateVoice, type Voice } from "@/lib/api/voices";
 import { ApiKeysSection } from "./api-keys-section";
 import { CliSection } from "./cli-section";
 import { PermissionsSection } from "./permissions-section";
@@ -27,6 +28,9 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedClis, setSelectedClis] = useState<Set<string>>(new Set());
+  const [cliVoices, setCliVoices] = useState<Voice[]>([]);
+  const [savingVoiceId, setSavingVoiceId] = useState<string | null>(null);
+  const [voiceSaveError, setVoiceSaveError] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [sandboxProfile, setSandboxProfile] =
     useState<SandboxProfile>("workspace");
@@ -67,7 +71,30 @@ export default function OnboardingPage() {
         // Detection is best-effort; if the daemon probe fails the user
         // can still tick boxes manually. No need to surface an error.
       });
+    // Voices are seeded server-side on daemon boot — fetch the current
+    // state so each CLI card can render its actual model list with
+    // toggles, not just "default model auto-enabled."
+    listVoices({ source: "cli" })
+      .then(setCliVoices)
+      .catch(() => {
+        /* best-effort — seeding may not have completed yet */
+      });
   }, []);
+
+  const toggleVoice = async (v: Voice) => {
+    setSavingVoiceId(v.id);
+    setVoiceSaveError(null);
+    try {
+      const next = await updateVoice(v.id, { enabled: !v.enabled });
+      setCliVoices((prev) => prev.map((p) => (p.id === next.id ? next : p)));
+    } catch (err) {
+      setVoiceSaveError(
+        err instanceof Error ? err.message : "Couldn't save voice toggle.",
+      );
+    } finally {
+      setSavingVoiceId(null);
+    }
+  };
 
   const toggleCli = (id: string) => {
     setSelectedClis((prev) => {
@@ -151,16 +178,24 @@ export default function OnboardingPage() {
       if (result.found) {
         setDetection((prev) => ({ ...prev, [id]: result }));
         setSelectedClis((prev) => new Set(prev).add(id));
+        // Refresh voices so the model list populates for the just-validated CLI.
+        listVoices({ source: "cli" })
+          .then(setCliVoices)
+          .catch(() => {
+            /* best-effort */
+          });
         setManualOpen((prev) => {
           const next = new Set(prev);
           next.delete(id);
           return next;
         });
       } else {
+        // Daemon now returns `reason` on validation failures — surface it.
+        // Falls back to the generic message for older daemons.
+        const reason = result.reason ?? "couldn't run that path";
         setManualError((prev) => ({
           ...prev,
-          [id]:
-            "Couldn't run that path. Check it points to the actual binary.",
+          [id]: `Validation failed: ${reason}.`,
         }));
       }
     } catch {
@@ -237,6 +272,10 @@ export default function OnboardingPage() {
           selectedClis={selectedClis}
           toggleCli={toggleCli}
           detection={detection}
+          cliVoices={cliVoices}
+          savingVoiceId={savingVoiceId}
+          voiceSaveError={voiceSaveError}
+          toggleVoice={toggleVoice}
           manualOpen={manualOpen}
           toggleManual={toggleManual}
           manualPath={manualPath}

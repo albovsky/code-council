@@ -1,6 +1,5 @@
 "use client";
 
-import { FallbackSwapCard } from "./fallback-swap-card";
 import { ParticipantCard } from "./participant-card";
 import type {
   FallbackSwap,
@@ -49,6 +48,15 @@ export function RoundView({
     : round.participants;
   const roundSwaps = (swaps ?? []).filter((s) => s.round === round.round);
 
+  // Strip `reviewer-` / `doer-` prefix from the dir name so we can match
+  // a participant against its swap entries — runner emits swap.agent as
+  // `<agentName>-<idx>` for reviewers, `<agentName>` for doers, neither
+  // of which carries the role prefix.
+  const swapsForParticipant = (p: ParticipantSnapshot): FallbackSwap[] => {
+    const agentKey = p.participant.replace(/^(reviewer-|doer-)/, "");
+    return roundSwaps.filter((s) => s.agent === agentKey);
+  };
+
   return (
     <section>
       {!reviewOnly && (
@@ -77,12 +85,7 @@ export function RoundView({
             chatTerminal={chatTerminal}
             chatId={chatId}
             reviewOnly={reviewOnly}
-          />
-        ))}
-        {roundSwaps.map((swap) => (
-          <FallbackSwapCard
-            key={`${swap.round}-${swap.agent}-${swap.fromLineage}-${swap.fromModel}`}
-            swap={swap}
+            swaps={swapsForParticipant(p)}
           />
         ))}
       </div>

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Shuffle, X } from "lucide-react";
 import { uiLineageDot, uiLineageLabel } from "@/lib/lineage-maps";
 import { LINEAGE_GRADIENT } from "./lineage-gradient";
 import { StateBadge } from "./state-badge";
-import type { ParticipantSnapshot, ParticipantState } from "./types";
+import type { FallbackSwap, ParticipantSnapshot, ParticipantState } from "./types";
 
 /**
  * One reviewer/doer card in the run grid.
@@ -24,6 +24,7 @@ export function ParticipantCard({
   chatTerminal,
   chatId,
   reviewOnly,
+  swaps,
 }: {
   participant: ParticipantSnapshot;
   isActive: boolean;
@@ -39,6 +40,12 @@ export function ParticipantCard({
    *  pending-state copy swaps from "runs after the doer" to a generic
    *  "queued" line in that case — there is no doer to wait for. */
   reviewOnly?: boolean;
+  /** Fallback swaps that fired on this slot (per-slot model fallback or
+   *  cross-lineage). Rendered as inline rows under the header showing
+   *  what voice ACTUALLY produced the answer — the slot's identity in
+   *  the header stays bound to its primary lineage so cards don't
+   *  re-key mid-run. Empty when no swap fired. */
+  swaps?: FallbackSwap[];
 }) {
   const [showFull, setShowFull] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -168,6 +175,42 @@ export function ParticipantCard({
           <StateBadge state={state} />
         </div>
       </div>
+
+      {swaps && swaps.length > 0 && (
+        <div className="space-y-1.5 border-b border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[11px]">
+          {swaps
+            .slice()
+            .sort((a, b) => a.fallbackIdx - b.fallbackIdx)
+            .map((s, i) => {
+              const isCross = s.reason === "lineage_fallback";
+              return (
+                <div
+                  key={`${s.fromLineage}-${s.fromModel}-${i}`}
+                  className="flex items-start gap-2"
+                >
+                  <Shuffle className="mt-0.5 h-3 w-3 shrink-0 text-amber-300" />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="font-medium uppercase tracking-wider text-[10px] text-amber-300">
+                      {isCross ? "Cross-lineage fallback" : "Model fallback"}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-amber-100/90">
+                      <span className="text-amber-100/60 line-through">
+                        {s.fromLineage}/{s.fromModel}
+                      </span>
+                      <ArrowRight className="h-3 w-3 shrink-0 text-amber-300" />
+                      <span className="font-medium text-amber-100">
+                        {s.toLineage}/{s.toModel}
+                      </span>
+                      <span className="rounded bg-amber-500/15 px-1 py-0.5 font-mono text-[9px] text-amber-200">
+                        actually ran
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
 
       {participant.warnings && participant.warnings.length > 0 && (
         <div className="space-y-1 border-b border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[11px] text-amber-200/90">

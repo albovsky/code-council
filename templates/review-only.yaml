@@ -9,6 +9,8 @@ agreementThreshold: 0.66
 onThresholdMet: ask
 maxRounds: 1
 yoloDefault: false
+# Lightest template — no doer phase, single reviewer-only ask. Cockpit-side floor.
+estimatedBaselineTokens: 500
 
 # Ship is meaningless without a doer diff. The runner skips it for any
 # review-only template; the explicit `enabled: false` here keeps intent

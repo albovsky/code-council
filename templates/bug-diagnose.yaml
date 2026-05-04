@@ -6,6 +6,8 @@ agreementThreshold: 0.5
 onThresholdMet: ask
 maxRounds: 2
 yoloDefault: false
+# 1 doer + 1 reviewer; multi-phase reasoning. Cockpit-side floor.
+estimatedBaselineTokens: 700
 
 phases:
   - id: diagnose

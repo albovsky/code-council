@@ -6,6 +6,8 @@ agreementThreshold: 0.5
 onThresholdMet: ask
 maxRounds: 3
 yoloDefault: false
+# 2-phase decision workflow with denser plan scaffolding. Cockpit-side floor.
+estimatedBaselineTokens: 900
 
 phases:
   - id: plan

@@ -40,6 +40,15 @@ export interface CostEstimate {
 }
 
 /**
+ * Fallback baseline when a template doesn't declare its own
+ * `estimatedBaselineTokens`. Approximates the prompt scaffolding
+ * (system prompt + persona block + ask framing) the daemon prepends
+ * before the user's artifact/work — a per-template constant that lives
+ * on the template now; this is the floor when it's missing.
+ */
+export const DEFAULT_BASELINE_TOKENS = 800;
+
+/**
  * Rough cost heuristic. Two refinements over the v0.6 version:
  *   1. Multiplies by template.maxRounds so users see the worst-case
  *      cost when reviewers disagree and trigger retries.
@@ -61,7 +70,8 @@ export function estimateCost(args: {
   const maxRounds = Math.max(1, template?.maxRounds ?? 1);
   const promptTokens = Math.ceil(prompt.length / 4);
   const attachTokens = attachments.length * 1500;
-  const baseTokens = 800; // template prompt boilerplate
+  const baseTokens =
+    template?.estimatedBaselineTokens ?? DEFAULT_BASELINE_TOKENS;
   const inputTokens = promptTokens + attachTokens + baseTokens;
   const outputTokens = 1200; // estimate per reviewer
   const perReviewerUsd = inputTokens * 0.000003 + outputTokens * 0.000015;

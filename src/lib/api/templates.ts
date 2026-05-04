@@ -46,6 +46,7 @@ interface ParsedTemplateYaml {
   onThresholdMet?: Template["onThresholdMet"] | string;
   maxRounds?: number;
   yoloDefault?: boolean;
+  estimatedBaselineTokens?: number;
   phases?: ParsedPhase[];
 }
 
@@ -184,6 +185,7 @@ function parseRow(row: RawTemplateRow): Template {
     verificationGate: "auto",
     costCapUsd: 0,
     yoloDefault: parsed.yoloDefault ?? false,
+    estimatedBaselineTokens: parsed.estimatedBaselineTokens,
     onError: "ask-user",
     notify: "dashboard-only",
     yaml: row.yaml,

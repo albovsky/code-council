@@ -215,6 +215,10 @@ export interface Template {
   verificationGate: "auto" | "run-tests" | "ask-user";
   costCapUsd: number;
   yoloDefault?: boolean;
+  /** Optional per-template floor for the cockpit's pre-submit cost
+   *  estimate (input-tokens of prompt boilerplate per reviewer). When
+   *  unset, the cockpit defaults to DEFAULT_BASELINE_TOKENS. */
+  estimatedBaselineTokens?: number;
   onError: "fallback" | "fail" | "ask-user";
   notify: NotifyChannel;
   yaml: string;

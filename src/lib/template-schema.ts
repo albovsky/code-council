@@ -211,6 +211,21 @@ export const TemplateSchema = z.object({
   // Runtime defaults
   yoloDefault: z.boolean().default(false),
 
+  /**
+   * Per-template approximation of the input-token boilerplate that goes
+   * into ONE reviewer's first round. Includes system prompt, persona
+   * block, and ask scaffolding that the daemon prepends before the
+   * user's artifact/work text. Used by the cockpit's pre-submit cost
+   * estimate; a heuristic, not a contract — actual usage depends on the
+   * shim's prompt-builder output.
+   *
+   * Defaults to 800 in the cockpit when a template doesn't declare a
+   * value (matches the previous hardcoded baseline). Templates with
+   * heavier scaffolding (multi-phase, dense persona text) should set
+   * this higher; lighter templates (review-only) lower.
+   */
+  estimatedBaselineTokens: z.number().int().min(0).optional(),
+
   // The workflow phases.
   //
   // Hybrid templates (review_only mixed with standard phases) are explicitly

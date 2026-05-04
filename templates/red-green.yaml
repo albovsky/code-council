@@ -6,6 +6,8 @@ agreementThreshold: 0.66
 onThresholdMet: ask
 maxRounds: 3
 yoloDefault: false
+# 7-phase TheDailyClaude flow; densest scaffolding. Cockpit-side floor.
+estimatedBaselineTokens: 1100
 
 # Ship phase: same shape as code-review. Auto-skipped when chat has no
 # repoPath (e.g. a paste-a-snippet quick check). v0.5 stops at `gh pr create`

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { detectRuntimeEnv } from './runtime-env.js';
-import { c, sym, tip } from './ui.js';
+import { c, tip } from './ui.js';
 
 export const COCKPIT_URL = 'http://127.0.0.1:5050';
 export const DAEMON_URL = 'http://127.0.0.1:7707';
@@ -54,4 +54,3 @@ export function printCockpitAccessHint(): void {
   console.log('');
 }
 
-export { c, sym };

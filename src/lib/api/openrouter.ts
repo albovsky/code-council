@@ -15,15 +15,6 @@ export interface OpenRouterModel {
   outputCostPerMtok?: number;
 }
 
-export async function validateOpenRouterKey(
-  apiKey: string,
-): Promise<{ valid: boolean; error?: string }> {
-  return fetchFromDaemon("/openrouter/validate", {
-    method: "POST",
-    body: JSON.stringify({ apiKey }),
-  });
-}
-
 export async function saveOpenRouterKey(
   apiKey: string,
 ): Promise<{ valid: boolean; error?: string }> {

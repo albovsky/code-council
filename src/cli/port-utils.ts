@@ -1,7 +1,7 @@
 import { execFileSync, execSync } from 'child_process';
 import fs from 'fs';
 import net from 'net';
-import { c, sym } from './ui.js';
+import { sym } from './ui.js';
 
 /**
  * Probe whether anything is listening on a TCP port on 127.0.0.1.
@@ -255,5 +255,3 @@ export async function killAndVerify(
   return false;
 }
 
-// Re-export so consumer files don't need to know about `c` from ./ui.js.
-export { c };

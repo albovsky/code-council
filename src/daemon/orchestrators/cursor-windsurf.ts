@@ -43,7 +43,7 @@ function getCursorStatus(): OrchestratorStatus {
   };
 }
 
-export async function connectCursor(
+async function connectCursor(
   opts: { binPath: string; daemonUrl?: string },
 ): Promise<ConnectResult> {
   if (hasMcpEntry(CURSOR_MCP_PATH, opts.binPath)) {
@@ -86,7 +86,7 @@ function getWindsurfStatus(): OrchestratorStatus {
   };
 }
 
-export async function connectWindsurf(
+async function connectWindsurf(
   opts: { binPath: string; daemonUrl?: string },
 ): Promise<ConnectResult> {
   if (hasMcpEntry(WINDSURF_MCP_PATH, opts.binPath)) {

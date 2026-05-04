@@ -208,17 +208,12 @@ export function createLogger(opts?: {
 
 /**
  * Module-singleton root logger for general-purpose call sites that don't
- * have a chat / request context. Prefer `chatLogger(chatId)` or
- * `requestLogger(requestId)` when those identifiers are known.
+ * have a chat / request context. Prefer `chatLogger(chatId)` when the
+ * chat correlation key is known.
  */
 export const logger: Logger = createLogger();
 
 /** Convenience: child logger pre-bound to a chat correlation key. */
 export function chatLogger(chatId: string, extra?: LogFields): Logger {
   return logger.child({ chatId, ...extra });
-}
-
-/** Convenience: child logger pre-bound to a request correlation key. */
-export function requestLogger(requestId: string, extra?: LogFields): Logger {
-  return logger.child({ requestId, ...extra });
 }

@@ -101,7 +101,7 @@ function getOpencodeStatus(): OrchestratorStatus {
  * flags for non-tty use), so we patch the user-scope config directly.
  * Idempotent.
  */
-export async function connectOpencode(
+async function connectOpencode(
   opts: { binPath: string; daemonUrl?: string },
 ): Promise<ConnectResult> {
   const { config } = readOpencodeConfig();

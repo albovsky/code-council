@@ -100,7 +100,7 @@ function installChorusSlashCommand(): ConnectResult['slashCommand'] {
  * Patch Claude Code's local settings to whitelist all 7 Chorus MCP tools, and
  * drop the `/chorus` slash command into `~/.claude/commands/`. Idempotent.
  */
-export async function connectClaude(): Promise<ConnectResult> {
+async function connectClaude(): Promise<ConnectResult> {
   const config = readClaudeSettings();
   const permissions = (config.permissions ?? {}) as NonNullable<
     ClaudeSettings['permissions']

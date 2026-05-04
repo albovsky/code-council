@@ -97,12 +97,3 @@ export function validateTemplateYaml(input: string): TemplateValidationResult {
   return { valid: false, issues };
 }
 
-/**
- * Convenience: human-readable single-line summary for footer badges /
- * dialog headers. Returns "" when valid.
- */
-export function summariseIssues(issues: TemplateValidationIssue[]): string {
-  if (issues.length === 0) return '';
-  if (issues.length === 1) return `${issues[0].path}: ${issues[0].message}`;
-  return `${issues.length} issues — first at ${issues[0].path}: ${issues[0].message}`;
-}

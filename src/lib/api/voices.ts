@@ -63,10 +63,6 @@ export async function listVoices(filter?: VoiceListFilter): Promise<Voice[]> {
   return fetchFromDaemon<Voice[]>(`/voices${buildQuery(filter)}`);
 }
 
-export async function getVoice(id: string): Promise<Voice> {
-  return fetchFromDaemon<Voice>(`/voices/${encodeURIComponent(id)}`);
-}
-
 export async function updateVoice(id: string, patch: VoiceUpdate): Promise<Voice> {
   return fetchFromDaemon<Voice>(`/voices/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -81,8 +77,3 @@ export async function createVoice(input: VoiceCreate): Promise<Voice> {
   });
 }
 
-export async function deleteVoice(id: string): Promise<{ id: string; deleted: boolean }> {
-  return fetchFromDaemon<{ id: string; deleted: boolean }>(`/voices/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
-}

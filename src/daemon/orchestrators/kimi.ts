@@ -50,7 +50,7 @@ function hasKimiMcpServer(expectedBinPath?: string): boolean {
  * Gemini (mcpServers.<name>) but stored in ~/.kimi/mcp.json. Idempotent
  * + path-aware: re-registers if binPath drifted.
  */
-export async function connectKimi(
+async function connectKimi(
   opts: { binPath: string; daemonUrl?: string },
 ): Promise<ConnectResult> {
   if (hasKimiMcpServer(opts.binPath)) {

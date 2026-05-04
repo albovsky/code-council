@@ -21,7 +21,7 @@ const SHIMS: Record<Lineage, AgentShim> = {
   any: claudeShim, // Fallback to Claude
 };
 
-export const registry: AgentRegistry = {
+const registry: AgentRegistry = {
   pickShim(lineage: Lineage): AgentShim {
     return SHIMS[lineage] ?? SHIMS.any;
   },

@@ -42,7 +42,7 @@ export const DEFAULT_REVIEWER: Record<string, AutoApprove> = {
   "outside-cwd": "block",
 };
 
-export const POLICY_STYLES: Record<AutoApprove, string> = {
+const POLICY_STYLES: Record<AutoApprove, string> = {
   auto: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
   ask: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   block: "bg-rose-500/15 text-rose-300 border-rose-500/30",

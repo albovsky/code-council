@@ -405,7 +405,3 @@ export function TemplateDialog({
   );
 }
 
-// Backwards compat — old import paths still work.
-export function NewTemplateDialog(props: { onSaved?: (id: string) => void }) {
-  return <TemplateDialog onSaved={props.onSaved} />;
-}

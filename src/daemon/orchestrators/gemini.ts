@@ -52,7 +52,7 @@ function hasGeminiMcpServer(expectedBinPath?: string): boolean {
  * ~/.gemini/settings.json (or per-project) for us — we use --scope user
  * to make it global. Idempotent: skips when already present.
  */
-export async function connectGemini(
+async function connectGemini(
   opts: { binPath: string; daemonUrl?: string },
 ): Promise<ConnectResult> {
   if (hasGeminiMcpServer(opts.binPath)) {

@@ -84,11 +84,6 @@ function detectKimiTransport(): KimiTransport {
   return 'opencode';
 }
 
-/** Test-only — clear the cached detection so tests can switch env. */
-export function _resetKimiTransportCache(): void {
-  cachedTransport = null;
-}
-
 /**
  * Drop a per-participant `_meta.json` sidecar so the cockpit can show
  * which binary + model actually ran. Without this the run page would

@@ -28,7 +28,7 @@ export const LINEAGE_LABEL: Record<DaemonLineage, string> = {
 };
 
 /** Tailwind background colour class for the small lineage dot indicator. */
-export const LINEAGE_DOT: Record<DaemonLineage, string> = {
+const LINEAGE_DOT: Record<DaemonLineage, string> = {
   anthropic: "bg-violet-400",
   openai: "bg-orange-400",
   google: "bg-blue-400",
@@ -76,7 +76,7 @@ export const UI_LINEAGE_LABEL: Record<UILineage, string> = {
   openrouter: "OpenRouter",
 };
 
-export const UI_LINEAGE_DOT: Record<UILineage, string> = {
+const UI_LINEAGE_DOT: Record<UILineage, string> = {
   claude: "bg-violet-400",
   codex: "bg-orange-400",
   gemini: "bg-blue-400",
@@ -211,7 +211,3 @@ export const UI_LINEAGE_BRAND: Record<UILineage, LineageBrand> = {
   },
 };
 
-export function uiLineageGradient(lineage: string | undefined): string {
-  if (!lineage) return "bg-card";
-  return UI_LINEAGE_BRAND[lineage as UILineage]?.gradient ?? "bg-card";
-}

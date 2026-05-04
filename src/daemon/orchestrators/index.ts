@@ -32,13 +32,6 @@ export {
   type OrchestratorStatus,
 } from './shared.js';
 
-export { connectClaude, registerClaudeMcpServer } from './claude.js';
-export { connectCodex } from './codex.js';
-export { connectGemini } from './gemini.js';
-export { connectOpencode } from './opencode.js';
-export { connectKimi } from './kimi.js';
-export { connectCursor, connectWindsurf } from './cursor-windsurf.js';
-
 const ORCHESTRATORS: OrchestratorDefinition[] = [
   claudeOrchestrator,
   codexOrchestrator,
@@ -122,15 +115,3 @@ export async function autoConnectAll(opts: {
   return { steps, anyConnected };
 }
 
-/** Just detect — no writes. Used by `chorus init` to ask the user which to wire. */
-export function detectOrchestrators(): {
-  name: OrchestratorName;
-  label: string;
-  detected: boolean;
-}[] {
-  return ORCHESTRATORS.map((def) => ({
-    name: def.name,
-    label: def.label,
-    detected: def.detect(),
-  }));
-}

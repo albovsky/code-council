@@ -42,7 +42,7 @@ function hasCodexMcpServer(expectedBinPath?: string): boolean {
  *
  * Idempotent: skips the call when the entry already exists.
  */
-export async function connectCodex(
+async function connectCodex(
   opts: { binPath: string; daemonUrl?: string },
 ): Promise<ConnectResult> {
   if (hasCodexMcpServer(opts.binPath)) {

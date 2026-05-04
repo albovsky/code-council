@@ -60,14 +60,6 @@ export function deriveStatusMeta(
   return STATUS_LABEL[status] ?? { text: status.toUpperCase(), color: "muted" };
 }
 
-export const STATUS_TEXT_COLOR: Record<string, string> = {
-  primary: "text-primary",
-  emerald: "text-emerald-400",
-  amber: "text-amber-400",
-  destructive: "text-destructive",
-  muted: "text-muted-foreground",
-};
-
 export const STATUS_DOT_COLOR: Record<string, string> = {
   primary: "bg-primary",
   emerald: "bg-emerald-400",

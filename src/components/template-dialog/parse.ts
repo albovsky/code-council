@@ -17,7 +17,7 @@ import type {
   ParseResult,
 } from "./types";
 
-export function deriveCategory(id: string): Template["category"] {
+function deriveCategory(id: string): Template["category"] {
   const i = id.toLowerCase();
   if (i.includes("bug") || i.includes("debug") || i.includes("diagnose"))
     return "debug";
@@ -28,7 +28,7 @@ export function deriveCategory(id: string): Template["category"] {
 
 /** Flatten daemon-shape fallback rows ({lineage, models[]}) into one form
  *  row per (lineage, model) tuple. The form's add/remove UI is row-oriented. */
-export function flattenFallbackList(
+function flattenFallbackList(
   list:
     | Array<{ lineage?: string; models?: string[]; persona?: string }>
     | undefined,

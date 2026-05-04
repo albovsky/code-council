@@ -37,7 +37,7 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
  * ids like `openrouter:anthropic/claude-3.5-sonnet`; OpenRouter's API expects
  * the bare model id `anthropic/claude-3.5-sonnet`.
  */
-export function stripOpenRouterPrefix(model: string): string {
+function stripOpenRouterPrefix(model: string): string {
   return model.startsWith('openrouter:') ? model.slice('openrouter:'.length) : model;
 }
 

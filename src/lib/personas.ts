@@ -54,7 +54,7 @@ function resolvePromptsDir(): string {
  * Parse a single persona .md file with YAML frontmatter.
  * Frontmatter is delimited by `---` lines at the top of the file.
  */
-export function parsePersonaFile(filePath: string): ParsedPersonaFile {
+function parsePersonaFile(filePath: string): ParsedPersonaFile {
   const raw = readFileSync(filePath, 'utf-8');
 
   if (!raw.startsWith('---\n')) {
@@ -81,7 +81,7 @@ export function parsePersonaFile(filePath: string): ParsedPersonaFile {
 /**
  * Read every *.md file under prompts/personas and return parsed entries.
  */
-export function loadPersonaFiles(): ParsedPersonaFile[] {
+function loadPersonaFiles(): ParsedPersonaFile[] {
   const dir = resolvePromptsDir();
   const files = readdirSync(dir).filter((f) => f.endsWith('.md'));
   return files.map((f) => parsePersonaFile(path.join(dir, f)));

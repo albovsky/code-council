@@ -133,7 +133,7 @@ export interface McpJsonShape {
   [key: string]: unknown;
 }
 
-export function readJsonOrEmpty(filePath: string): McpJsonShape {
+function readJsonOrEmpty(filePath: string): McpJsonShape {
   if (!fs.existsSync(filePath)) return {};
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as McpJsonShape;

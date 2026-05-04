@@ -9,7 +9,7 @@ import {
 } from "./constants";
 import type { DaemonPhaseYaml, DaemonTemplateYaml, FormState } from "./types";
 
-export function thresholdToNumber(t: AgreementThreshold): number {
+function thresholdToNumber(t: AgreementThreshold): number {
   switch (t) {
     case "unanimous":
       return 1;
@@ -26,7 +26,7 @@ export function thresholdFromNumber(n: number): AgreementThreshold {
   return "any";
 }
 
-export function actionToDaemon(a: ThresholdAction): "merge" | "ask" | "review" {
+function actionToDaemon(a: ThresholdAction): "merge" | "ask" | "review" {
   return a === "auto-finalize" ? "merge" : "ask";
 }
 
@@ -45,7 +45,7 @@ export function slugify(s: string): string {
   );
 }
 
-export function formToDaemonShape(f: FormState): DaemonTemplateYaml {
+function formToDaemonShape(f: FormState): DaemonTemplateYaml {
   const id = f.id || slugify(f.name);
   return {
     id,

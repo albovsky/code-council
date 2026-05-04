@@ -18,8 +18,8 @@ import type { Phase } from '../../lib/template-schema.js';
 // 1M-token budgets while still surfacing realistic source files. Hardcoded
 // for now; if template authors need larger payloads we'd lift these into
 // template config (template.inputs.maxFileBytes / maxTotalBytes).
-export const ATTACHED_FILE_MAX_BYTES = 64 * 1024;
-export const ATTACHED_FILES_TOTAL_BYTES = 256 * 1024;
+const ATTACHED_FILE_MAX_BYTES = 64 * 1024;
+const ATTACHED_FILES_TOTAL_BYTES = 256 * 1024;
 
 /**
  * Inline the contents of user-attached files into a single markdown block
@@ -150,7 +150,7 @@ export function packAttachedFiles(
  *   - A persona that contains the literal `</persona_instructions>` to
  *     try to break out is the only escape vector, and we strip it.
  */
-export function personaPromptBlock(systemPrompt: string | undefined): string {
+function personaPromptBlock(systemPrompt: string | undefined): string {
   if (!systemPrompt || systemPrompt.trim().length === 0) return '';
   // Defensive escape: strip any closing tag that would break out of our
   // fence. Keeps the worst case (a malicious persona) from rewriting the

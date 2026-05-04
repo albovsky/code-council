@@ -3,7 +3,7 @@
 import { LINEAGE_LABEL, type DaemonLineage } from "@/lib/lineage-maps";
 import { cn } from "@/lib/utils";
 
-export const PERSONA_ID_RE = /^[a-z0-9][a-z0-9-]{1,63}$/;
+const PERSONA_ID_RE = /^[a-z0-9][a-z0-9-]{1,63}$/;
 
 export const LINEAGE_OPTIONS: Array<{ value: DaemonLineage | ""; label: string }> = [
   { value: "", label: "No preference" },

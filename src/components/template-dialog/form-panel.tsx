@@ -10,7 +10,7 @@ import { FallbackStep } from "./fallback-step";
 import { PolicyStep } from "./policy-step";
 import type { FormState } from "./types";
 
-export function validateStep(step: number, form: FormState): string[] {
+function validateStep(step: number, form: FormState): string[] {
   const issues: string[] = [];
   if (step === 1) {
     if (!form.name || form.name.trim().length === 0) {

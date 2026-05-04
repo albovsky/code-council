@@ -41,7 +41,7 @@ export const DAEMON_DEFAULT_MODEL: Record<ReviewerLineage, string> = {
   openrouter: "",
 };
 
-export const DEFAULT_PHASE: TemplatePhase = {
+const DEFAULT_PHASE: TemplatePhase = {
   id: "review",
   name: "Review",
   description: "Three independent critiques.",

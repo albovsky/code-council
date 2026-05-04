@@ -114,19 +114,19 @@ export function LiveRunReal({
   //   - _swaps.json sidecars from /api/run-artifacts (post-reload, when
   //     the SSE is closed because the chat went terminal)
   const [fallbackSwaps, setFallbackSwaps] = useState<FallbackSwap[]>([]);
+  // Dedup key includes phaseId + role + agent so a future multi-phase
+  // template can't collapse two distinct swaps that happen to share the
+  // (round, agent, fromLineage, fromModel) tuple. Today's review-only
+  // template has one phase + one role-per-agent, so this is purely
+  // future-proofing — but the sidecar already stores the full identity.
+  const swapKey = (s: FallbackSwap) =>
+    `${s.round}:${s.phaseId}:${s.role}:${s.agent}:${s.fromLineage}:${s.fromModel}`;
   const mergeSwapsFromArtifacts = (incoming: FallbackSwap[]) => {
     setFallbackSwaps((prev) => {
-      // Dedup on (round, agent, fromLineage, fromModel) — the SSE may
-      // have already added a live entry. Disk wins on ties (it's the
-      // canonical post-flight source).
-      const seen = new Set(
-        prev.map(
-          (s) => `${s.round}:${s.agent}:${s.fromLineage}:${s.fromModel}`,
-        ),
-      );
+      const seen = new Set(prev.map(swapKey));
       const merged = [...prev];
       for (const s of incoming) {
-        const key = `${s.round}:${s.agent}:${s.fromLineage}:${s.fromModel}`;
+        const key = swapKey(s);
         if (seen.has(key)) continue;
         seen.add(key);
         merged.push(s);
@@ -255,34 +255,25 @@ export function LiveRunReal({
               (e.payload.toModel as string | undefined) ?? "(default)";
             const fallbackIdx =
               (e.payload.fallbackIdx as number | undefined) ?? 0;
+            const candidate: FallbackSwap = {
+              round,
+              phaseId,
+              role,
+              agent,
+              reason,
+              fromLineage: e.payload.fromLineage as string,
+              toLineage: e.payload.toLineage as string,
+              fromModel,
+              toModel,
+              fallbackIdx,
+              ts: e.ts ?? Date.now(),
+            };
             setFallbackSwaps((prev) => {
-              // Dedup on (round, agent, fromLineage, fromModel) — the
-              // runner can re-emit when the same warning gets replayed
-              // through reattach.
-              const dupe = prev.some(
-                (s) =>
-                  s.round === round &&
-                  s.agent === agent &&
-                  s.fromLineage === e.payload.fromLineage &&
-                  s.fromModel === fromModel,
-              );
-              if (dupe) return prev;
-              return [
-                ...prev,
-                {
-                  round,
-                  phaseId,
-                  role,
-                  agent,
-                  reason,
-                  fromLineage: e.payload.fromLineage as string,
-                  toLineage: e.payload.toLineage as string,
-                  fromModel,
-                  toModel,
-                  fallbackIdx,
-                  ts: e.ts ?? Date.now(),
-                },
-              ];
+              // Dedup with the same key as merge-from-artifacts so live
+              // SSE + post-reload sidecar reads can't double-count.
+              const candidateKey = swapKey(candidate);
+              if (prev.some((s) => swapKey(s) === candidateKey)) return prev;
+              return [...prev, candidate];
             });
           }
         }

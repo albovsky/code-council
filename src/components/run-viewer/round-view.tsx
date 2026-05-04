@@ -52,6 +52,12 @@ export function RoundView({
   // a participant against its swap entries — runner emits swap.agent as
   // `<agentName>-<idx>` for reviewers, `<agentName>` for doers, neither
   // of which carries the role prefix.
+  //
+  // INVARIANT: agentName must never start with "reviewer-" or "doer-",
+  // otherwise this strip will eat too much. All current shim names
+  // (claude-code, codex-cli, gemini-cli, opencode-cli, kimi-cli,
+  // openrouter) satisfy this. If a future shim violates it, switch to
+  // matching on the (role, agent) pair directly instead.
   const swapsForParticipant = (p: ParticipantSnapshot): FallbackSwap[] => {
     const agentKey = p.participant.replace(/^(reviewer-|doer-)/, "");
     return roundSwaps.filter((s) => s.agent === agentKey);

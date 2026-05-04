@@ -55,19 +55,41 @@ export function appendSwapSidecar(
       try {
         const raw = fs.readFileSync(filePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) existing = parsed as SwapEntry[];
+        if (Array.isArray(parsed)) {
+          existing = parsed as SwapEntry[];
+        } else {
+          // Non-array payload — preserve the bad file before overwriting
+          // so a manual recovery is possible (vs. silently wiping it).
+          renameToCorrupt(filePath);
+        }
       } catch {
-        // Malformed file — drop and start fresh. Better than blocking the
-        // append on a corrupt sidecar from a prior crash.
+        // Truncated / unparseable JSON, almost certainly from a crash
+        // mid-write of a prior version (pre-atomic). Side-band it instead
+        // of dropping; next append starts fresh.
+        renameToCorrupt(filePath);
       }
     }
     existing.push(entry);
-    fs.writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf-8');
+    // Atomic write: stage to <name>.tmp then renameSync. POSIX rename is
+    // atomic within the same directory — readers either see the old
+    // file or the new one, never a half-written intermediate.
+    const tmpPath = `${filePath}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(existing, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, filePath);
   } catch (err) {
     console.error(
       '[chorus] failed to write swap sidecar:',
       err instanceof Error ? err.message : String(err),
     );
+  }
+}
+
+function renameToCorrupt(filePath: string): void {
+  try {
+    fs.renameSync(filePath, `${filePath}.corrupt-${Date.now()}`);
+  } catch {
+    /* best-effort — if the rename fails, the next writeFileSync
+     * overwrites the bad file anyway. */
   }
 }
 

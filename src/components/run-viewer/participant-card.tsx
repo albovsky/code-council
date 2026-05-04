@@ -176,13 +176,17 @@ export function ParticipantCard({
         </div>
       </div>
 
-      {swaps && swaps.length > 0 && (
-        <div className="space-y-1.5 border-b border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[11px]">
-          {swaps
-            .slice()
-            .sort((a, b) => a.fallbackIdx - b.fallbackIdx)
-            .map((s, i) => {
+      {swaps && swaps.length > 0 && (() => {
+        // Only the LAST entry's `to` voice actually produced an answer;
+        // intermediate `to` voices were attempted and themselves failed
+        // (which is what triggered the next swap). Showing "actually ran"
+        // on every row is wrong for chains of length > 1.
+        const sorted = swaps.slice().sort((a, b) => a.fallbackIdx - b.fallbackIdx);
+        return (
+          <div className="space-y-1.5 border-b border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[11px]">
+            {sorted.map((s, i) => {
               const isCross = s.reason === "lineage_fallback";
+              const isLast = i === sorted.length - 1;
               return (
                 <div
                   key={`${s.fromLineage}-${s.fromModel}-${i}`}
@@ -198,19 +202,28 @@ export function ParticipantCard({
                         {s.fromLineage}/{s.fromModel}
                       </span>
                       <ArrowRight className="h-3 w-3 shrink-0 text-amber-300" />
-                      <span className="font-medium text-amber-100">
+                      <span
+                        className={
+                          isLast
+                            ? "font-medium text-amber-100"
+                            : "text-amber-100/60 line-through"
+                        }
+                      >
                         {s.toLineage}/{s.toModel}
                       </span>
-                      <span className="rounded bg-amber-500/15 px-1 py-0.5 font-mono text-[9px] text-amber-200">
-                        actually ran
-                      </span>
+                      {isLast && (
+                        <span className="rounded bg-amber-500/15 px-1 py-0.5 font-mono text-[9px] text-amber-200">
+                          actually ran
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               );
             })}
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
       {participant.warnings && participant.warnings.length > 0 && (
         <div className="space-y-1 border-b border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[11px] text-amber-200/90">

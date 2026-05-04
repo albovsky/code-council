@@ -51,6 +51,31 @@ const AGENT_TO_LINEAGE: Record<string, string> = {
 };
 
 /**
+ * Full shape validation — sidecar is on disk and could be hand-edited
+ * or written by an older runner. Returns the typed entry on success or
+ * null. The UI sorts on `fallbackIdx` (NaN if missing) and branches on
+ * `reason` (silent fallthrough to "Model fallback" if unknown), so
+ * loose validation propagates display bugs.
+ */
+function isValidSwapEntry(entry: unknown): SwapEntry | null {
+  if (!entry || typeof entry !== "object") return null;
+  const e = entry as Record<string, unknown>;
+  if (typeof e.round !== "number") return null;
+  if (typeof e.phaseId !== "string") return null;
+  if (e.role !== "doer" && e.role !== "reviewer") return null;
+  if (typeof e.agent !== "string") return null;
+  if (e.reason !== "lineage_fallback" && e.reason !== "model_fallback")
+    return null;
+  if (typeof e.fromLineage !== "string") return null;
+  if (typeof e.toLineage !== "string") return null;
+  if (typeof e.fromModel !== "string") return null;
+  if (typeof e.toModel !== "string") return null;
+  if (typeof e.fallbackIdx !== "number") return null;
+  if (typeof e.ts !== "number") return null;
+  return e as unknown as SwapEntry;
+}
+
+/**
  * Walks every participant dir under a chat and aggregates the
  * `_swaps.json` sidecars into a flat array. Mirrors how _stats.json
  * is consumed: the run page renders one swap card per entry. Empty
@@ -72,15 +97,8 @@ function readChatSwaps(chatId: string): SwapEntry[] {
         const parsed = JSON.parse(fs.readFileSync(swapPath, "utf-8"));
         if (Array.isArray(parsed)) {
           for (const entry of parsed) {
-            // Defensive shape check — sidecar comes from disk, treat as untrusted.
-            if (
-              entry &&
-              typeof entry.round === "number" &&
-              typeof entry.fromLineage === "string" &&
-              typeof entry.toLineage === "string"
-            ) {
-              out.push(entry as SwapEntry);
-            }
+            const valid = isValidSwapEntry(entry);
+            if (valid) out.push(valid);
           }
         }
       } catch {

@@ -42,22 +42,26 @@ That's the whole pitch.
 
 ## Real moments where this matters
 
-**You asked Claude to write a `divide(a, b)` helper.**
+🚨 **You asked Claude to write a `divide(a, b)` helper.**
 It says "looks correct!" You ship. Production crashes at 2am because nobody handled `b = 0`.
 *With Chorus: GPT or Gemini would have flagged it in the review pass before you merged.*
 
-**You're refactoring a critical path.**
+🔧 **You're refactoring a critical path.**
 Your AI rewrote 200 lines and says it's behaviour-equivalent. You're tired and skeptical.
 *Run it through Chorus. Three different AIs all saying "yes, equivalent" lets you sleep.*
 
-**Big architectural call** — queue vs polling, sync vs async, this DB vs that one.
+🏗️ **Big architectural call** — queue vs polling, sync vs async, this DB vs that one.
 Write a paragraph, hit Chorus. *Three different models give you three angles you hadn't thought of.*
 
-**Reviewing a 600-line PR.**
+📝 **Reviewing a 600-line PR.**
 You're short on time. Paste the diff into Chorus. *Three reviewers spot the obvious bugs in 90 seconds. Your job becomes the 5% they couldn't catch.*
 
-**Test-driven development where neither AI cheats.**
+⚔️ **Test-driven development where neither AI cheats.**
 *One AI writes tests blind to the code; another AI writes code to pass them.* Use the `red-green` template.
+
+🐛 **Hunting a flaky bug.**
+Reproduces 1-in-20, no obvious pattern. Drop the failing test + suspect code into Chorus.
+*Each reviewer attacks the bug from a different angle — race? clock skew? off-by-one? — and you land on the cause faster than walking it alone.*
 
 ---
 
@@ -313,7 +317,7 @@ The install ID lives at `~/.chorus/install-id` — `rm` it for a fresh one.
 - [x] **v0.6** — MCP server, persona system
 - [x] **v0.7** — OpenRouter integration, voices table, real-time sidebar
 - [ ] **v0.8** — Multi-stage review (write → review → fix → re-review)
-- [ ] **v0.9** — Per-voice persona overrides, voice marketplace
+- [ ] **v0.9** — Per-voice persona overrides
 - [ ] **v1.0** — Hosted GitHub App + cloud fan-out
 
 Full picture in [ROADMAP.md](./ROADMAP.md).
@@ -402,13 +406,3 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 ## License
 
 [Apache-2.0](./LICENSE). Use it however you want, including commercially.
-
----
-
-<div align="center">
-
-**Made with 🎵 by [99x.agency](https://99x.agency)**
-
-*Because one AI just isn't enough.*
-
-</div>

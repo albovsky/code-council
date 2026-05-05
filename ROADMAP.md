@@ -18,8 +18,6 @@ Voices  ×  Personas  ×  Phases
 
 A **template** is a chosen path through this 3D space — N phases, each with a (voice, persona) pair. Different combinations produce wildly different outcomes. Users will experiment to find what works for their domain (Rails refactor, React perf, Solidity audit, copy review, …) and share what wins.
 
-This is the seed of the **template marketplace**: an asset class that didn't exist before chorus.
-
 ---
 
 ## Status tracker
@@ -68,7 +66,6 @@ This is the seed of the **template marketplace**: an asset class that didn't exi
 | Home dashboard (CLI status, usage, reset windows, cost) | 0.8 | 📐 PLANNED | |
 | Multi-account per CLI (add N codex / claude / gemini accounts of same vendor) | 0.8 | 📐 PLANNED | first-class UX for what `CHORUS_CODEX_HOME` env hack achieves today; auto-rotate to a non-rate-limited account when one hits quota_exhausted; surfaces in home dashboard alongside reset-window per-account |
 | Run history + cost aggregates | 0.8 | 📐 PLANNED | |
-| Template marketplace (Stripe + revenue share) | 0.9 | 📐 PLANNED | |
 | Local LLM voices (Ollama, llama.cpp) | 1.0+ | 💭 IDEA | |
 | CI integration (`chorus review --pr 1234`) | 1.0+ | 💭 IDEA | |
 
@@ -91,7 +88,8 @@ Shipped:
 
 ## v0.7 — Voices · Personas · Phases (CURRENT)
 
-The big one. Cracks the marketplace open.
+The big one. Three independent dimensions (voice × persona × phase) that
+users can compose freely.
 
 ### 1. Personas (DONE)
 
@@ -119,7 +117,7 @@ Each prompt is a *worldview*, not a checklist — single role, list of red flags
 - `list_personas()` → `{ personas: [{id, label, oneLiner, recommendedLineage, builtin}] }`
 - `invoke_persona({personaId, brief, repoPath?, files?, template?})` → `{chatId, status, url}` — fires a real chat with the persona's system_prompt prepended to the user's brief.
 
-> ✅ **Per-slot persona binding shipped 2026-05-02** (PR #17 969dca5 + PR #23 4ac8cdc). Templates now carry a `persona` field on each phase row, so a single template can route Cartographer → Discover, Sentinel → Develop, Accountant → Decide. The PhaseEditor UI exposes a per-slot persona picker. `invoke_persona` still works as the single-persona-overlay shorthand for ad-hoc audits, but the marketplace-blocking gap is closed. Drag-to-reorder + fork-from-existing remain on §5 (planned).
+> ✅ **Per-slot persona binding shipped 2026-05-02** (PR #17 969dca5 + PR #23 4ac8cdc). Templates now carry a `persona` field on each phase row, so a single template can route Cartographer → Discover, Sentinel → Develop, Accountant → Decide. The PhaseEditor UI exposes a per-slot persona picker. `invoke_persona` still works as the single-persona-overlay shorthand for ad-hoc audits. Drag-to-reorder + fork-from-existing remain on §5 (planned).
 
 ### 2. Voices (DONE 2026-05-02 — PR #2 c758e80)
 
@@ -342,18 +340,14 @@ A live overview of your model fleet. Answers "what do I have, what am I burning,
 
 ---
 
-## v0.9 — Template Marketplace (PLANNED)
+## v0.9 — Template sharing (PLANNED)
 
-Foundations for shareable / sellable templates.
+Foundations for shareable templates.
 
 - Public `chorus.codes/templates` directory
 - Author profiles, install count, ratings, tags
 - One-click install: `chorus template install <slug>`
-- Free tier: open templates, anyone can share
-- Premium tier: gated templates, Stripe integration, revenue share with author
 - Signing & verification (templates are config + prompts, but supply chain still matters)
-
-**Effort:** ~3 weeks (auth + payments + moderation).
 
 ---
 
@@ -376,7 +370,6 @@ Foundations for shareable / sellable templates.
    - Featured templates (curated): "React Refactor", "Solidity Audit", "API Design", "Copy Review", "Migration Plan"
    - Each card: voices used (lineage badges), personas, expected runtime, expected cost
 3. **Personas page** (`/personas`) — the 10 built-in personas, what they hunt for, what they ignore. Sells the worldview-as-prompt idea.
-4. **Author page** (post-marketplace) — top template authors with revenue stats.
 
 ---
 

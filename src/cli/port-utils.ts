@@ -86,6 +86,114 @@ export function findPidsOnPort(port: number): number[] {
 }
 
 /**
+ * Same as findPidsOnPort but escalates via `sudo -n` (non-interactive).
+ * Linux's `ss -p` and `lsof` redact the PID column for sockets owned by
+ * a different uid when the caller is unprivileged — so a chorus daemon
+ * left behind by a `sudo chorus start` is invisible to a plain
+ * `chorus start`. Without this, the user hits the dead-end "couldn't
+ * identify the PID — free the port and retry" message and gets stuck.
+ *
+ * Returns [] on any failure: sudo prompt would block (no passwordless
+ * sudoers entry), tool missing, no listener, etc. Never blocks the
+ * terminal — the `-n` flag makes sudo fail-fast instead of prompting.
+ */
+export function findPidsOnPortWithSudo(port: number): number[] {
+  const candidates: { argv: string[]; parse: (out: string) => number[] }[] = [
+    {
+      // ss accepts the filter as a separate argument, so execFileSync
+      // is safe (no shell interpolation). Numeric port is type-checked
+      // by the caller via TypeScript, but argv-style invocation makes
+      // even an untrusted port literal harmless.
+      argv: ['-n', 'ss', '-ltnp', `sport = :${port}`],
+      parse: (out) => {
+        const pids: number[] = [];
+        for (const m of out.matchAll(/pid=(\d+)/g)) {
+          const pid = parseInt(m[1], 10);
+          if (Number.isFinite(pid) && pid > 0) pids.push(pid);
+        }
+        return pids;
+      },
+    },
+    {
+      argv: ['-n', 'lsof', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
+      parse: (out) =>
+        out
+          .split(/\s+/)
+          .map((s) => parseInt(s, 10))
+          .filter((n) => Number.isFinite(n) && n > 0),
+    },
+  ];
+  for (const { argv, parse } of candidates) {
+    try {
+      const out = execFileSync('sudo', argv, {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const pids = parse(out);
+      if (pids.length > 0) return Array.from(new Set(pids));
+    } catch {
+      /* sudo would prompt, tool missing, no match — try next */
+    }
+  }
+  return [];
+}
+
+/**
+ * SIGTERM-then-SIGKILL via `sudo -n kill`. Same shape as killAndVerify
+ * but escalates so we can reap an orphan owned by another uid (typically
+ * a daemon a sudo-invoked `chorus start` left behind). Returns true if
+ * the process is gone by the time we return.
+ *
+ * Silently fails (returns false) when passwordless sudo isn't
+ * available — callers should already have established that the orphan
+ * is chorus-shaped before deciding to reap, so the worst case is that
+ * the user gets the actionable diagnostic instead of auto-recovery.
+ */
+export async function killWithSudoAndVerify(
+  pid: number,
+  label: string,
+  gracefulMs = 1500,
+): Promise<boolean> {
+  const isAlive = (): boolean => {
+    // process.kill(pid, 0) works cross-uid on Linux: the EPERM/ESRCH
+    // distinction tells us "exists but I can't signal it" vs "gone".
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (err) {
+      // EPERM = process exists, owned by another uid → still alive.
+      // ESRCH = no such process → gone.
+      const code = (err as NodeJS.ErrnoException).code;
+      return code === 'EPERM';
+    }
+  };
+  if (!isAlive()) return true;
+  const sudoKill = (signal: 'TERM' | 'KILL'): void => {
+    try {
+      execFileSync('sudo', ['-n', 'kill', `-${signal}`, String(pid)], {
+        stdio: 'ignore',
+      });
+    } catch {
+      /* sudo prompt would block — fall through to liveness probe */
+    }
+  };
+  sudoKill('TERM');
+
+  const deadline = Date.now() + gracefulMs;
+  while (Date.now() < deadline) {
+    if (!isAlive()) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  sudoKill('KILL');
+  await new Promise((r) => setTimeout(r, 200));
+  if (!isAlive()) return true;
+  console.warn(
+    `  ${sym.err} ${label} PID ${pid} survived sudo -n kill — manual cleanup needed`,
+  );
+  return false;
+}
+
+/**
  * Read the process's command line so we can decide whether it looks
  * like a chorus orphan (safe to reap) vs a foreign process the user
  * owns (refuse to kill — Grafana/another dev server happens to be on
@@ -199,15 +307,43 @@ export function pidLooksLikeChorus(pid: number): {
     /node_modules\/next\/dist\/bin\/next (start|dev)/.test(cmdline);
   if (nextLauncher) {
     if (cmdlineHasChorusSegment(cmdline)) return { match: true, cmdline };
-    let cwd: string | null = null;
-    try {
-      cwd = fs.readlinkSync(`/proc/${pid}/cwd`);
-    } catch {
-      /* not Linux or process gone — fall through */
-    }
+    const cwd = readCwd(pid);
     if (cwd && pathHasChorusSegment(cwd)) return { match: true, cmdline };
   }
   return { match: false, cmdline };
+}
+
+/**
+ * Read /proc/<pid>/cwd, falling back to `sudo -n readlink` when the
+ * unprivileged readlink hits EACCES — the cwd symlink is owned by the
+ * process uid and locked to mode 0500, so a `sudo chorus start` orphan
+ * is invisible to a plain `chorus start` without escalation.
+ *
+ * Used by the next-server cwd cross-check: cmdline gets clobbered to
+ * `next-server (vX.Y.Z)` once Next overwrites process.title, leaving
+ * cwd as the only signal that an unidentifiable next-server is in fact
+ * the chorus cockpit.
+ *
+ * Returns null when both probes fail (non-Linux, process gone, sudo
+ * would prompt). Caller should treat null as "not chorus" — fail-closed
+ * matches the foreign-process guard's intent.
+ */
+function readCwd(pid: number): string | null {
+  try {
+    return fs.readlinkSync(`/proc/${pid}/cwd`);
+  } catch {
+    /* permission denied or process gone — fall through to sudo */
+  }
+  try {
+    const out = execFileSync('sudo', ['-n', 'readlink', `/proc/${pid}/cwd`], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const trimmed = out.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

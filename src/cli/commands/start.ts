@@ -6,8 +6,10 @@ import os from 'os';
 import path from 'path';
 import {
   findPidsOnPort,
+  findPidsOnPortWithSudo,
   isPortInUse,
   killAndVerify,
+  killWithSudoAndVerify,
   pidLooksLikeChorus,
 } from '../port-utils.js';
 import { detectRuntimeEnv, shouldAutoOpenBrowser } from '../runtime-env.js';
@@ -182,19 +184,50 @@ async function reapOrphans(): Promise<void> {
     [5050, 'cockpit'],
   ] as const) {
     if (!(await isPortInUse(port))) continue;
-    const pids = findPidsOnPort(port);
+
+    // Two-tier PID lookup. The unprivileged probe (ss / lsof without
+    // sudo) returns [] when the port is held by a process owned by a
+    // different uid — typically a daemon a prior `sudo chorus start`
+    // left behind. Falling back to `sudo -n` recovers the PID when the
+    // user has passwordless sudo configured. If sudo would prompt, the
+    // -n flag fails fast and we drop to the actionable diagnostic
+    // instead of blocking the terminal on a password prompt.
+    let pids = findPidsOnPort(port);
+    let needsSudoToKill = false;
     if (pids.length === 0) {
+      pids = findPidsOnPortWithSudo(port);
+      needsSudoToKill = pids.length > 0;
+    }
+
+    if (pids.length === 0) {
+      // sudo also couldn't see — either no passwordless sudo, or
+      // something exotic (Windows-host port reservation through WSL2,
+      // a docker bridge, etc.). Print the exact remediation commands
+      // so the user can self-rescue without guessing.
       console.log('');
       console.log(
         header(
           sym.err,
-          `Port :${port} is in use by another process`,
-          `couldn't identify the PID — free the port and retry`,
+          `Port :${port} is in use, but I can't see which process owns it`,
+          `likely cause: the holder is owned by another user (or sudo)`,
         ),
       );
       console.log('');
+      console.log(c.dim('  Find it:'));
+      console.log(`    sudo lsof -iTCP:${port} -sTCP:LISTEN`);
+      console.log('');
+      console.log(c.dim('  Free it:'));
+      console.log(`    sudo fuser -k ${port}/tcp`);
+      console.log(c.dim(`    (macOS: kill $(sudo lsof -ti :${port}))`));
+      if (label === 'daemon') {
+        console.log('');
+        console.log(c.dim('  Or relocate the daemon:'));
+        console.log(`    CHORUS_DAEMON_PORT=${port + 1} chorus start`);
+      }
+      console.log('');
       process.exit(1);
     }
+
     for (const pid of pids) {
       const { match, cmdline } = pidLooksLikeChorus(pid);
       if (!match) {
@@ -217,10 +250,16 @@ async function reapOrphans(): Promise<void> {
         console.log('');
         process.exit(1);
       }
-      const dead = await killAndVerify(pid, `${label} orphan`);
+      // Cross-uid orphan: must use sudo -n kill or the SIGTERM bounces
+      // off with EPERM. Same chorus-shape match guard means we only
+      // ever sudo-kill processes whose cmdline already proved they're
+      // chorus orphans — never escalate against foreign code.
+      const dead = needsSudoToKill
+        ? await killWithSudoAndVerify(pid, `${label} orphan`)
+        : await killAndVerify(pid, `${label} orphan`);
       if (dead) {
         console.log(
-          `  ${sym.ok} reaped ${label} orphan on :${port} ${c.dim(`(PID ${pid})`)}`,
+          `  ${sym.ok} reaped ${label} orphan on :${port} ${c.dim(`(PID ${pid}${needsSudoToKill ? ', cross-uid via sudo' : ''})`)}`,
         );
       }
     }

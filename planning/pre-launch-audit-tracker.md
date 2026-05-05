@@ -130,6 +130,43 @@ this repo?"* Quorum: unanimous NO → ship. Anything else → back to Phase 3.
 
 ---
 
+## Backlog — pick up when triggered
+
+### opencode quota detection (parser + reset-window surfacing)
+
+**Trigger:** first time we observe an opencode-go reviewer hit a quota
+wall — rolling, weekly, or monthly tier (the gateway surfaces three
+distinct tiers per the opencode-go account UI).
+
+**Symptom today:** `parsers/opencode.ts` has no quota path; the CLI
+exits non-zero and we hit the generic `cli_failed` branch in
+`headless.ts`. The cockpit shows "opencode exited 1: <raw stderr tail>"
+— no tier identified, no reset window. Mirrors what gemini did before
+commit `a8de5b2`.
+
+**Fix shape (when triggered):**
+1. Capture the actual wire format from a real quota-hit run — both
+   stdout (JSON-Lines may include `{type: "error", ...}` from the
+   gateway) and stderr.
+2. Add a quota branch to `parseOpencode` for line-level structured
+   errors AND a new `parseOpencodeExit`-style stderr scanner.
+3. Detect tier (rolling / weekly / monthly) and extract the reset
+   window. The opencode-go gateway likely returns ISO8601 or relative
+   ("resets in 1h 3m" matching the cockpit usage card).
+4. Emit `quota_exhausted` kind with a tier-aware message
+   (e.g. "OpenCode-go monthly quota exhausted — resets in 23 days").
+5. Reviewer.ts upgrade rule already covers `quota_exhausted` so no
+   change there.
+
+**Why deferred:** the generic regex from the gemini fix
+(`/quota|exhausted|429|rate.?limit/i` + relative-time match) might
+work, but pinning the regex to opencode's actual format requires a
+real sample. Defensive heuristic + cli_failed fallback today is no
+worse than current behaviour; deferring avoids shipping a guess that
+fails silently.
+
+---
+
 ## Lessons captured along the way
 
 _Append as we go._

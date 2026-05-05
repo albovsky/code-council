@@ -65,7 +65,6 @@ export function ParticipantCard({
    *  re-key mid-run. Empty when no swap fired. */
   swaps?: FallbackSwap[];
 }) {
-  const [showFull, setShowFull] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
   // State precedence: pending (synthesised slot) → done (answer on disk) →
@@ -105,7 +104,7 @@ export function ParticipantCard({
 
   return (
     <div
-      className={`flex min-h-[300px] flex-col overflow-hidden rounded-lg border transition-[opacity,border-color,box-shadow] duration-300 ${
+      className={`flex h-[320px] flex-col overflow-hidden rounded-lg border transition-[opacity,border-color,box-shadow] duration-300 ${
         LINEAGE_GRADIENT[ui] ?? "bg-card"
       } ${
         state === "done"
@@ -263,7 +262,7 @@ export function ParticipantCard({
         </div>
       )}
 
-      <div className="flex-1 px-4 py-3 font-mono text-xs leading-relaxed text-muted-foreground">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 font-mono text-xs leading-relaxed text-muted-foreground">
         {participant.findingsPreview && participant.findingsPreview.length > 0 ? (
           participant.findingsPreview.map((line, i) => (
             <div key={i} className="py-0.5 text-foreground/90">
@@ -275,9 +274,18 @@ export function ParticipantCard({
           // output. Gated on state==="working" so a stale tail keyed by
           // role:lineage (e.g. Round 1 reviewer's last text) can't leak
           // into a freshly-pending Round 2 reviewer card.
-          <pre className="whitespace-pre-wrap break-words text-foreground/85">
-            {liveTail}
-          </pre>
+          //
+          // `column-reverse` keeps the most recent output anchored at the
+          // bottom and scrolls older output off the top — same visual the
+          // user gets from `tail -f` and what production CLI streams expect.
+          // The fixed card height (h-[320px] above) means streaming content
+          // never grows the card, eliminating the layout shift across cards
+          // on the same row.
+          <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto">
+            <pre className="whitespace-pre-wrap break-words text-foreground/85">
+              {liveTail}
+            </pre>
+          </div>
         ) : state === "working" ? (
           <div className="text-muted-foreground">Thinking…</div>
         ) : state === "pending" ? (
@@ -313,29 +321,20 @@ export function ParticipantCard({
               The program finished but didn&apos;t produce any output.
             </div>
           )
+        ) : state === "done" && participant.answer ? (
+          // DONE state — render the answer inline, top-anchored, with
+          // overflow scrolled internally so the card stays at fixed
+          // height. A click on the footer-line affordance toggles a
+          // full-screen expand for long answers.
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <pre className="whitespace-pre-wrap break-words text-foreground/85">
+              {participant.answer}
+            </pre>
+          </div>
         ) : (
           <div className="text-muted-foreground/70">No output yet.</div>
         )}
       </div>
-
-      {participant.answer && (
-        <>
-          <button
-            type="button"
-            onClick={() => setShowFull((s) => !s)}
-            className="border-t border-border bg-card/40 px-4 py-2 text-left text-[10px] uppercase tracking-wider text-muted-foreground transition hover:text-foreground"
-          >
-            {showFull
-              ? "Hide full answer"
-              : `Show full answer (${participant.answer.length.toLocaleString()} chars)`}
-          </button>
-          {showFull && (
-            <pre className="overflow-x-auto whitespace-pre-wrap break-words border-t border-border bg-background px-4 py-3 text-xs leading-relaxed text-foreground">
-              {participant.answer}
-            </pre>
-          )}
-        </>
-      )}
 
       <div className="flex items-center justify-between gap-3 border-t border-border bg-card/60 px-4 py-2 font-mono text-[10px] text-muted-foreground">
         <span className="truncate">{participant.binaryUsed ?? participant.agentName}</span>

@@ -54,7 +54,7 @@ Cross-platform expert
   });
 
   it('handles undefined/null gracefully', () => {
-    const result = chatDisplayTitle(undefined as any);
+    const result = chatDisplayTitle(undefined as unknown as Parameters<typeof chatDisplayTitle>[0]);
     expect(result).toBe('');
   });
 });

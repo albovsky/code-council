@@ -138,30 +138,41 @@ export function registerChatRoutes(
       //
       // Stricter checks (is-a-repo, gh-authed) happen when the ship
       // phase runs.
+      // Resolve `repoPath` to its canonical (symlink-followed) form once
+      // so we can persist the canonical path on the chat row. Pre-fix
+      // we validated via realpath but stored the original `repoPath`,
+      // leaving the symlink-swap attack surface from Audit D2 partially
+      // open: a later swap of `~/innocent-link → /etc` would still
+      // redirect the runner. `canonicalRepoPath` is undefined when no
+      // repoPath was supplied — the chat creates without one.
+      let canonicalRepoPath: string | undefined;
       if (repoPath !== undefined) {
         if (typeof repoPath !== 'string' || !path.isAbsolute(repoPath)) {
           return sendError(reply, 'validation', 'repoPath must be an absolute path');
         }
         const resolved = path.resolve(repoPath);
-        let canonical: string;
         try {
           // realpathSync resolves symlinks AND verifies the path
           // exists. Throws ENOENT if either link or target is missing.
-          canonical = fs.realpathSync(resolved);
+          canonicalRepoPath = fs.realpathSync(resolved);
         } catch {
           return sendError(reply, 'validation', `repoPath does not exist: ${resolved}`);
         }
         let stat: fs.Stats;
         try {
-          stat = fs.statSync(canonical);
+          stat = fs.statSync(canonicalRepoPath);
         } catch {
-          return sendError(reply, 'validation', `repoPath does not exist: ${canonical}`);
+          return sendError(
+            reply,
+            'validation',
+            `repoPath does not exist: ${canonicalRepoPath}`,
+          );
         }
         if (!stat.isDirectory()) {
           return sendError(
             reply,
             'validation',
-            `repoPath must be a directory: ${canonical}`,
+            `repoPath must be a directory: ${canonicalRepoPath}`,
           );
         }
       }
@@ -251,7 +262,10 @@ export function registerChatRoutes(
         work,
         template_id: templateId,
         attached_files: files ? JSON.stringify(files) : undefined,
-        repo_path: repoPath,
+        // Persist the canonical (realpath-resolved) repo path so a
+        // later swap of an intermediate symlink can't redirect the
+        // doer's cwd. See Audit D2 BLOCKER for the attack scenario.
+        repo_path: canonicalRepoPath,
         artifact: artifact ?? undefined,
         yolo: yolo === true,
       });
@@ -442,11 +456,25 @@ export function registerChatRoutes(
           `Chat ${param} is still active (status=${original.status}). Cancel it first, then retry.`,
         );
       }
+      // Re-realpath on rerun even though create-side now persists the
+      // canonical path. Catches legacy rows from before that fix shipped
+      // AND defends against a swap that happened between the original
+      // chat's success and the rerun click.
+      let rerunRepoPath: string | undefined = original.repo_path ?? undefined;
+      if (rerunRepoPath) {
+        try {
+          rerunRepoPath = fs.realpathSync(rerunRepoPath);
+        } catch {
+          // Original path no longer resolves — skip the rerun's repoPath
+          // rather than silently shipping with a broken cwd.
+          rerunRepoPath = undefined;
+        }
+      }
       const newChat = await chats.create({
         work: original.work,
         template_id: original.template_id,
         attached_files: original.attached_files ?? undefined,
-        repo_path: original.repo_path ?? undefined,
+        repo_path: rerunRepoPath,
         artifact: original.artifact ?? undefined,
       });
       // Mirror the create-path's initial phase_event so the cockpit

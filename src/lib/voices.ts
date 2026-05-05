@@ -425,7 +425,7 @@ export async function seedOpencodeVoicesAsync(): Promise<{
 
   let added = 0;
   let updated = 0;
-  let disabled = 0;
+  const disabled = 0;
 
   const seenIds = new Set<string>();
 

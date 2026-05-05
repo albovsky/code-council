@@ -279,7 +279,7 @@ function spawnDaemonAndCockpit(chorusDir: string, pidFile: string): void {
       console.log(
         c.dim('    The published install should ship a built UI. Try reinstalling:'),
       );
-      console.log(`    ${c.bold('npm install -g chorus')}`);
+      console.log(`    ${c.bold('npm install -g chorus-codes')}`);
     }
     console.log(
       c.dim('    The daemon API is still up on port 7707 if you only need MCP.'),

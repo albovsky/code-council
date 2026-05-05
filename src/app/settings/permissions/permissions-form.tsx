@@ -117,9 +117,9 @@ export function PermissionsForm({ initial }: Props) {
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               When on, chorus passes <code className="rounded bg-muted px-1">--afk</code> to
               kimi, <code className="rounded bg-muted px-1">--approval-mode auto_edit</code> to
-              gemini, and equivalent flags to other CLIs so reviewers don't hang on per-tool
+              gemini, and equivalent flags to other CLIs so reviewers don&apos;t hang on per-tool
               permission prompts. Turn off if you want every action to require an explicit
-              "yes" inside the CLI's TUI (slower, but fully observable).
+              &ldquo;yes&rdquo; inside the CLI&apos;s TUI (slower, but fully observable).
             </p>
           </div>
         </label>
@@ -138,7 +138,7 @@ export function PermissionsForm({ initial }: Props) {
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium">Allow outbound network from reviewers</div>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Off by default. Reviewers can't curl, npm install, or call external APIs.
+              Off by default. Reviewers can&apos;t curl, npm install, or call external APIs.
               Templates that explicitly need network (e.g. fetching docs, gh CLI) override this
               per phase. Enable globally only if you trust every template you run.
             </p>

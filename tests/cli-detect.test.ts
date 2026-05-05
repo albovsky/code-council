@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as nodePath from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   detectAllClis,
@@ -83,13 +86,10 @@ describe('cli-detect', () => {
       const found = clis.find((c) => c.found);
       if (!found || !found.path) return;
 
-      const fs = require('node:fs');
-      const os = require('node:os');
-      const path = require('node:path');
       // Use the CLI's expected basename so the basename check passes.
-      const expectedName = path.basename(found.path);
-      const linkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chorus-symlink-'));
-      const linkPath = path.join(linkDir, expectedName);
+      const expectedName = nodePath.basename(found.path);
+      const linkDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'chorus-symlink-'));
+      const linkPath = nodePath.join(linkDir, expectedName);
       fs.symlinkSync(fs.realpathSync(found.path), linkPath);
 
       try {

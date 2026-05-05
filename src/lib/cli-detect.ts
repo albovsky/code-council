@@ -12,7 +12,7 @@
  */
 
 import { spawnSync } from 'child_process';
-import { existsSync, lstatSync } from 'fs';
+import { existsSync, lstatSync, realpathSync } from 'fs';
 import { homedir, platform } from 'os';
 import path from 'path';
 
@@ -402,7 +402,7 @@ export function validateCliPath(
         path.dirname(trimmed),
         // realpath resolves the chain; spawning the canonical target
         // means a later symlink-swap can't redirect us.
-        require('node:fs').realpathSync(trimmed),
+        realpathSync(trimmed),
       );
       const realStat = lstatSync(canonical);
       if (!realStat.isFile()) {

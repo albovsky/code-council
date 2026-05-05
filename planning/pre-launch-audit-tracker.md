@@ -3,9 +3,17 @@
 **Goal:** ship 99xAgency/chorus to public on GitHub with no embarrassing
 launch-day bugs. Audit-only first; fix later.
 
-**Status:** all BLOCKERs shipped (commits `1a3dadd`, `f2983c8`,
-`f9e9ae4`, `be30940`). Awaiting final green-light audit (Phase 4)
-before flipping the GitHub repo public.
+**Status:** all BLOCKERs + the API shape-freeze bundle shipped. Three
+review rounds (codex+claude+gem-2 all approved). Phase 4 final
+green-light audit pending → then flip the GitHub repo public.
+
+| Phase | Commits |
+|---|---|
+| BLOCKERs (Phase 3) | `1a3dadd` `f2983c8` `f9e9ae4` `be30940` |
+| Sidebar real-time SSE | `07c6181` |
+| `/api/v1` shape-freeze + list envelope + DELETE secrets + C4 + D4 | `07c6181` |
+| Round-3 implementation bugs (4xx, prefix, list consumers, MCP back-compat, dual-mount) | `8178e3c` |
+| Round-4 hardening (no-leading-slash, stale comment) | `a3867c7` |
 
 ---
 
@@ -103,14 +111,14 @@ For every reported finding, classify:
 | 10 | B4 | MEDIUM | Mermaid diagram MCP arrow | Patched arrow label to REST + SSE | ✅ `f9e9ae4` |
 | 11 | E2 | HIGH | CONTRIBUTING/COC/SECURITY missing | Added stub files | ✅ `1a3dadd` |
 | 12 | E3 | MEDIUM | Issue + PR templates missing | Added bug.yml + feature.yml + PR template | ✅ `1a3dadd` |
-| 13 | A3 | HIGH | No daemon HTTP API auth | Bearer token in `~/.chorus/auth-token` (post-launch — too risky to change wire protocol now) | DEFER |
-| 14 | C1 | HIGH | No `/api/v1` versioning prefix | Apply prefix everywhere — DEFER (cockpit lock-step) | DEFER |
-| 15 | C2 | HIGH | List endpoints unpaginated | DEFER — same shape risk as C1 | DEFER |
-| 16 | C3 | HIGH | `attached_files` JSON column | DEFER — DB migration | DEFER |
-| 17 | A4 | MEDIUM | No DELETE /secrets/:provider | Backlog | DEFER |
-| 18 | C4 | MEDIUM | MCP `template` not enum-validated | Backlog | DEFER |
-| 19 | C5 | LOW | `chats-stream.ts` error envelope | Backlog | DEFER |
-| 20 | D4 | NOTE | `autoApprovePrompts: true` default | Document trade-off; revisit post D1 fix | DEFER |
+| 13 | A3 | HIGH | No daemon HTTP API auth | Bearer token in `~/.chorus/auth-token` — multi-day with onboarding flow | DEFER → v0.8 |
+| 14 | C1 | HIGH | No `/api/v1` versioning prefix | Fastify global prefix + bare aliases for v0.7 (drop v0.8) | ✅ `07c6181` |
+| 15 | C2 | HIGH | List endpoints unpaginated | `{items, total, hasMore}` envelope nested in `data` | ✅ `07c6181` |
+| 16 | C3 | HIGH | `attached_files` JSON column | DB migration — multi-day | DEFER → v0.8 |
+| 17 | A4 | MEDIUM | No DELETE /secrets/:provider | Idempotent endpoint + `secrets.delete()` helper | ✅ `07c6181` |
+| 18 | C4 | MEDIUM | MCP `template` not enum-validated | Daemon-side validation at `POST /chats` with `validIds` in details | ✅ `07c6181` |
+| 19 | C5 | HIGH | Error envelope normalization + 4xx codes | 11-code enum, `sendError` helper, SSE error events normalized, MCP client lockstep | ✅ `07c6181` `8178e3c` |
+| 20 | D4 | NOTE | `autoApprovePrompts: true` default | README "Trust model" paragraph | ✅ `07c6181` |
 
 ---
 
@@ -127,6 +135,15 @@ For each BLOCKER:
 
 Single review-only chat: *"Are there ANY remaining launch-blockers in
 this repo?"* Quorum: unanimous NO → ship. Anything else → back to Phase 3.
+
+### Review history before Phase 4
+
+| Round | Chat ID | Scope | Verdict |
+|---|---|---|---|
+| 1 | `019DF636A6D96954D67F79F1CF3DDA56` | API shape-freeze design (5-way) | request_changes — caught the "unwrapped success" phantom requirement |
+| 2 | `019DF64120B88C29CA661D1FDCDCECEE` | Revised plan (gem-2 + kimi) | approve — tightened C5 scope, added 11-code enum + status policy |
+| 3 | `019DF66646E00E8DFEADEE4F792C48F6` | Implementation diff `07c6181` (codex+claude) | request_changes — 5 real bugs caught, fixed in `8178e3c` |
+| 4 | `019DF677B4D11A1FFC78105830DA485B` | Cumulative diff (gem-2 + codex + claude) | request_changes — 2 hardening bugs caught, fixed in `a3867c7` |
 
 ---
 

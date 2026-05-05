@@ -100,8 +100,8 @@ export function PermissionsSection({
             <div className="mt-0.5 text-muted-foreground">
               Passes <code className="rounded bg-muted px-1">--afk</code> /{" "}
               <code className="rounded bg-muted px-1">auto_edit</code> to
-              spawned reviewers so they don't hang on per-tool prompts. Off
-              = every action requires explicit consent in the CLI's TUI.
+              spawned reviewers so they don&apos;t hang on per-tool prompts. Off
+              = every action requires explicit consent in the CLI&apos;s TUI.
             </div>
           </div>
         </label>

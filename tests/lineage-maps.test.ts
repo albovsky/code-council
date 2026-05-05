@@ -32,7 +32,7 @@ describe('lineage-maps', () => {
     });
 
     it('returns empty string for null', () => {
-      expect(lineageLabel(null as any)).toBe('');
+      expect(lineageLabel(null as unknown as undefined)).toBe('');
     });
   });
 
@@ -66,7 +66,7 @@ describe('lineage-maps', () => {
     });
 
     it('returns bg-muted for null', () => {
-      expect(lineageDot(null as any)).toBe('bg-muted');
+      expect(lineageDot(null as unknown as undefined)).toBe('bg-muted');
     });
   });
 });

@@ -59,7 +59,7 @@ function resolveDaemonPort(): number {
 
 const PORT = resolveDaemonPort();
 const HOST = '127.0.0.1';
-const VERSION = '0.7.0-dev.0';
+const VERSION = '0.7.0';
 const startTime = Date.now();
 
 // Absolute path to bin/chorus.mjs — used by /orchestrators/:name/connect
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
     await chats.list({ limit: 1 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // eslint-disable-next-line no-console
+     
     console.error(
       `\n[chorus] Could not open database. Run \`chorus init\` first, ` +
         `or check permissions on ~/.chorus/chorus.db.\n  detail: ${msg}\n`,
@@ -102,11 +102,11 @@ async function main(): Promise<void> {
   try {
     const { seedBuiltinPersonas } = await import('../lib/personas.js');
     const count = await seedBuiltinPersonas();
-    // eslint-disable-next-line no-console
+     
     console.log(`[daemon] seeded ${count} built-in personas`);
   } catch (err) {
     // Non-fatal: daemon still works without personas.
-    // eslint-disable-next-line no-console
+     
     console.warn('[daemon] persona seed failed:', err instanceof Error ? err.message : err);
   }
 
@@ -124,10 +124,10 @@ async function main(): Promise<void> {
       additionalDirs: cliPaths.cachedDirs(),
     });
     setSpawnPath(merged);
-    // eslint-disable-next-line no-console
+     
     console.log(`[daemon] runtime PATH primed (${merged.split(':').length} dirs)`);
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn(
       '[daemon] runtime PATH prime failed (falling back to process.env.PATH):',
       err instanceof Error ? err.message : err,
@@ -141,12 +141,12 @@ async function main(): Promise<void> {
   try {
     const { seedCliVoices } = await import('../lib/voices.js');
     const result = await seedCliVoices();
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[daemon] voices Phase 1: +${result.added} added, ${result.updated} updated, ${result.disabled} auto-disabled`,
     );
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn(
       '[daemon] voices Phase 1 seed failed:',
       err instanceof Error ? err.message : err,

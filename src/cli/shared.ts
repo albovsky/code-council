@@ -9,7 +9,7 @@ export const DAEMON_URL = 'http://127.0.0.1:7707';
 /**
  * Absolute path to bin/chorus.mjs. Resolved from __dirname so the path
  * is correct whether the CLI runs via:
- *   - `npm i -g chorus` → /usr/local/lib/node_modules/chorus/dist/cli/index.js
+ *   - `npm i -g chorus-codes` → /usr/local/lib/node_modules/chorus-codes/dist/cli/index.js
  *   - tsx dev mode      → /home/.../chorus/src/cli/index.ts
  *   - direct dist       → /home/.../chorus/dist/cli/index.js
  *

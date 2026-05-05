@@ -72,7 +72,7 @@ function NewChatPageInner() {
 
   const costEstimate = useMemo(
     () => estimateCost({ template, prompt, attachments }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [prompt, attachments, template],
   );
 

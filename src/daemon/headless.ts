@@ -26,6 +26,51 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AgentEvent } from './agents/types.js';
+import { cliPaths } from '../lib/cli-paths.js';
+
+/**
+ * Cached merged PATH for subprocess spawns. Populated by the daemon
+ * boot path via `primeRuntimePath()`. Synchronous reads only — spawn
+ * sites can't await. When unset (tests, pre-prime spawns) we fall back
+ * to process.env.PATH unchanged, matching pre-fix behaviour.
+ *
+ * Composition (front-to-back, dedup):
+ *   1. process.env.PATH                — daemon's own runtime
+ *   2. captured interactive PATH        — what the user's terminal sees
+ *   3. known install dirs that exist    — ~/.opencode/bin etc.
+ *   4. saved manual cli_paths' dirnames — custom-location binaries
+ *
+ * See src/lib/runtime-path.ts for the builder used at prime time.
+ */
+let cachedSpawnPath: string | null = null;
+
+export function setSpawnPath(merged: string): void {
+  cachedSpawnPath = merged;
+}
+
+export function getSpawnPath(): string | null {
+  return cachedSpawnPath;
+}
+
+function spawnEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
+  const base: NodeJS.ProcessEnv = { ...process.env, ...(extra ?? {}) };
+  // Caller-supplied env wins if it explicitly sets PATH (rare; tests).
+  if (extra?.PATH) return base;
+  if (cachedSpawnPath) base.PATH = cachedSpawnPath;
+  // Belt-and-braces: prepend any cached manual-path dirs that aren't
+  // already in the merged PATH. Covers "save endpoint ran after prime"
+  // — refreshCache stuffs new entries; we re-prepend at spawn time
+  // without forcing the daemon to re-run the full prime sequence.
+  const dirs = cliPaths.cachedDirs();
+  if (dirs.length > 0) {
+    const existing = (base.PATH ?? '').split(path.delimiter);
+    const missing = dirs.filter((d) => d && !existing.includes(d));
+    if (missing.length > 0) {
+      base.PATH = [...missing, ...existing].filter((p) => p).join(path.delimiter);
+    }
+  }
+  return base;
+}
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const KILL_GRACE_MS = 5_000;               // SIGKILL after SIGTERM + 5s
@@ -210,7 +255,7 @@ export function spawnHeadless(opts: SpawnHeadlessOptions): HeadlessRun {
 
   const child: ChildProcessWithoutNullStreams = spawnChild(opts.command, [...opts.args], {
     cwd: opts.cwd,
-    env: { ...process.env, ...(opts.env ?? {}) },
+    env: spawnEnv(opts.env),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -426,6 +471,32 @@ export function spawnHeadless(opts: SpawnHeadlessOptions): HeadlessRun {
           // checking both is non-optional. Trim to keep it terse.
           const stderrTail = fullStderr.trim().slice(-300);
           const stdoutTail = fullStdout.trim().slice(-300);
+
+          // Specialize the most common failure mode at launch — daemon
+          // spawned from a non-interactive shell, can't find the CLI on
+          // PATH. Bash exits 127 and prints "command not found" to one
+          // of the streams. Without this branch the generic `cli_failed`
+          // surfaces "opencode exited 127: bash: line 1: opencode: command
+          // not found", which is technically accurate but doesn't tell
+          // the user how to fix it. Emit `cli_not_in_path` instead with
+          // a doctor pointer.
+          const cmdNotFound = /command not found|: not found/i;
+          const isPathError =
+            code === 127 || cmdNotFound.test(stderrTail) || cmdNotFound.test(stdoutTail);
+          if (isPathError) {
+            enqueue({
+              type: 'error',
+              kind: 'cli_not_in_path',
+              message:
+                `${opts.cli} not found on the daemon's PATH. ` +
+                `Run 'chorus doctor' for a diagnosis, or set the path manually ` +
+                `via Settings → Connect a CLI → "I know where it is".`,
+            });
+            closeQueue();
+            resolve({ code, killed: Boolean(killReason), reason: killReason });
+            return;
+          }
+
           const tails = [stdoutTail, stderrTail].filter((s) => s.length > 0).join(' | ');
           // If we hit the 10 MB accumulator cap, the *leading* output is
           // captured but the trailing part is dropped on the floor (we stop
@@ -451,10 +522,19 @@ export function spawnHeadless(opts: SpawnHeadlessOptions): HeadlessRun {
       });
 
       child.on('error', (err) => {
+        // ENOENT is the direct-spawn equivalent of bash's exit-127 — the
+        // binary literally isn't on the daemon's PATH. Surface the same
+        // doctor pointer as the bash-wrapped path-error branch above.
+        const enoent =
+          (err as NodeJS.ErrnoException).code === 'ENOENT' ||
+          /ENOENT/.test(err.message);
         enqueue({
           type: 'error',
-          kind: 'spawn_failed',
-          message: err.message,
+          kind: enoent ? 'cli_not_in_path' : 'spawn_failed',
+          message: enoent
+            ? `${opts.cli} not found on the daemon's PATH (ENOENT: ${err.message}). ` +
+              `Run 'chorus doctor' or set the path manually via Settings.`
+            : err.message,
         });
         // 'exit' will follow with code=null
       });

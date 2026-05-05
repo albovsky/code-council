@@ -109,6 +109,30 @@ async function main(): Promise<void> {
     console.warn('[daemon] persona seed failed:', err instanceof Error ? err.message : err);
   }
 
+  // Prime the merged spawn PATH BEFORE voice seed. seedCliVoices runs
+  // detectAllClis(), which honours saved manual paths via the cli-paths
+  // cache; without priming, the cache is empty and a custom-location
+  // CLI shows up as undetected on the first boot after the user pasted
+  // its path into onboarding.
+  try {
+    const { buildRuntimePath } = await import('../lib/runtime-path.js');
+    const { cliPaths } = await import('../lib/cli-paths.js');
+    const { setSpawnPath } = await import('./headless.js');
+    await cliPaths.refreshCache();
+    const merged = await buildRuntimePath({
+      additionalDirs: cliPaths.cachedDirs(),
+    });
+    setSpawnPath(merged);
+    // eslint-disable-next-line no-console
+    console.log(`[daemon] runtime PATH primed (${merged.split(':').length} dirs)`);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[daemon] runtime PATH prime failed (falling back to process.env.PATH):',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   // Voices Phase 1 — synchronous, pre-listen seed of single-model CLIs
   // + first-boot migration from <lineage>.enabled_models. Fast (no
   // shell-outs); blocks listen on intent (we want voices ready before

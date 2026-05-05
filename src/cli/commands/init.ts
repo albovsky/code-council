@@ -165,6 +165,25 @@ export function registerInitCommand(program: Command): void {
           `  ${sym.ok} ${c.dim('database ready at')} ${resolveDbPath()}`,
         );
 
+        // Capture interactive PATH so the daemon can find CLIs in
+        // ~/.opencode/bin etc. when it later spawns reviewers from a
+        // non-interactive shell. Best-effort: skipped silently when
+        // capture fails (CI, no $SHELL, exotic shells we don't model).
+        try {
+          const { captureInteractivePath, persistCapturedPath } = await import(
+            '../../lib/runtime-path.js'
+          );
+          const captured = captureInteractivePath();
+          if (captured) {
+            await persistCapturedPath(captured);
+            console.log(
+              `  ${sym.ok} ${c.dim('captured shell PATH (')} ${captured.split(':').length} ${c.dim('dirs)')}`,
+            );
+          }
+        } catch {
+          /* non-fatal — daemon falls back to known-install probes */
+        }
+
         const templatesDir = path.join(__dirname, '..', '..', '..', 'templates');
         if (fs.existsSync(templatesDir)) {
           const files = fs

@@ -31,6 +31,13 @@ export function registerStartCommand(program: Command): void {
 
         await reapOrphans();
         warnIfTmuxMissing();
+        // Capture the interactive PATH from the user's terminal BEFORE
+        // forking the daemon. The daemon's own spawn loses this — it
+        // runs from a non-interactive shell that skips ~/.bashrc, so
+        // tools installed to ~/.opencode/bin etc. would be missing.
+        // Re-capturing on every start (not just init) means a user who
+        // adds a new tool to PATH and restarts picks it up automatically.
+        await captureAndPersistPath();
         spawnDaemonAndCockpit(chorusDir, pidFile);
         scheduleAutoOpenBrowser(options.ui);
       } catch (error) {
@@ -38,6 +45,27 @@ export function registerStartCommand(program: Command): void {
         process.exit(1);
       }
     });
+}
+
+/**
+ * Run the user's interactive shell once and stash $PATH so the daemon
+ * (running in a non-interactive shell that skips .bashrc/.zshrc) can
+ * find CLIs the user installed via official curl-bash scripts.
+ *
+ * Best-effort. Capture or persist failures are swallowed — the daemon
+ * has fallback known-install probes and the previous saved value, if
+ * any, stays put.
+ */
+async function captureAndPersistPath(): Promise<void> {
+  try {
+    const { captureInteractivePath, persistCapturedPath } = await import(
+      '../../lib/runtime-path.js'
+    );
+    const captured = captureInteractivePath();
+    if (captured) await persistCapturedPath(captured);
+  } catch {
+    /* non-fatal */
+  }
 }
 
 async function alreadyRunning(

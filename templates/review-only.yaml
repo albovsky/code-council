@@ -1,9 +1,9 @@
 id: review-only
 name: Review Only
 description: |
-  Paste a diff, draft, or text blob. Five reviewers (Codex + Gemini + Claude
-  + opencode-go Kimi + opencode-go DeepSeek) critique it independently.
-  Single pass — revise yourself and resubmit for another round.
+  Paste a diff, draft, or text blob. Six reviewers (Codex + Gemini + Claude
+  + opencode-go Kimi + opencode-go DeepSeek + opencode-go Qwen) critique it
+  independently. Single pass — revise yourself and resubmit for another round.
 author: chorus
 agreementThreshold: 0.66
 onThresholdMet: ask
@@ -49,6 +49,9 @@ phases:
         - lineage: opencode
           models:
             - opencode-go/deepseek-v4-pro
+        - lineage: opencode
+          models:
+            - opencode-go/qwen3.6-plus
     artifact:
       label: "Artifact to review"
       hint: "Paste a unified diff, a markdown draft, code, or any text blob."
@@ -56,3 +59,15 @@ phases:
     inputs:
       include: []
       exclude: []
+
+# Reviewer fallback — when any reviewer slot exhausts (quota_exhausted,
+# auth_error, rate_limit, etc.) Chorus raises a Claude Sonnet 4.6
+# replacement so the cockpit shows a finished review instead of an
+# ERRORED card. Same-lineage dedupe means this won't fire if Claude Opus
+# is already running in this slot — it activates for the openai/google/
+# opencode reviewers when their primary model fails.
+fallback:
+  reviewer:
+    - lineage: anthropic
+      models:
+        - claude-sonnet-4-6

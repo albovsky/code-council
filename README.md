@@ -22,7 +22,7 @@
 
 <div align="center">
 
-<img src="docs/images/hero-demo.png" alt="Three AI tools reviewing the same diff in parallel" width="800" />
+<img src="docs/images/hero-demo.gif" alt="Six AI reviewers streaming verdicts in parallel — Chorus running live" width="800" />
 
 **One AI writes. Three review. You ship only when they agree — using AI subscriptions you already pay for.**
 

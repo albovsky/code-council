@@ -40,3 +40,10 @@ Thumbs.db
 .pnpm-store/
 .claude/
 chorus-*.tgz
+
+# Local demo recording route — lives at /demo/[scenario] only on the
+# maintainer's box for asset capture (recording rig sits in
+# /home/ubuntu/dev/chorus-demo/). The DemoDataSource hook in
+# live-run-real stays in the public tree so anyone cloning can drop in
+# their own scenarios without touching production code.
+src/app/demo/

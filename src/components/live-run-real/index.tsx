@@ -37,6 +37,22 @@ import {
 } from "./helpers";
 import { PhaseProgress } from "./phase-progress";
 
+/**
+ * Demo hook for the unlinked /demo/[scenario] route. When set, the
+ * component substitutes the live SSE source with the provided factory
+ * and skips every artifact-polling fetch (the demo's mock stream is
+ * the single source of truth — no daemon round-trips). Default is
+ * `undefined`, which preserves real production behaviour.
+ */
+export interface DemoDataSource {
+  /** Factory that returns an EventSource-compatible object. */
+  createEventSource: () => EventSource;
+  /** Mock for /api/run-artifacts. Called when the SSE handler would
+   *  otherwise fetch artifacts (participant_done, chat_done). Returns
+   *  the rounds snapshot for the current scripted moment. */
+  fetchArtifacts: () => { rounds: RoundSnapshot[]; swaps?: FallbackSwap[] };
+}
+
 interface Props {
   chatId: string;
   initialStatus: string;
@@ -56,6 +72,8 @@ interface Props {
    * status='approved' but verdict='request_changes', the run finished
    * but reviewers said no — header must reflect that, not green-stamp it. */
   initialVerdict?: string;
+  /** Demo-only — see DemoDataSource. */
+  demoDataSource?: DemoDataSource;
 }
 
 export function LiveRunReal({
@@ -69,6 +87,7 @@ export function LiveRunReal({
   initialPrUrl,
   initialShipError,
   initialVerdict,
+  demoDataSource,
 }: Props) {
   const [status, setStatus] = useState(initialStatus);
   const [verdict, setVerdict] = useState<string | undefined>(initialVerdict);
@@ -145,6 +164,11 @@ export function LiveRunReal({
   // deltas drive the live ticker.
   useEffect(() => {
     if (isTerminal) return;
+    // Demo mode: the mock SSE stream is the single source of truth.
+    // Skipping the artifact poll here means the run-page renders only
+    // what the scenario script emits, with no surprise late writes
+    // from a real /api/run-artifacts response.
+    if (demoDataSource) return;
     const refresh = async () => {
       try {
         const res = await fetch(`/api/run-artifacts/${chatId}`);
@@ -163,11 +187,15 @@ export function LiveRunReal({
     };
     const id = setInterval(refresh, 8000);
     return () => clearInterval(id);
-  }, [chatId, isTerminal]);
+  }, [chatId, isTerminal, demoDataSource]);
 
   useEffect(() => {
     if (isTerminal) return;
-    const es = new EventSource(`/api/daemon/chats/${chatId}/stream`);
+    // In demo mode the scripted scenario provides every event we
+    // render; the real /api/daemon SSE is bypassed entirely.
+    const es = demoDataSource
+      ? demoDataSource.createEventSource()
+      : new EventSource(`/api/daemon/chats/${chatId}/stream`);
     es.onmessage = (msg) => {
       try {
         const e = JSON.parse(msg.data) as SSEEvent;
@@ -184,6 +212,15 @@ export function LiveRunReal({
             next.add(`${role}-${agent}-${phaseId}`);
             return next;
           });
+          // Demo mode — swap rounds when a new phase begins so a
+          // multi-phase scenario can rotate the participant grid as the
+          // stepper advances. Production has /api/run-artifacts polling
+          // for that; we shortcut here.
+          if (demoDataSource) {
+            const snapshot = demoDataSource.fetchArtifacts();
+            setRounds(snapshot.rounds);
+            if (Array.isArray(snapshot.swaps)) mergeSwapsFromArtifacts(snapshot.swaps);
+          }
         }
 
         if (e.type === "phase_progress" && role && agent) {
@@ -282,15 +319,22 @@ export function LiveRunReal({
           // The runner has just written `## DONE` to this participant's
           // answer.md. Pull artifacts immediately so the card flips
           // from WORKING to DONE without waiting for the 8s polling
-          // tick.
-          fetch(`/api/run-artifacts/${chatId}`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
-              if (!data) return;
-              setRounds(data.rounds);
-              if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
-            })
-            .catch(() => {});
+          // tick. Demo mode hands the scripted snapshot in via
+          // demoDataSource.fetchArtifacts() instead of /api/run-artifacts.
+          if (demoDataSource) {
+            const snapshot = demoDataSource.fetchArtifacts();
+            setRounds(snapshot.rounds);
+            if (Array.isArray(snapshot.swaps)) mergeSwapsFromArtifacts(snapshot.swaps);
+          } else {
+            fetch(`/api/run-artifacts/${chatId}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((data) => {
+                if (!data) return;
+                setRounds(data.rounds);
+                if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
+              })
+              .catch(() => {});
+          }
         }
 
         if (e.type === "chat_done") {
@@ -320,27 +364,35 @@ export function LiveRunReal({
           }
 
           es.close();
-          fetch(`/api/run-artifacts/${chatId}`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
-              if (!data) return;
-              setRounds(data.rounds);
-              if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
-            })
-            .catch(() => {});
+          if (demoDataSource) {
+            const snapshot = demoDataSource.fetchArtifacts();
+            setRounds(snapshot.rounds);
+            if (Array.isArray(snapshot.swaps)) mergeSwapsFromArtifacts(snapshot.swaps);
+          } else {
+            fetch(`/api/run-artifacts/${chatId}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((data) => {
+                if (!data) return;
+                setRounds(data.rounds);
+                if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
+              })
+              .catch(() => {});
+          }
         }
       } catch {
         // skip malformed
       }
     };
     return () => es.close();
-  }, [chatId, isTerminal]);
+  }, [chatId, isTerminal, demoDataSource]);
 
   // One-shot fetch on mount (incl. for terminal chats where the SSE
   // useEffect early-returns). Without this, navigating to a completed
   // chat would never load the swap sidecars — the periodic refresh and
-  // SSE branches both skip when isTerminal is true.
+  // SSE branches both skip when isTerminal is true. Demo mode skips —
+  // scenario events drive every fallback render directly.
   useEffect(() => {
+    if (demoDataSource) return;
     let cancelled = false;
     fetch(`/api/run-artifacts/${chatId}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -355,7 +407,7 @@ export function LiveRunReal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId]);
+  }, [chatId, demoDataSource]);
 
   /** Active keys are built as `${role}-${agent}-${phaseId}` in the
    * phase_start handler (where `agent` includes the per-slot index for

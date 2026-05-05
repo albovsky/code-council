@@ -162,7 +162,17 @@ export async function runReviewerHeadless(args: {
             );
           }
         } else {
-          fs.writeFileSync(answerFile, `${event.finalText}\n\n## DONE\n`);
+          // Don't double-stamp the sentinel. Codex (and any CLI that
+          // ends its own output with "## DONE") would otherwise ship
+          // an answer with `... ## DONE\n\n\n## DONE\n` — the verdict
+          // heuristic doesn't care, but it looks unprofessional in the
+          // cockpit and breaks tools that grep for a single sentinel.
+          const trimmedTail = event.finalText.replace(/\s+$/, '');
+          const alreadyHasSentinel = /\n##\s*DONE\s*$/i.test(trimmedTail);
+          const body = alreadyHasSentinel
+            ? `${trimmedTail}\n`
+            : `${trimmedTail}\n\n## DONE\n`;
+          fs.writeFileSync(answerFile, body);
         }
         // Persist runtime stats next to the answer so the cockpit run-
         // artifacts route can surface "12.4s · 3.4k tok" on the card even

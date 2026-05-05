@@ -4,21 +4,20 @@
 
 # Chorus
 
-**Driver-agnostic multi-LLM peer review for code decisions.**
-Bring your own CLI. Chorus convenes 2–4 other LLMs to review the work before you ship.
+**A second opinion (and a third) before you ship AI-written code.**
+The same AI that wrote your code can't catch its own blind spots. Chorus runs your work past 2–3 *different* AI tools — in parallel — and only gives the green light when they agree.
 
 [![CI](https://github.com/99xAgency/chorus/actions/workflows/ci.yml/badge.svg)](https://github.com/99xAgency/chorus/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/chorus-codes?color=22c55e)](https://www.npmjs.com/package/chorus-codes)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](./LICENSE)
 [![Status](https://img.shields.io/badge/status-v0.7-brightgreen)]()
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933)]()
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg)](#contributing)
 
-[Website](https://chorus.codes) · [Docs](./docs) · [Roadmap](./ROADMAP.md) · [Issues](https://github.com/99xAgency/chorus/issues)
+[Website](https://chorus.codes) · [Roadmap](./ROADMAP.md) · [Issues](https://github.com/99xAgency/chorus/issues)
 
 ---
 
-<img src="docs/images/hero-demo.gif" alt="Chorus running 3 LLMs in parallel reviewing the same diff" width="800" />
+<img src="docs/images/hero-demo.gif" alt="Three AI tools reviewing the same diff in parallel" width="800" />
 
 *One AI writes. Three review. You ship only when they agree.*
 
@@ -26,129 +25,106 @@ Bring your own CLI. Chorus convenes 2–4 other LLMs to review the work before y
 
 ---
 
-## Why Chorus?
+## The problem Chorus solves
 
-The same model that wrote your code can't catch its own blind spots. Chorus runs your work past 2–3 **different** LLMs from **different vendors**, in parallel, and only green-lights the merge when they agree.
+AI coding tools are fast, confident, and wrong about 5% of the time in ways that are easy to miss. The same model that wrote your code can't see its own gaps. And asking GPT to review GPT's work is theatre — same blind spots, same biases.
 
-| Without Chorus | With Chorus |
-|---|---|
-| One AI writes + reviews its own code | One AI writes, 2–4 others review |
-| Confident-but-wrong is invisible | Disagreement = red flag |
-| You ship, then debug at 2am | Reviewers catch it before merge |
-| Lock-in to a single vendor | Portable across Claude / GPT / Gemini / Kimi / DeepSeek |
+Chorus fixes that by being the missing review pass:
 
-> **Lineage diversity is the moat.** A second Claude reviewing a first Claude's work is theatre. Chorus templates declare a `crossLineage` slot policy and the built-in templates compose reviewers from different model families. Cross-lineage validation is per-template — author your own with the same constraint.
+1. One AI writes (or you write the code yourself).
+2. **2–3 AIs from different vendors** read the result in parallel.
+3. They each tell you "ship it" or "wait, this breaks if X".
+4. Disagreement is a red flag — you see it before you merge.
+
+That's the whole pitch.
 
 ---
 
-## See it in action
+## Real moments where this matters
 
-<table>
-<tr>
-<td width="50%" align="center">
-<b>Live run page</b><br/>
-<img src="docs/images/run-page.gif" alt="Three reviewers streaming verdicts in real-time" width="100%" /><br/>
-<sub>Reviewers stream their verdicts live as the run progresses.</sub>
-</td>
-<td width="50%" align="center">
-<b>Verdict & diff</b><br/>
-<img src="docs/images/verdict.gif" alt="Final converged verdict with merged diff" width="100%" /><br/>
-<sub>Disagreement triggers retry; agreement greenlights merge.</sub>
-</td>
-</tr>
-<tr>
-<td width="50%" align="center">
-<b>Template editor</b><br/>
-<img src="docs/images/templates.gif" alt="Drag-and-drop template editor with voice picker" width="100%" /><br/>
-<sub>Compose voices + personas into reusable review patterns.</sub>
-</td>
-<td width="50%" align="center">
-<b>MCP integration</b><br/>
-<img src="docs/images/mcp.gif" alt="Claude Code calling Chorus via MCP" width="100%" /><br/>
-<sub>Any MCP-aware CLI can trigger a Chorus run.</sub>
-</td>
-</tr>
-</table>
+**You asked Claude to write a `divide(a, b)` helper.**
+It says "looks correct!" You ship. Production crashes at 2am because nobody handled `b = 0`.
+*With Chorus: GPT or Gemini would have flagged it in the review pass before you merged.*
 
-> Replace the placeholders above by dropping GIFs into [`docs/images/`](./docs/images/). See [`docs/images/README.md`](./docs/images/README.md) for sizing + capture conventions.
+**You're refactoring a critical path.**
+Your AI rewrote 200 lines and says it's behaviour-equivalent. You're tired and skeptical.
+*Run it through Chorus. Three different AIs all saying "yes, equivalent" lets you sleep.*
+
+**Big architectural call** — queue vs polling, sync vs async, this DB vs that one.
+Write a paragraph, hit Chorus. *Three different models give you three angles you hadn't thought of.*
+
+**Reviewing a 600-line PR.**
+You're short on time. Paste the diff into Chorus. *Three reviewers spot the obvious bugs in 90 seconds. Your job becomes the 5% they couldn't catch.*
+
+**Test-driven development where neither AI cheats.**
+*One AI writes tests blind to the code; another AI writes code to pass them.* Use the `red-green` template.
 
 ---
 
 ## Quick start
 
 ```bash
-npm i -g chorus-codes   # install
-chorus init             # auto-detects every AI CLI on your machine
-chorus start --ui       # boots daemon + opens http://localhost:5050
+npm i -g chorus-codes      # install
+chorus init                # finds AI tools you already have
+chorus start --ui          # opens http://localhost:5050
 ```
 
-That's it. Open the cockpit, paste a task, hit **Submit**. Watch the LLMs argue.
+Paste a task. Hit submit. Watch the AIs argue.
 
-> **Requires** Node ≥ 20 and **at least one** of: Claude Code, Codex CLI, Gemini CLI, OpenCode, Kimi CLI — *or* an OpenRouter API key.
+**Requires** Node 20+ and at least *one* of these (you probably already have one):
+
+- Claude Code, Codex CLI, Gemini CLI, OpenCode, or Kimi CLI — uses your existing subscription, no extra cost
+- *or* an OpenRouter API key (one key, 200+ models, pay-per-use)
 
 <details>
-<summary><b>Don't have any of those installed?</b></summary>
+<summary><b>Don't have any of those?</b></summary>
 
 ```bash
-# Install one CLI to get started — pick whichever vendor you already have a sub for
-npm i -g @anthropic-ai/claude-code
-# or
-npm i -g @openai/codex
-# or
-npm i -g @google/gemini-cli
-# or use OpenRouter (no CLI needed) — add key in Settings after `chorus init`
+npm i -g @anthropic-ai/claude-code   # Anthropic — uses Claude Pro sub
+npm i -g @openai/codex                # OpenAI — uses ChatGPT Plus sub
+npm i -g @google/gemini-cli           # Google — uses Gemini Advanced sub
 ```
+
+Pick whichever vendor you already pay for. Or skip CLIs entirely and add an OpenRouter key in Settings after `chorus init`.
 
 </details>
 
 ---
 
-## How it works
+## What it looks like
 
-```mermaid
-flowchart TB
-    User([👤 You])
-    CLI[Local CLI<br/>claude · codex · gemini · ...]
-    MCP[MCP Server<br/>chorus mcp]
-    Daemon[Chorus Daemon<br/>:7707]
-    DB[(SQLite<br/>~/.chorus/chorus.db)]
-    Cockpit[Cockpit<br/>:5050 · Next.js]
-
-    Claude[🤖 Claude<br/>doer]
-    Codex[🦾 Codex<br/>reviewer]
-    Gemini[💎 Gemini<br/>reviewer]
-    Kimi[🌙 Kimi<br/>reviewer]
-
-    User -->|chats / templates / verdicts| Cockpit
-    User -->|submit task| CLI
-    CLI -->|JSON-RPC| MCP
-    MCP -->|create_chat| Daemon
-    Cockpit <-->|REST + SSE| Daemon
-    Daemon <--> DB
-    Daemon -->|spawn headless| Claude
-    Daemon -->|spawn headless| Codex
-    Daemon -->|spawn headless| Gemini
-    Daemon -->|spawn headless| Kimi
-    Claude -->|stream-json| Daemon
-    Codex -->|stream-json| Daemon
-    Gemini -->|answer.md| Daemon
-    Kimi -->|stream-json| Daemon
-
-    classDef user fill:#fef3c7,stroke:#f59e0b,color:#000
-    classDef chorus fill:#dbeafe,stroke:#3b82f6,color:#000
-    classDef llm fill:#fce7f3,stroke:#ec4899,color:#000
-    class User user
-    class Daemon,Cockpit,MCP,CLI,DB chorus
-    class Claude,Codex,Gemini,Kimi llm
-```
-
-Each LLM runs as an isolated subprocess. Chorus parses their stream-JSON output, compares verdicts against the template's quorum rule (e.g. *"both reviewers must approve"*), and emits a final state.
+<table>
+<tr>
+<td width="50%" align="center">
+<b>Live review</b><br/>
+<img src="docs/images/run-page.gif" alt="Three reviewers streaming verdicts in real-time" width="100%" /><br/>
+<sub>Each AI streams its thinking live as it reviews.</sub>
+</td>
+<td width="50%" align="center">
+<b>Verdict</b><br/>
+<img src="docs/images/verdict.gif" alt="Final converged verdict with merged diff" width="100%" /><br/>
+<sub>Agreement = green. Disagreement = retry with their feedback.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" align="center">
+<b>Templates</b><br/>
+<img src="docs/images/templates.gif" alt="Template editor" width="100%" /><br/>
+<sub>Pre-built review patterns. Make your own in YAML.</sub>
+</td>
+<td width="50%" align="center">
+<b>From inside Claude / Cursor</b><br/>
+<img src="docs/images/mcp.gif" alt="Claude Code calling Chorus" width="100%" /><br/>
+<sub>Any AI tool that speaks MCP can trigger a Chorus run.</sub>
+</td>
+</tr>
+</table>
 
 ---
 
 ## A real example
 
-You ask Claude to write a divide function:
+You ask Claude to write this:
 
 ```js
 function divide(a, b) {
@@ -156,101 +132,47 @@ function divide(a, b) {
 }
 ```
 
-Submit to Chorus with the **Code Review** template (1 doer + 2 reviewers, both must agree):
+Submit to Chorus with the **Code Review** template (1 writer + 2 reviewers, both must agree to ship):
 
-```mermaid
-sequenceDiagram
-    participant U as You
-    participant C as Chorus
-    participant Cl as 🤖 Claude (doer)
-    participant Cx as 🦾 Codex
-    participant Gm as 💎 Gemini
-
-    U->>C: submit divide(a,b)
-    C->>Cl: write code
-    Cl-->>C: "Looks correct to me!"
-    par Parallel review
-        C->>Cx: review diff
-        C->>Gm: review diff
-    end
-    Cx-->>C: 🚨 No type validation — divide('a','b') = NaN
-    Gm-->>C: 🚨 Missing zero-check — divide(1,0) = Infinity
-    C-->>U: ❌ REJECT — both reviewers flagged real bugs
-```
+| Step | What happens |
+|---|---|
+| 1. Claude writes | "Looks correct to me!" |
+| 2. GPT reviews in parallel | 🚨 *No type validation — `divide('a','b')` returns `NaN`* |
+| 3. Gemini reviews in parallel | 🚨 *Missing zero-check — `divide(1, 0)` returns `Infinity`* |
+| 4. Verdict | ❌ **REJECT** — both reviewers flagged real bugs |
 
 Now you know what to fix **before** you push.
 
 ---
 
-## Run lifecycle
+## Templates: pre-built review patterns
 
-```mermaid
-stateDiagram-v2
-    [*] --> drafting: chat created
-    drafting --> running: POST /chats handler auto-fires
-    running --> doer_active: spawn doer
-    doer_active --> reviewers_active: doer ## DONE
-    reviewers_active --> converged: quorum met
-    reviewers_active --> retry: disagreement
-    retry --> doer_active: revise
-    converged --> [*]: ✅ approve
-    retry --> rejected: max rounds
-    rejected --> [*]: ❌ reject
-```
+Don't figure out which AIs to use yourself. Pick a pattern that fits the moment:
 
-> **Auto-fires on create.** `POST /chats` starts the runner immediately; SSE subscribers (cockpit on page open, programmatic callers via `chats/:id/stream`) only *observe* progress. Earlier 0.7 builds gated execution on first SSE subscriber — the gate moved into the create handler so headless callers don't need to subscribe just to make the run start.
+| Use this when... | Template |
+|---|---|
+| Pre-merge sanity check | `code-review` — 1 writer + 2 reviewers, both must agree |
+| Diagnosing a weird bug | `bug-diagnose` — one hypothesises, one challenges |
+| Big architectural call | `architect-review` — 3 different vendors critique your plan |
+| TDD where neither AI cheats | `red-green` — tests written blind to code |
+| Quick audit of a diff someone else wrote | `review-only` — paste, get 3 opinions, no writer |
 
----
-
-## Supported LLMs
-
-Chorus auto-detects whichever AI tools you already have:
-
-| AI Tool | Can call Chorus | Can review | Auth | Notes |
-|---|:---:|:---:|---|---|
-| 🤖 **Claude Code** | ✅ | ✅ | sub or API | Anthropic |
-| 🦾 **Codex CLI** | ✅ | ✅ | sub or API | OpenAI |
-| 💎 **Gemini CLI** | ✅ | ✅ | sub or API | Google |
-| 🌊 **OpenCode** | ✅ | ✅ | sub or API | Routes to Kimi/DeepSeek/Qwen/Z.AI |
-| 🌙 **Kimi CLI** | ✅ | ✅ | Moonshot sub | MoonshotAI |
-| 🔌 **OpenRouter** | — | ✅ | API key | 200+ models, no CLI needed |
-| ⚡ Cursor | ✅ | — | — | IDE, not headless |
-| 🏄 Windsurf | ✅ | — | — | IDE, not headless |
-
-You don't need them all. **Two different vendors** is the minimum for meaningful diversity.
-
----
-
-## Templates
-
-A **template** = (1 doer + N reviewers + quorum rule). Pick one when you submit:
-
-| Template | Pattern | Best for |
-|---|---|---|
-| 🐛 `bug-diagnose` | Hypothesis vs challenge | "Why is this broken?" |
-| 👨‍⚖️ `code-review` | Doer + 2 reviewers, both agree | Pre-merge gate |
-| 🏗️ `architect-review` | Cross-vendor design critique | Big decisions |
-| ⚔️ `red-green` | One writes tests, another writes code | Adversarial TDD |
-| 🔍 `review-only` | Paste a diff, 3 reviewers critique | Quick external audit |
-| 🔺 `tri-review` | Doer + 3 reviewers (2-of-3) | Extra coverage |
-
-Drop a YAML file in `~/.chorus/templates/` to add your own. Each reviewer slot can wear a **persona** — Sentinel (security), Cartographer (cross-platform), Accountant (cost), Profiler (perf), Inspector, Quartermaster, Concierge, Conservator, Librarian, Translator.
+Make your own by dropping a YAML file in `~/.chorus/templates/`. Or duplicate one of the built-ins and tweak.
 
 <details>
-<summary><b>Example: custom template YAML</b></summary>
+<summary><b>Custom template example</b></summary>
 
 ```yaml
 id: security-pre-merge
 label: Security Pre-Merge
-description: Sentinel persona on every reviewer; quorum requires unanimous approval.
+description: Sentinel persona on every reviewer; everyone must approve.
 slots:
   doer:
     lineage: anthropic
     model: claude-sonnet-4-6
-    persona: default
   reviewers:
-    - { lineage: openai, model: codex,             persona: sentinel }
-    - { lineage: google, model: gemini-2.5-pro,    persona: sentinel }
+    - { lineage: openai,   model: codex,                 persona: sentinel }
+    - { lineage: google,   model: gemini-2.5-pro,        persona: sentinel }
     - { lineage: opencode, model: opencode-go/kimi-k2.6, persona: sentinel }
 quorum:
   type: unanimous
@@ -260,143 +182,105 @@ quorum:
 
 ---
 
+## Reviewer personas
+
+Each reviewer can wear a "hat" — a focus area Chorus prepends to their prompt:
+
+| Persona | What they look for |
+|---|---|
+| 🛡️ **Sentinel** | Security holes, auth bypass, injection |
+| 🗺️ **Cartographer** | Cross-platform issues (Windows vs Mac, browser support) |
+| 💰 **Accountant** | Cost regressions (extra DB queries, API calls) |
+| ⚡ **Profiler** | Performance regressions |
+| 🔍 **Inspector**, 📦 **Quartermaster**, 🛎️ **Concierge**, 🏛️ **Conservator**, 📚 **Librarian**, 🌐 **Translator** | …and more — see Personas page in cockpit |
+
+Different personas reviewing the same change = wider net.
+
+---
+
+## Why "different vendors" matters
+
+You can run Chorus with three Claudes. We let you. But the value drops a lot.
+
+A second Claude reviewing the first Claude's work is theatre — same training, same blind spots. Mix vendors (Claude + GPT + Gemini) and you get genuinely different angles, because they were trained on different data with different biases.
+
+Templates let you encode this: each reviewer slot has a `lineage` (anthropic / openai / google / opencode / moonshot). Built-in templates mix vendors automatically.
+
+---
+
+## What does it cost?
+
+Two paths, depending on how you already pay for AI:
+
+**Using subscriptions** (Claude Pro / ChatGPT Plus / Gemini Advanced — ~$20/mo each)
+A typical review = **$0** out of pocket. Counts against the quota you already have.
+
+**Using API keys** (pay-per-use)
+A typical code-review run = **$0.30 to $1.50**, depending on diff size. If reviewers disagree and retry, 2–3× worst case.
+
+Chorus adds **zero markup**. We don't see your tokens.
+
+---
+
 ## Permissions & safety
 
-Reviewers can run on your machine. You decide how much trust they get:
+Reviewers run on your machine. You decide how much trust to give them:
 
-| Mode | Read | Write | Network | When to use |
+| Mode | Read code | Write code | Network | When to use |
 |---|:---:|:---:|:---:|---|
-| 🔒 **Strict** | ✅ | ❌ | ❌ | Pasting unknown diffs |
-| 📁 **Workspace** *(default)* | ✅ | ✅ inside chat dir | ❌ | Day-to-day work |
-| 🔓 **Full** | ✅ | ✅ | ✅ | Personal machine, full trust |
+| 🔒 **Strict** | ✅ | ❌ | ❌ | Reviewing a diff you don't trust |
+| 📁 **Workspace** *(default)* | ✅ | ✅ inside chat dir | ❌ | Day-to-day |
+| 🔓 **Full** | ✅ | ✅ anywhere | ✅ | Personal machine, full trust |
 
-Configure on first run, or anytime at `/settings/permissions`.
+Configure on first run, or anytime at *Settings → Permissions*.
 
-> **Trust model.** The sandbox is the wall — once a doer is running inside
-> Workspace mode, it can shell-out and modify files within its chat directory
-> without prompting. `autoApprovePrompts` is on by default to keep flow
-> uninterrupted. **Running a doer = trusting that doer to operate inside its
-> sandbox.** Run `chorus doctor` to confirm sandbox is enforced for every
-> CLI on your host (OpenCode and Kimi historically ignored sandbox; chorus
-> now fails closed when they're asked to run in Strict mode).
+> **Trust model in plain English.** "Workspace" means the reviewer can write files inside its working directory and run scoped commands, but can't reach the internet or write outside the sandbox. "Full" means anything-goes — only enable on a personal machine you own. Run `chorus doctor` to verify each AI tool got the sandbox you set.
 
 ---
 
-## Architecture deep-dive
+## Use it from inside another AI tool
 
-<details>
-<summary><b>Click to expand</b></summary>
+Chorus speaks MCP — the protocol Claude Code, Cursor, Codex, Gemini CLI etc. use to talk to other tools. So you can trigger a Chorus run *from inside* the AI tool you're already using.
 
-```mermaid
-flowchart LR
-    subgraph User["User Machine"]
-        Cockpit["Next.js Cockpit<br/>:5050"]
-        Daemon["Fastify Daemon<br/>:7707"]
-        MCP["MCP Server<br/>stdio"]
-        DB[("libsql<br/>~/.chorus/chorus.db")]
+Example, inside Claude Code:
 
-        subgraph Shims["Agent Shims"]
-            ClaudeS[claude.ts]
-            CodexS[codex.ts]
-            GeminiS[gemini.ts]
-            OpenCodeS[opencode.ts]
-            KimiS[kimi.ts]
-            ORouterS[openrouter.ts]
-        end
+> *"Run code-review on the diff against main using Chorus"*
 
-        subgraph Subprocs["Headless Subprocesses"]
-            ClaudeP[claude --print]
-            CodexP[codex exec]
-            GeminiP[gemini -p]
-            OpenCodeP[opencode run]
-        end
+Claude Code calls Chorus → Chorus fans out to other AI tools → results stream back into Claude Code. Useful when you want a second opinion without leaving the editor.
 
-        Cockpit <-->|REST + SSE| Daemon
-        Daemon <--> DB
-        Daemon --> Shims
-        Shims --> Subprocs
-        MCP <-->|REST + SSE| Daemon
-    end
-
-    subgraph External["External CLIs"]
-        ExtCLI[Claude / Codex / Gemini / Cursor]
-    end
-
-    ExtCLI -.->|stdio| MCP
-    ORouterS -->|HTTPS| OpenRouter[(OpenRouter API)]
-```
-
-**Key components:**
-
-- **Cockpit** ([`src/app/`](./src/app/)) — Next.js 16 UI on `:5050`. Templates, chats, voices, settings, permissions.
-- **Daemon** ([`src/daemon/`](./src/daemon/)) — Fastify server on `:7707`. Owns the DB, spawns subprocesses, exposes REST + SSE.
-- **Agent shims** ([`src/daemon/agents/`](./src/daemon/agents/)) — One per CLI lineage. Maps voice config → headless invocation + parses stream-JSON.
-- **MCP server** ([`src/mcp/`](./src/mcp/)) — JSON-RPC over stdio. Lets external CLIs (Claude, Codex, …) trigger runs programmatically.
-- **DB** — libsql/SQLite at `~/.chorus/chorus.db`. Schema: voices, personas, templates, chats, participants, messages, settings.
-
-**Voice = (id, label, source, provider, model_id, lineage, cost, enabled)**. Source is `'cli'` (auto-populated from CLI detect at boot) or `'api'` (OpenRouter, etc.). Lineage drives diversity scoring; `vendor_family` carries the underlying model family for cost UX.
-
-</details>
+`chorus init` wires up MCP for the orchestrators it detects (Claude / Codex / Gemini / Cursor / Windsurf, etc.).
 
 ---
 
-## Cost
+## Compared to other code-review tools
 
-Chorus runs the CLIs you already have — cost depends on how you're paying for those:
+| | **Chorus** | CodeRabbit | Greptile | Cursor Review | GitHub Copilot |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Multiple AI vendors review the same change | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Uses your existing AI subscriptions | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Runs locally (your code never leaves your existing AI vendors) | ✅ | ❌ | ❌ | partial | ❌ |
+| Open source (modify + self-host) | ✅ Apache-2.0 | ❌ | ❌ | ❌ | ❌ |
+| Custom review patterns | ✅ | partial | ❌ | ❌ | ❌ |
 
-- **CLI subscriptions** (Claude Pro / ChatGPT Plus / Gemini Advanced — ~$20/mo each): typical chat = **$0** out of pocket, counts against your quota.
-- **API keys** (pay-per-token): typical code-review chat (Opus + GPT-5.5 + Gemini Pro) = roughly **$0.30–$1.50** depending on diff size. Disagreement → retry → 2–3× worst case.
-
-Chorus adds **no markup**. We don't see your tokens. The cockpit shows estimated cost on every run.
+**The unique thing:** your code never goes to a new vendor. Chorus just orchestrates the AI tools you already use.
 
 ---
 
 ## Commands
 
 ```bash
-chorus init                          # detect + connect every CLI
-chorus init --connect claude,gemini  # only specific ones
-chorus start [--ui]                  # boot daemon (and open browser)
-chorus connect <cli>                 # wire up one CLI later
-chorus ui                            # open the cockpit
-chorus status                        # is daemon running?
-chorus stop                          # shut it down
-chorus mcp                           # run MCP server (CLIs call this)
+chorus init             # one-time: detect + connect AI tools
+chorus start --ui       # boot + open browser
+chorus stop             # shut it down
+chorus status           # is it running?
+chorus doctor           # diagnose AI tool detection / sandbox issues
 ```
-
----
-
-## Comparison
-
-| | **Chorus** | CodeRabbit | Greptile | Cursor Review | GitHub Copilot |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Multi-LLM diversity | ✅ 5 vendors | ❌ single | ❌ single | ❌ single | ❌ single |
-| Local-first | ✅ | ❌ SaaS | ❌ SaaS | partial | ❌ SaaS |
-| BYO subscription | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Self-hostable | ✅ | ❌ | ❌ | ❌ | ❌ |
-| MCP-native | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Open source | ✅ Apache-2.0 | ❌ | ❌ | ❌ | ❌ |
-| Quorum-based verdict | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Custom templates | ✅ | partial | ❌ | ❌ | ❌ |
-
----
-
-## Roadmap
-
-See [ROADMAP.md](./ROADMAP.md) for the full picture. Highlights:
-
-- [x] **v0.5** — Daemon + cockpit + 4 lineages
-- [x] **v0.6** — MCP server, persona system
-- [x] **v0.7** — Voices table, OpenRouter, lazy chat fire
-- [ ] **v0.8** — Phase composition (sequential review stages)
-- [ ] **v0.9** — Per-voice persona overrides, voice marketplace
-- [ ] **v1.0** — Hosted GitHub App + cloud fan-out
 
 ---
 
 ## Telemetry
 
-Chorus pings `chorus.codes` once on daemon boot and once every 24h. Payload is small + fixed:
+Chorus pings home once on startup and once every 24h. The payload is fixed:
 
 ```json
 {
@@ -409,46 +293,105 @@ Chorus pings `chorus.codes` once on daemon boot and once every 24h. Payload is s
 }
 ```
 
-**Never sent:** chat content, prompts, artifacts, file paths, repo paths, branch names, hostnames, usernames, IPs, API keys, model IDs, voice or template names.
+**Never sent:** chat content, prompts, file paths, repo paths, model names, voice/template names, hostnames, IPs, API keys.
 
-**Disable any one of:**
+Turn it off any of three ways:
 
 ```bash
 export CHORUS_TELEMETRY=0           # env var
 touch ~/.chorus/no-telemetry        # touch-file
-# or set telemetry.enabled=false in cockpit Settings
+# or click "Off" in cockpit Settings → Telemetry
 ```
 
 The install ID lives at `~/.chorus/install-id` — `rm` it for a fresh one.
 
 ---
 
+## Roadmap
+
+- [x] **v0.5** — Daemon + cockpit + 4 AI vendors
+- [x] **v0.6** — MCP server, persona system
+- [x] **v0.7** — OpenRouter integration, voices table, real-time sidebar
+- [ ] **v0.8** — Multi-stage review (write → review → fix → re-review)
+- [ ] **v0.9** — Per-voice persona overrides, voice marketplace
+- [ ] **v1.0** — Hosted GitHub App + cloud fan-out
+
+Full picture in [ROADMAP.md](./ROADMAP.md).
+
+---
+
+<details>
+<summary><b>How it works (under the hood)</b></summary>
+
+```mermaid
+flowchart TB
+    User([👤 You])
+    Cockpit[Cockpit<br/>:5050 · web UI]
+    Daemon[Chorus daemon<br/>:7707 · local server]
+    DB[(SQLite<br/>~/.chorus/chorus.db)]
+    MCP[MCP server<br/>for editor integrations]
+
+    Claude[🤖 Claude<br/>writer]
+    Codex[🦾 GPT<br/>reviewer]
+    Gemini[💎 Gemini<br/>reviewer]
+
+    User -->|paste task| Cockpit
+    Cockpit <-->|REST + live updates| Daemon
+    Daemon <--> DB
+    Daemon -->|spawn| Claude
+    Daemon -->|spawn| Codex
+    Daemon -->|spawn| Gemini
+    User -.->|"call Chorus from your AI"| MCP --> Daemon
+
+    classDef user fill:#fef3c7,stroke:#f59e0b,color:#000
+    classDef chorus fill:#dbeafe,stroke:#3b82f6,color:#000
+    classDef llm fill:#fce7f3,stroke:#ec4899,color:#000
+    class User user
+    class Daemon,Cockpit,MCP,DB chorus
+    class Claude,Codex,Gemini llm
+```
+
+**Three pieces:**
+
+- **Daemon** — small local server (port 7707) that spawns AI tools as subprocesses, parses their output, and tracks state in a SQLite database at `~/.chorus/chorus.db`.
+- **Cockpit** — the web UI at port 5050 (Next.js). Templates, chats, voices, settings.
+- **MCP server** — lets *other* AI tools (Claude Code, Cursor, etc.) call Chorus programmatically.
+
+Each AI runs as an isolated subprocess. Chorus reads their structured output (stream-JSON), compares against the template's quorum rule, and emits a verdict. Nothing leaves your machine except the calls to the AI vendors you already use.
+
+Code layout:
+- `src/daemon/` — Fastify server + agent shims (one per AI tool)
+- `src/app/` — Next.js cockpit
+- `src/mcp/` — JSON-RPC MCP server
+- `src/lib/db/` — schema + migrations
+
+</details>
+
+---
+
 ## Contributing
 
-PRs welcome. Before you start:
-
-1. Read [`AGENTS.md`](./AGENTS.md) — the Next.js you have isn't quite the Next.js you remember.
-2. Check the [open issues](https://github.com/99xAgency/chorus/issues) and [`ROADMAP.md`](./ROADMAP.md) for direction.
-3. Run the test suite: `pnpm test` (target: 80%+ coverage on new code).
-4. Use Chorus to review your own PR — `chorus init` + the `code-review` template. *Yes, we dogfood.*
+PRs welcome.
 
 ```bash
 git clone https://github.com/99xAgency/chorus.git
-cd chorus
-pnpm install
-pnpm dev:daemon  # daemon on :7707
-pnpm dev         # cockpit on :5050
-pnpm test        # full suite
+cd chorus && pnpm install
+pnpm dev:daemon   # daemon on :7707
+pnpm dev          # cockpit on :5050
+pnpm test         # full suite
 ```
 
-See [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md) for the full guide.
+Read [`AGENTS.md`](./AGENTS.md) first — Next.js 16 has breaking changes from older versions. Coverage target on new code: 80%+.
+
+We dogfood: PRs to Chorus go through Chorus before merging.
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 
 ---
 
 ## Links
 
 - 🌐 Website: <https://chorus.codes>
-- 📖 Docs: [./docs](./docs)
 - 🗺️ Roadmap: [./ROADMAP.md](./ROADMAP.md)
 - 🐛 Issues: <https://github.com/99xAgency/chorus/issues>
 - 💬 Discussions: <https://github.com/99xAgency/chorus/discussions>
@@ -458,7 +401,7 @@ See [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md) for the full guide.
 
 ## License
 
-[Apache-2.0](./LICENSE). Use it however you want — including commercially.
+[Apache-2.0](./LICENSE). Use it however you want, including commercially.
 
 ---
 

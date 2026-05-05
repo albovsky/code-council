@@ -5,6 +5,7 @@
 # Chorus
 
 **A second opinion (and a third) before you ship AI-written code — using the AI subscriptions you already pay for.**
+
 2–3 *different* AI tools review the same change in parallel, only green-lighting when they agree. Runs on your existing Claude Pro / ChatGPT Plus / Gemini Advanced — typical review costs **$0** out of pocket.
 
 [![CI](https://github.com/99xAgency/chorus/actions/workflows/ci.yml/badge.svg)](https://github.com/99xAgency/chorus/actions/workflows/ci.yml)
@@ -15,11 +16,15 @@
 
 [Website](https://chorus.codes) · [Roadmap](./ROADMAP.md) · [Issues](https://github.com/99xAgency/chorus/issues)
 
+</div>
+
 ---
 
-<img src="docs/images/hero-demo.gif" alt="Three AI tools reviewing the same diff in parallel" width="800" />
+<div align="center">
 
-*One AI writes. Three review. You ship only when they agree.*
+<img src="docs/images/hero-demo.png" alt="Three AI tools reviewing the same diff in parallel" width="800" />
+
+**One AI writes. Three review. You ship only when they agree — using AI subscriptions you already pay for.**
 
 </div>
 
@@ -111,24 +116,24 @@ Pick whichever vendor you already pay for. Or skip CLIs entirely and add an Open
 <tr>
 <td width="50%" align="center">
 <b>Live review</b><br/>
-<img src="docs/images/run-page.gif" alt="Three reviewers streaming verdicts in real-time" width="100%" /><br/>
+<img src="docs/images/run-page.png" alt="Three reviewers streaming verdicts in real-time" width="100%" /><br/>
 <sub>Each AI streams its thinking live as it reviews.</sub>
 </td>
 <td width="50%" align="center">
 <b>Verdict</b><br/>
-<img src="docs/images/verdict.gif" alt="Final converged verdict with merged diff" width="100%" /><br/>
+<img src="docs/images/verdict.png" alt="Final converged verdict with merged diff" width="100%" /><br/>
 <sub>Agreement = green. Disagreement = retry with their feedback.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" align="center">
 <b>Templates</b><br/>
-<img src="docs/images/templates.gif" alt="Template editor" width="100%" /><br/>
+<img src="docs/images/templates.png" alt="Template editor" width="100%" /><br/>
 <sub>Pre-built review patterns. Make your own in YAML.</sub>
 </td>
 <td width="50%" align="center">
 <b>From inside Claude / Cursor</b><br/>
-<img src="docs/images/mcp.gif" alt="Claude Code calling Chorus" width="100%" /><br/>
+<img src="docs/images/mcp.png" alt="Claude Code calling Chorus" width="100%" /><br/>
 <sub>Any AI tool that speaks MCP can trigger a Chorus run.</sub>
 </td>
 </tr>

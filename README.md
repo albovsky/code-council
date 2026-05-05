@@ -37,7 +37,7 @@ The same model that wrote your code can't catch its own blind spots. Chorus runs
 | You ship, then debug at 2am | Reviewers catch it before merge |
 | Lock-in to a single vendor | Portable across Claude / GPT / Gemini / Kimi / DeepSeek |
 
-> **Lineage diversity is the moat.** A second Claude reviewing a first Claude's work is theatre. Chorus enforces that reviewers come from different model families.
+> **Lineage diversity is the moat.** A second Claude reviewing a first Claude's work is theatre. Chorus templates declare a `crossLineage` slot policy and the built-in templates compose reviewers from different model families. Cross-lineage validation is per-template — author your own with the same constraint.
 
 ---
 
@@ -187,7 +187,7 @@ Now you know what to fix **before** you push.
 ```mermaid
 stateDiagram-v2
     [*] --> drafting: chat created
-    drafting --> running: first SSE subscriber
+    drafting --> running: POST /chats handler auto-fires
     running --> doer_active: spawn doer
     doer_active --> reviewers_active: doer ## DONE
     reviewers_active --> converged: quorum met
@@ -198,7 +198,7 @@ stateDiagram-v2
     rejected --> [*]: ❌ reject
 ```
 
-> **Lazy execution.** A chat sits in `drafting` until something subscribes to `/chats/:id/stream`. The cockpit auto-subscribes on open; programmatic callers must too. See [docs/lazy-fire.md](./docs/lazy-fire.md).
+> **Auto-fires on create.** `POST /chats` starts the runner immediately; SSE subscribers (cockpit on page open, programmatic callers via `chats/:id/stream`) only *observe* progress. Earlier 0.7 builds gated execution on first SSE subscriber — the gate moved into the create handler so headless callers don't need to subscribe just to make the run start.
 
 ---
 
@@ -307,7 +307,7 @@ flowchart LR
         Daemon <--> DB
         Daemon --> Shims
         Shims --> Subprocs
-        MCP <-->|JSON-RPC| Daemon
+        MCP <-->|REST + SSE| Daemon
     end
 
     subgraph External["External CLIs"]
@@ -320,7 +320,7 @@ flowchart LR
 
 **Key components:**
 
-- **Cockpit** ([`src/app/`](./src/app/)) — Next.js 15 UI on `:5050`. Templates, chats, voices, settings, permissions.
+- **Cockpit** ([`src/app/`](./src/app/)) — Next.js 16 UI on `:5050`. Templates, chats, voices, settings, permissions.
 - **Daemon** ([`src/daemon/`](./src/daemon/)) — Fastify server on `:7707`. Owns the DB, spawns subprocesses, exposes REST + SSE.
 - **Agent shims** ([`src/daemon/agents/`](./src/daemon/agents/)) — One per CLI lineage. Maps voice config → headless invocation + parses stream-JSON.
 - **MCP server** ([`src/mcp/`](./src/mcp/)) — JSON-RPC over stdio. Lets external CLIs (Claude, Codex, …) trigger runs programmatically.

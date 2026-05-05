@@ -10,13 +10,17 @@ const API_PREFIX = "/api/v1";
 
 /**
  * Prepend /api/v1 to a daemon path unless the caller already supplied
- * it. Exact-segment match required — a naive startsWith would treat
- * `/api/v10/...` or `/api/v1foo/...` as already-prefixed and skip
- * prepending.
+ * it. Normalise leading-slash first so `api/v1/foo` (no slash) doesn't
+ * double-prefix to `/api/v1/api/v1/foo`. Exact-segment match required
+ * — a naive startsWith would treat `/api/v10/...` or `/api/v1foo/...`
+ * as already-prefixed.
  */
 function v1(path: string): string {
-  if (path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)) return path;
-  return `${API_PREFIX}${path.startsWith("/") ? path : `/${path}`}`;
+  const normalised = path.startsWith("/") ? path : `/${path}`;
+  if (normalised === API_PREFIX || normalised.startsWith(`${API_PREFIX}/`)) {
+    return normalised;
+  }
+  return `${API_PREFIX}${normalised}`;
 }
 
 const ApiResponseSchema = z.object({

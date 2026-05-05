@@ -26,7 +26,9 @@ export function registerSystemRoutes(
   fastify: FastifyInstance,
   deps: SystemRouteDeps,
 ): void {
-  // List blocked chats — used by the cockpit's /blocked page.
+  // List blocked chats — consumed by the MCP `list_blocked` tool. There
+  // is no cockpit /blocked page today; older comments referenced one
+  // that never landed.
   fastify.get<{ Reply: ApiResponse<ListEnvelope<object>> }>('/blocked', async () => {
     try {
       const items = await chats.list({ status: 'blocked' });

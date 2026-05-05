@@ -40,17 +40,16 @@ export async function fetchFromDaemon<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const base = getBaseUrl();
-  // Prepend /api/v1 unless the caller already supplied it. The exact
-  // segment check matters — a naive `startsWith(API_PREFIX)` would
-  // match `/api/v10/...` or `/api/v1foo/...` and skip prepending. We
-  // require either an exact-match path or a trailing-slash boundary.
-  const isPrefixed = path === API_PREFIX || path.startsWith(`${API_PREFIX}/`);
-  const versionedPath = isPrefixed
-    ? path
-    : `${API_PREFIX}${path.startsWith("/") ? path : `/${path}`}`;
-  const url = base.endsWith("/") || versionedPath.startsWith("/")
-    ? `${base.replace(/\/$/, "")}${versionedPath.startsWith("/") ? versionedPath : `/${versionedPath}`}`
-    : `${base}/${versionedPath}`;
+  // Normalise to a leading-slash form first so the prefix check can
+  // anchor on `/api/v1` exactly. Without this, `api/v1/foo` (no leading
+  // slash) gets double-prefixed → `/api/v1/api/v1/foo`.
+  const normalised = path.startsWith("/") ? path : `/${path}`;
+  // Exact-segment match — naive `startsWith` would match `/api/v10/...`
+  // or `/api/v1foo/...` and skip prepending.
+  const isPrefixed =
+    normalised === API_PREFIX || normalised.startsWith(`${API_PREFIX}/`);
+  const versionedPath = isPrefixed ? normalised : `${API_PREFIX}${normalised}`;
+  const url = `${base.replace(/\/$/, "")}${versionedPath}`;
 
   try {
     const response = await fetch(url, {

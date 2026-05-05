@@ -84,11 +84,48 @@ Reproduces 1-in-20, no obvious pattern. Drop the failing test + suspect code int
 
 ```bash
 npm i -g chorus-codes      # install
-chorus init                # finds AI tools you already have
+chorus init                # finds AI tools you already have, wires up MCP
 chorus start --ui          # opens http://localhost:5050
 ```
 
 Paste a task. Hit submit. Watch the AIs argue.
+
+### Or drive it from any AI CLI you already use
+
+`chorus init` registers Chorus as an MCP server with every CLI / IDE it detects (Claude Code, Codex, Gemini CLI, Cursor, Windsurf, Kimi, OpenCode). After that, just ask the assistant in plain English:
+
+```
+> Use chorus to review the staged diff against main
+> Ask chorus to run the architect-review template on src/payments/*.ts
+> chorus, get a second opinion on this function from claude + gemini
+```
+
+Or invoke a specific MCP tool directly — every CLI uses the same name (`chorus`) and exposes nine tools:
+
+| Tool | What it does |
+|---|---|
+| `create_chat` | Kick off a review (returns a `chatId` + URL) |
+| `wait_for_chat` | Block until the run reaches a terminal state |
+| `get_chat_status` | Poll a running chat without blocking |
+| `cancel_chat` / `resume_chat` | Stop or restart |
+| `list_templates` / `list_personas` | Discover what's available |
+| `invoke_persona` | Run a single persona (skip multi-reviewer fan-out) |
+| `list_blocked` | See chats that need human input |
+
+Example raw invocation (from any MCP client):
+
+```jsonc
+// tool: chorus.create_chat
+{
+  "template": "code-review",
+  "work": "Review the staged diff vs main. Flag race conditions and missing tests."
+}
+// → { "chatId": "abc123", "url": "http://localhost:5050/runs/abc123", "status": "reviewing" }
+```
+
+Stream results back into your editor, or open the URL to watch live.
+
+---
 
 **Requires** Node 20+ and at least *one* of these (you probably already have one):
 
@@ -254,20 +291,6 @@ Reviewers run on your machine. You decide how much trust to give them:
 Configure on first run, or anytime at *Settings → Permissions*.
 
 > **Trust model in plain English.** "Workspace" means the reviewer can write files inside its working directory and run scoped commands, but can't reach the internet or write outside the sandbox. "Full" means anything-goes — only enable on a personal machine you own. Run `chorus doctor` to verify each AI tool got the sandbox you set.
-
----
-
-## Use it from inside another AI tool
-
-Chorus speaks MCP — the protocol Claude Code, Cursor, Codex, Gemini CLI etc. use to talk to other tools. So you can trigger a Chorus run *from inside* the AI tool you're already using.
-
-Example, inside Claude Code:
-
-> *"Run code-review on the diff against main using Chorus"*
-
-Claude Code calls Chorus → Chorus fans out to other AI tools → results stream back into Claude Code. Useful when you want a second opinion without leaving the editor.
-
-`chorus init` wires up MCP for the orchestrators it detects (Claude / Codex / Gemini / Cursor / Windsurf, etc.).
 
 ---
 

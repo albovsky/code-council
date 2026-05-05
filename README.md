@@ -4,8 +4,8 @@
 
 # Chorus
 
-**A second opinion (and a third) before you ship AI-written code.**
-The same AI that wrote your code can't catch its own blind spots. Chorus runs your work past 2–3 *different* AI tools — in parallel — and only gives the green light when they agree.
+**A second opinion (and a third) before you ship AI-written code — using the AI subscriptions you already pay for.**
+2–3 *different* AI tools review the same change in parallel, only green-lighting when they agree. Runs on your existing Claude Pro / ChatGPT Plus / Gemini Advanced — typical review costs **$0** out of pocket.
 
 [![CI](https://github.com/99xAgency/chorus/actions/workflows/ci.yml/badge.svg)](https://github.com/99xAgency/chorus/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/chorus-codes?color=22c55e)](https://www.npmjs.com/package/chorus-codes)
@@ -27,14 +27,24 @@ The same AI that wrote your code can't catch its own blind spots. Chorus runs yo
 
 ## The problem Chorus solves
 
-AI coding tools are fast, confident, and wrong about 5% of the time in ways that are easy to miss. The same model that wrote your code can't see its own gaps. And asking GPT to review GPT's work is theatre — same blind spots, same biases.
+🤖 **AI coding tools are confident — and wrong about 5% of the time** in subtle ways that are hard to spot until production.
 
-Chorus fixes that by being the missing review pass:
+🪞 **The model that wrote your code can't see its own blind spots.**
+Asking GPT to review GPT's work is theatre — same training, same biases.
 
-1. One AI writes (or you write the code yourself).
-2. **2–3 AIs from different vendors** read the result in parallel.
-3. They each tell you "ship it" or "wait, this breaks if X".
-4. Disagreement is a red flag — you see it before you merge.
+💸 **Multi-AI review on raw API keys gets expensive fast.**
+Every diff × 3 reviewers × pay-per-token = real money. So nobody does it routinely.
+
+### Chorus fixes all three
+
+✅ **Different vendors review each other.**
+Claude writes, GPT and Gemini check it. Different blind spots cover each other. Disagreement = red flag *before* you merge.
+
+✅ **Uses your existing AI subscriptions.**
+You're already paying for Claude Pro / ChatGPT Plus / Gemini Advanced (~$20/mo each). Chorus drives them headlessly through their CLIs — every multi-AI review costs **$0 out of pocket**, just counts against the quota you already have. Per-token API users save 10-100× vs running the same prompts directly.
+
+✅ **Local-first, zero markup.**
+Your code never reaches a new vendor. Chorus runs on your laptop, talks to the AI tools you already trust, and shuts up. Open source, Apache-2.0.
 
 That's the whole pitch.
 

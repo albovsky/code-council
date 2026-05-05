@@ -1,6 +1,6 @@
 {
   "name": "chorus-codes",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Driver-agnostic multi-LLM peer review for code decisions. Bring your own CLI; Chorus convenes 2-4 other LLMs to review the work before you ship.",
   "license": "Apache-2.0",
   "author": "99x Agency",
@@ -19,7 +19,7 @@
     "dev": "next dev -p 5050 -H 127.0.0.1",
     "dev:daemon": "tsx watch src/daemon/index.ts",
     "dev:mcp": "tsx src/mcp/index.ts",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start -p 5050 -H 127.0.0.1",
     "start:daemon": "node dist/daemon/index.js",
     "lint": "eslint",

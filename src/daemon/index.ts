@@ -59,7 +59,7 @@ function resolveDaemonPort(): number {
 
 const PORT = resolveDaemonPort();
 const HOST = '127.0.0.1';
-const VERSION = '0.7.3';
+const VERSION = '0.7.4';
 const startTime = Date.now();
 
 // Absolute path to bin/chorus.mjs — used by /orchestrators/:name/connect

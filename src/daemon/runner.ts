@@ -16,6 +16,7 @@ import { atomicWriteJsonSync } from '../lib/atomic-write.js';
 import { isReviewOnlyPhase, type StandardPhase, type Template } from '../lib/template-schema.js';
 import type { ErrorDetector } from './error-detector.js';
 import { runDoer } from './runner/doer-driver.js';
+import { readPriorRoundFeedback } from './runner/prior-round.js';
 import { runReviewers } from './runner/reviewer-driver.js';
 import { runReviewOnlyPhase } from './runner/review-only-phase.js';
 import { detectGitContext, runShipPhase } from './ship.js';
@@ -198,6 +199,11 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
           ts: Date.now(),
         });
 
+        // Round 2+ feeds prior reviewer findings back into the doer prompt
+        // so disagreement → retry is a real revision loop, not "ask the same
+        // question again." Returns "" when round === 1.
+        const priorRoundFeedback = readPriorRoundFeedback(chatDir, round);
+
         const doerAnswer = await runDoer(
           chatDir,
           chatId,
@@ -212,6 +218,7 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
           abortSignal,
           repoPath,
           template.fallback?.doer,
+          priorRoundFeedback,
         );
 
         // Treat null OR partial-stream as a doer failure — `!doerAnswer.full`

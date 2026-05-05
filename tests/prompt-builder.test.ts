@@ -133,6 +133,40 @@ describe('buildAsk', () => {
     expect(out).toContain('## Excluded (do NOT read)');
     expect(out).toContain('- Phase draft: explicitly blocked');
   });
+
+  it('embeds prior-round feedback before the "How to respond" footer', () => {
+    const feedback =
+      '## Prior round feedback\n\nThe previous round did not reach reviewer consensus...\n\n### Reviewer: codex-cli (#0)\nrequest changes — fix edge case X\n## DONE';
+    const out = buildAsk(
+      fixturePhase(),
+      0,
+      2,
+      'work',
+      { include: [], exclude: [] },
+      '',
+      undefined,
+      feedback,
+    );
+    expect(out).toContain('## Prior round feedback');
+    expect(out).toContain('### Reviewer: codex-cli (#0)');
+    expect(out.indexOf('## Prior round feedback')).toBeLessThan(
+      out.indexOf('## How to respond'),
+    );
+    // DONE sentinel still anchors the very end of the prompt.
+    expect(out.trimEnd().endsWith('## DONE')).toBe(true);
+  });
+
+  it('omits the prior-round feedback section when arg is empty / undefined', () => {
+    const out = buildAsk(
+      fixturePhase(),
+      0,
+      1,
+      'work',
+      { include: [], exclude: [] },
+      '',
+    );
+    expect(out).not.toContain('## Prior round feedback');
+  });
 });
 
 describe('buildReviewerAsk', () => {

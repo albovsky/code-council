@@ -173,6 +173,7 @@ export function buildAsk(
   inputs: Phase['inputs'],
   filesBlock: string,
   personaSystemPrompt?: string,
+  priorRoundFeedback?: string,
 ): string {
   const lines: string[] = [];
 
@@ -214,6 +215,10 @@ export function buildAsk(
       lines.push(`- Phase ${excludePhaseId}: explicitly blocked`);
     }
     lines.push('');
+  }
+
+  if (priorRoundFeedback && priorRoundFeedback.trim().length > 0) {
+    lines.push(priorRoundFeedback);
   }
 
   lines.push('## How to respond');

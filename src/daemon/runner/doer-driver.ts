@@ -34,6 +34,7 @@ export async function runDoer(
   abortSignal: AbortSignal,
   repoPath?: string,
   templateFallbackDoer?: ReadonlyArray<{ lineage: string; models: string[] }>,
+  priorRoundFeedback?: string,
 ): Promise<{ content: string; full: boolean } | null> {
   const doerModel = phase.doer.models?.[0];
   const shim = pickShimForVoice(phase.doer.lineage, doerModel);
@@ -132,6 +133,7 @@ export async function runDoer(
     phase.inputs,
     filesBlock,
     doerPersonaPrompt,
+    priorRoundFeedback,
   );
   fs.writeFileSync(askFile, ask);
 

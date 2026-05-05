@@ -76,6 +76,99 @@ export function registerSystemRoutes(
     }
   });
 
+  /**
+   * Persist a validated manual CLI path so it survives daemon restarts
+   * and is visible to subsequent reviewer spawns. Pre-fix the cockpit
+   * just kept successful validations in React state — the next boot lost
+   * the hint entirely (the bug the launch dogfood pass surfaced).
+   *
+   * Caller MUST validate via `/onboard/validate-cli-path` first; we
+   * re-validate here as a safety net so a stale React state can't store
+   * a path that no longer runs.
+   */
+  fastify.post<{
+    Body: { id: string; path: string };
+    Reply: ApiResponse<object>;
+  }>('/onboard/save-cli-path', async (req) => {
+    try {
+      const { id, path: customPath } = req.body || {};
+      if (!id || typeof customPath !== 'string') {
+        return errorResponse('bad_request', 'id and path are required');
+      }
+      const { validateCliPath, clearDetectionCache } = await import(
+        '../../lib/cli-detect.js'
+      );
+      const validation = validateCliPath(id as never, customPath);
+      if (!validation.found) {
+        return errorResponse(
+          'validation',
+          validation.reason ?? 'path failed validation',
+        );
+      }
+      const { cliPaths } = await import('../../lib/cli-paths.js');
+      await cliPaths.set(id as never, validation.path!);
+      // Refresh sync caches so subsequent detection + spawns honour the
+      // new path immediately, not after the next boot.
+      await cliPaths.refreshCache();
+      clearDetectionCache();
+      // Also refresh the headless spawn PATH so the new dirname is
+      // prepended without requiring a daemon restart.
+      try {
+        const { buildRuntimePath } = await import('../../lib/runtime-path.js');
+        const { setSpawnPath } = await import('../headless.js');
+        const merged = await buildRuntimePath({
+          additionalDirs: cliPaths.cachedDirs(),
+        });
+        setSpawnPath(merged);
+      } catch {
+        /* spawn-path refresh is best-effort; spawnEnv() already
+           prepends cli-paths cachedDirs at spawn time */
+      }
+      return successResponse({ id, path: validation.path });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('internal', message);
+    }
+  });
+
+  /** Read every saved manual CLI path. Drives the cockpit's "saved" badge
+   *  and `chorus doctor`. Empty values are omitted. */
+  fastify.get<{ Reply: ApiResponse<object> }>(
+    '/onboard/cli-paths',
+    async () => {
+      try {
+        const { cliPaths } = await import('../../lib/cli-paths.js');
+        const all = await cliPaths.listAll();
+        const compact: Record<string, string> = {};
+        for (const [id, p] of Object.entries(all)) {
+          if (p) compact[id] = p;
+        }
+        return successResponse(compact);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return errorResponse('internal', message);
+      }
+    },
+  );
+
+  /** Forget a saved manual path. Cockpit calls this when the user
+   *  clicks "use auto-detect instead". */
+  fastify.delete<{
+    Params: { id: string };
+    Reply: ApiResponse<object>;
+  }>('/onboard/cli-paths/:id', async (req) => {
+    try {
+      const { cliPaths } = await import('../../lib/cli-paths.js');
+      const { clearDetectionCache } = await import('../../lib/cli-detect.js');
+      await cliPaths.clear(req.params.id as never);
+      clearDetectionCache();
+      return successResponse({ id: req.params.id, cleared: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('internal', message);
+    }
+  });
+
   // ─── Orchestrators (editors that call chorus via MCP) ────────────────
   fastify.get<{ Reply: ApiResponse<object[]> }>('/orchestrators', async () => {
     try {

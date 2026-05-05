@@ -7,6 +7,7 @@ import { TriadLogo } from "@/components/triad-logo";
 import { Button } from "@/components/ui/button";
 import {
   detectInstalledClis,
+  saveCliPath,
   validateCliPath,
   type CliDetection,
   type DetectableCliId,
@@ -201,6 +202,21 @@ export default function OnboardingPage() {
     try {
       const result = await validateCliPath(id, value);
       if (result.found) {
+        // Persist server-side BEFORE flipping UI state. If the save call
+        // fails, surface the error and don't pretend the CLI is wired —
+        // pre-fix this whole save step was missing, which is what made
+        // the path forgotten across daemon restarts.
+        try {
+          await saveCliPath(id, result.path ?? value);
+        } catch (err) {
+          setManualError((prev) => ({
+            ...prev,
+            [id]: `Validation passed but save failed: ${
+              err instanceof Error ? err.message : "unknown error"
+            }. Try again, or paste the path again.`,
+          }));
+          return;
+        }
         setDetection((prev) => ({ ...prev, [id]: result }));
         setSelectedClis((prev) => new Set(prev).add(id));
         // Refresh voices so the model list populates for the just-validated CLI.

@@ -47,6 +47,37 @@ export async function validateCliPath(
   });
 }
 
+/**
+ * Persist a manual CLI path for the daemon to use across restarts.
+ * Backend re-validates server-side, so a stale React state can't store a
+ * path that no longer runs. Returns the saved absolute path.
+ */
+export async function saveCliPath(
+  id: DetectableCliId,
+  path: string,
+): Promise<{ id: string; path: string }> {
+  return fetchFromDaemon<{ id: string; path: string }>(
+    "/onboard/save-cli-path",
+    {
+      method: "POST",
+      body: JSON.stringify({ id, path }),
+    },
+  );
+}
+
+export async function getSavedCliPaths(): Promise<Record<string, string>> {
+  return fetchFromDaemon<Record<string, string>>("/onboard/cli-paths");
+}
+
+export async function clearSavedCliPath(
+  id: DetectableCliId,
+): Promise<{ id: string; cleared: boolean }> {
+  return fetchFromDaemon<{ id: string; cleared: boolean }>(
+    `/onboard/cli-paths/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+}
+
 export async function updatePermissions(
   patch: Partial<Omit<PermissionSettings, "profileDescriptions">>,
 ): Promise<PermissionSettings> {

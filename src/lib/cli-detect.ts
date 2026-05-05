@@ -16,6 +16,8 @@ import { existsSync } from 'fs';
 import { homedir, platform } from 'os';
 import path from 'path';
 
+import { cliPaths } from './cli-paths.js';
+
 export type DetectableCli =
   | 'claude-code'
   | 'codex-cli'
@@ -283,6 +285,17 @@ function verifyRunnable(
 }
 
 function detectOne(cli: DetectableCli): CliDetection {
+  // 0. User-supplied manual path wins over PATH/fallback. Without this,
+  //    a fresh boot's PATH lookup would silently miss a CLI in a custom
+  //    location even though the user had explicitly told us where to
+  //    find it via the onboarding "I know where it is" affordance.
+  //    Read from the sync cache populated at daemon boot — async settings
+  //    fetch isn't available here without refactoring every detect caller.
+  const manual = cliPaths.getCached(cli);
+  if (manual && existsSync(manual) && verifyRunnable(cli, manual).ok) {
+    return { id: cli, found: true, path: manual, source: 'manual' };
+  }
+
   // 1. PATH lookup
   const onPath = pathLookup(BINARY_NAME[cli]);
   if (onPath && verifyRunnable(cli, onPath).ok) {

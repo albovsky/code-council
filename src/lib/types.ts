@@ -328,3 +328,14 @@ export interface ApiResponse<T> {
     limit?: number;
   };
 }
+
+/**
+ * List-endpoint envelope nested inside `ApiResponse.data`. Wire shape is
+ * `{ ok: true, data: { items, total, hasMore } }`. Frozen pre-launch so
+ * adding limit/offset query params in v0.8 is a non-breaking change.
+ */
+export interface ListEnvelope<T> {
+  items: T[];
+  total: number;
+  hasMore: boolean;
+}

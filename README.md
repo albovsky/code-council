@@ -272,6 +272,14 @@ Reviewers can run on your machine. You decide how much trust they get:
 
 Configure on first run, or anytime at `/settings/permissions`.
 
+> **Trust model.** The sandbox is the wall — once a doer is running inside
+> Workspace mode, it can shell-out and modify files within its chat directory
+> without prompting. `autoApprovePrompts` is on by default to keep flow
+> uninterrupted. **Running a doer = trusting that doer to operate inside its
+> sandbox.** Run `chorus doctor` to confirm sandbox is enforced for every
+> CLI on your host (OpenCode and Kimi historically ignored sandbox; chorus
+> now fails closed when they're asked to run in Strict mode).
+
 ---
 
 ## Architecture deep-dive

@@ -13,7 +13,9 @@ import { voices } from '../../lib/db/index.js';
 import {
   successResponse,
   errorResponse,
+  listEnvelope,
   type ApiResponse,
+  type ListEnvelope,
 } from '../api-response.js';
 
 const Lineage = z.enum(['anthropic', 'openai', 'google', 'opencode', 'moonshot']);
@@ -65,14 +67,15 @@ export function registerVoiceRoutes(fastify: FastifyInstance): void {
       provider?: string;
       enabled?: string;
     };
-    Reply: ApiResponse<object[]>;
+    Reply: ApiResponse<ListEnvelope<object>>;
   }>('/voices', async (request) => {
     try {
       const parsed = ListQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return errorResponse('validation', parsed.error.message);
       }
-      return successResponse(await voices.list(parsed.data));
+      const items = await voices.list(parsed.data);
+      return successResponse(listEnvelope(items));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);

@@ -6,6 +6,13 @@
 import { z } from "zod";
 
 const DAEMON_BASE = "http://127.0.0.1:7707";
+const API_PREFIX = "/api/v1";
+
+/** Prepend /api/v1 to a daemon path unless the caller already supplied it. */
+function v1(path: string): string {
+  if (path.startsWith(API_PREFIX)) return path;
+  return `${API_PREFIX}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 const ApiResponseSchema = z.object({
   ok: z.boolean(),
@@ -26,7 +33,7 @@ export async function daemonFetch<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const url = `${DAEMON_BASE}${path}`;
+  const url = `${DAEMON_BASE}${v1(path)}`;
 
   let response: Response;
   try {
@@ -47,14 +54,20 @@ export async function daemonFetch<T>(
     throw error;
   }
 
-  if (!response.ok) {
-    const body = await response.text();
+  // Parse the JSON envelope FIRST, regardless of HTTP status. The
+  // daemon now returns 4xx for client errors (validation/not_found/
+  // conflict) per the v0.7 shape-freeze; without this, MCP consumers
+  // would see ugly raw-text errors like `Daemon returned 400: {...}`
+  // instead of the nice `error.message` they get on 200+ok:false.
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
     throw new Error(
-      `Daemon returned ${response.status}: ${body || response.statusText}`
+      `Daemon returned ${response.status} ${response.statusText} with non-JSON body`,
     );
   }
 
-  const json = await response.json();
   const parsed = ApiResponseSchema.parse(json);
 
   if (!parsed.ok) {
@@ -74,7 +87,7 @@ export async function* streamChat(
   chatId: string,
   timeoutSec: number = 600
 ): AsyncGenerator<Record<string, unknown>> {
-  const url = `${DAEMON_BASE}/chats/${chatId}/stream`;
+  const url = `${DAEMON_BASE}${v1(`/chats/${chatId}/stream`)}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
 

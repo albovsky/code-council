@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Generic proxy: /api/daemon/<path> → http://127.0.0.1:7707/<path>
+ * Generic proxy: /api/daemon/<path> → http://127.0.0.1:7707/api/v1/<path>
  *
  * Why: the browser cannot reach the daemon directly (127.0.0.1 in the user's
  * browser is the user's machine, not the server hosting the Next app).
  * Server-side fetches still hit the daemon URL directly via lib/api/client.ts.
+ *
+ * The proxy auto-prepends `/api/v1` when the caller didn't already
+ * include it, so cockpit code can keep saying `/api/daemon/chats/...`
+ * during the v0.7 → v1 migration. Callers that explicitly want a
+ * different version can pass `/api/daemon/api/v1/...` and the prefix is
+ * left alone.
  */
 
 export const dynamic = "force-dynamic";
@@ -13,6 +19,7 @@ export const runtime = "nodejs";
 
 const DAEMON_URL =
   process.env.CHORUS_DAEMON_URL || "http://127.0.0.1:7707";
+const API_PREFIX = "api/v1";
 
 interface ProxyContext {
   params: Promise<{ path: string[] }>;
@@ -21,8 +28,13 @@ interface ProxyContext {
 async function proxy(req: NextRequest, ctx: ProxyContext): Promise<Response> {
   const { path } = await ctx.params;
   const segments = path.join("/");
+  // Auto-prepend /api/v1 so cockpit code can call /api/daemon/<route>
+  // while the daemon itself only exposes the versioned shape.
+  const versionedSegments = segments.startsWith(API_PREFIX)
+    ? segments
+    : `${API_PREFIX}/${segments}`;
   const search = req.nextUrl.search;
-  const target = `${DAEMON_URL}/${segments}${search}`;
+  const target = `${DAEMON_URL}/${versionedSegments}${search}`;
 
   const headers = new Headers();
   const accept = req.headers.get("accept");

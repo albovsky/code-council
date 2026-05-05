@@ -11,8 +11,11 @@ import {
 } from '../../lib/template-schema.js';
 import {
   errorResponse,
+  listEnvelope,
+  sendError,
   successResponse,
   type ApiResponse,
+  type ListEnvelope,
 } from '../api-response.js';
 import type { ErrorDetector } from '../error-detector.js';
 import * as participantAborts from '../participant-aborts.js';
@@ -67,7 +70,7 @@ export function registerChatRoutes(
 ): void {
   fastify.get<{
     Querystring: { status?: string; limit?: string; offset?: string };
-    Reply: ApiResponse<object[]>;
+    Reply: ApiResponse<ListEnvelope<object>>;
   }>('/chats', async (request) => {
     try {
       const { status, limit, offset } = request.query;
@@ -76,7 +79,7 @@ export function registerChatRoutes(
         limit: limit ? parseInt(limit, 10) : undefined,
         offset: offset ? parseInt(offset, 10) : undefined,
       });
-      return successResponse(list);
+      return successResponse(listEnvelope(list));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);
@@ -86,14 +89,14 @@ export function registerChatRoutes(
   fastify.get<{
     Params: { id: string };
     Reply: ApiResponse<object>;
-  }>('/chats/:id', async (request) => {
+  }>('/chats/:id', async (request, reply) => {
     try {
       if (!isValidChatId(request.params.id)) {
-        return errorResponse('validation', 'invalid chat id');
+        return sendError(reply, 'validation', 'invalid chat id');
       }
       const chat = await chats.getBySlugOrId(request.params.id);
       if (!chat) {
-        return errorResponse('not_found', `Chat ${request.params.id} not found`);
+        return sendError(reply, 'not_found', `Chat ${request.params.id} not found`);
       }
       // phaseEvents.list keys by ULID, not slug. Use the resolved row's
       // id so a /chats/<slug> request returns events correctly.
@@ -115,12 +118,12 @@ export function registerChatRoutes(
       yolo?: boolean;
     };
     Reply: ApiResponse<object>;
-  }>('/chats', async (request) => {
+  }>('/chats', async (request, reply) => {
     try {
       const { work, templateId, files, repoPath, artifact, yolo } = request.body;
 
       if (!work || !templateId) {
-        return errorResponse('validation', 'work and templateId are required');
+        return sendError(reply, 'validation', 'work and templateId are required');
       }
 
       // Validate repoPath — must be an absolute path to an existing
@@ -137,7 +140,7 @@ export function registerChatRoutes(
       // phase runs.
       if (repoPath !== undefined) {
         if (typeof repoPath !== 'string' || !path.isAbsolute(repoPath)) {
-          return errorResponse('validation', 'repoPath must be an absolute path');
+          return sendError(reply, 'validation', 'repoPath must be an absolute path');
         }
         const resolved = path.resolve(repoPath);
         let canonical: string;
@@ -146,20 +149,37 @@ export function registerChatRoutes(
           // exists. Throws ENOENT if either link or target is missing.
           canonical = fs.realpathSync(resolved);
         } catch {
-          return errorResponse('validation', `repoPath does not exist: ${resolved}`);
+          return sendError(reply, 'validation', `repoPath does not exist: ${resolved}`);
         }
         let stat: fs.Stats;
         try {
           stat = fs.statSync(canonical);
         } catch {
-          return errorResponse('validation', `repoPath does not exist: ${canonical}`);
+          return sendError(reply, 'validation', `repoPath does not exist: ${canonical}`);
         }
         if (!stat.isDirectory()) {
-          return errorResponse(
+          return sendError(
+            reply,
             'validation',
             `repoPath must be a directory: ${canonical}`,
           );
         }
+      }
+
+      // C4 — template existence check is the daemon-side invariant (the
+      // MCP layer also validates, but only this check is authoritative).
+      // Pre-fix, an unknown templateId silently fell through to chat
+      // creation and the runner stalled looking up a row that didn't
+      // exist; the user saw a chat stuck in 'drafting' forever.
+      const tmpl = await templates.getById(templateId);
+      if (!tmpl) {
+        const valid = (await templates.list()).map((t) => t.id);
+        return sendError(
+          reply,
+          'not_found',
+          `Unknown templateId "${templateId}". Valid IDs: ${valid.join(', ')}`,
+          { validIds: valid },
+        );
       }
 
       // Parse the template up-front so we can branch on review-only vs
@@ -169,26 +189,23 @@ export function registerChatRoutes(
       let initialPhaseKind: PhaseKind = 'plan';
       let parsedTemplateForArtifactCheck: ReturnType<typeof TemplateSchema.parse> | null = null;
       try {
-        const tmpl = await templates.getById(templateId);
-        if (tmpl) {
-          const rawParsed = yaml.parse(tmpl.yaml);
-          const safe = TemplateSchema.safeParse(rawParsed);
-          if (safe.success) {
-            parsedTemplateForArtifactCheck = safe.data;
-            const firstKind = safe.data.phases[0]?.kind;
+        const rawParsed = yaml.parse(tmpl.yaml);
+        const safe = TemplateSchema.safeParse(rawParsed);
+        if (safe.success) {
+          parsedTemplateForArtifactCheck = safe.data;
+          const firstKind = safe.data.phases[0]?.kind;
+          initialPhaseKind = firstKind as PhaseKind;
+        } else {
+          // Fall back to a loose read so older malformed templates
+          // still produce an initial event with their declared kind.
+          const loose = rawParsed as { phases?: Array<{ kind?: string }> } | undefined;
+          const firstKind = loose?.phases?.[0]?.kind;
+          if (firstKind === 'review_only') initialPhaseKind = 'review_only';
+          else if (
+            typeof firstKind === 'string' &&
+            (VALID_PHASE_KINDS as readonly string[]).includes(firstKind)
+          ) {
             initialPhaseKind = firstKind as PhaseKind;
-          } else {
-            // Fall back to a loose read so older malformed templates
-            // still produce an initial event with their declared kind.
-            const loose = rawParsed as { phases?: Array<{ kind?: string }> } | undefined;
-            const firstKind = loose?.phases?.[0]?.kind;
-            if (firstKind === 'review_only') initialPhaseKind = 'review_only';
-            else if (
-              typeof firstKind === 'string' &&
-              (VALID_PHASE_KINDS as readonly string[]).includes(firstKind)
-            ) {
-              initialPhaseKind = firstKind as PhaseKind;
-            }
           }
         }
       } catch {
@@ -201,7 +218,8 @@ export function registerChatRoutes(
         templateRequiresArtifact(parsedTemplateForArtifactCheck)
       ) {
         if (typeof artifact !== 'string' || artifact.trim().length === 0) {
-          return errorResponse(
+          return sendError(
+            reply,
             'validation',
             'artifact is required for review-only templates',
           );
@@ -211,7 +229,8 @@ export function registerChatRoutes(
           const maxBytes = firstPhase.artifact.maxBytes;
           const byteLen = Buffer.byteLength(artifact, 'utf-8');
           if (byteLen > maxBytes) {
-            return errorResponse(
+            return sendError(
+              reply,
               'validation',
               `artifact exceeds template limit (${byteLen} bytes > ${maxBytes} bytes)`,
             );
@@ -221,7 +240,8 @@ export function registerChatRoutes(
         // Non-review-only templates: artifact is meaningless. Reject
         // loudly so callers don't silently lose payload (e.g. mistyped
         // templateId pointing at a full-pipeline template).
-        return errorResponse(
+        return sendError(
+          reply,
           'validation',
           'artifact is only valid for review-only templates',
         );
@@ -314,16 +334,16 @@ export function registerChatRoutes(
   fastify.post<{
     Params: { id: string };
     Reply: ApiResponse<object>;
-  }>('/chats/:id/cancel', async (request) => {
+  }>('/chats/:id/cancel', async (request, reply) => {
     try {
       const param = request.params.id;
       if (!isValidChatId(param)) {
-        return errorResponse('validation', 'invalid chat id');
+        return sendError(reply, 'validation', 'invalid chat id');
       }
       // Resolve slug → ULID first. Cancel/abort/tmux all key by ULID.
       const existing = await chats.getBySlugOrId(param);
       if (!existing) {
-        return errorResponse('not_found', `Chat ${param} not found`);
+        return sendError(reply, 'not_found', `Chat ${param} not found`);
       }
       const chatId = existing.id;
       const chat = await chats.cancel(chatId);
@@ -365,11 +385,11 @@ export function registerChatRoutes(
   fastify.post<{
     Params: { id: string; key: string };
     Reply: ApiResponse<{ aborted: boolean }>;
-  }>('/chats/:id/participants/:key/cancel', async (request) => {
+  }>('/chats/:id/participants/:key/cancel', async (request, reply) => {
     try {
       const id = request.params.id;
       if (!isValidChatId(id)) {
-        return errorResponse('validation', 'invalid chat id');
+        return sendError(reply, 'validation', 'invalid chat id');
       }
       const key = request.params.key;
       // Strict key shape — both prefixes the registry uses. Reject
@@ -378,11 +398,11 @@ export function registerChatRoutes(
       // MUST start with an alphanumeric (not `-`/`_`) so a key like
       // `reviewer--0` (empty agent name) is rejected.
       if (!/^(doer-|reviewer-)[A-Za-z0-9][A-Za-z0-9_-]*(?:-\d+)?$/.test(key)) {
-        return errorResponse('validation', 'invalid participant key');
+        return sendError(reply, 'validation', 'invalid participant key');
       }
       const existing = await chats.getBySlugOrId(id);
       if (!existing) {
-        return errorResponse('not_found', `Chat ${id} not found`);
+        return sendError(reply, 'not_found', `Chat ${id} not found`);
       }
       const aborted = participantAborts.abortParticipant(existing.id, key);
       return successResponse({ aborted });
@@ -400,15 +420,15 @@ export function registerChatRoutes(
   fastify.post<{
     Params: { id: string };
     Reply: ApiResponse<object>;
-  }>('/chats/:id/rerun', async (request) => {
+  }>('/chats/:id/rerun', async (request, reply) => {
     try {
       const param = request.params.id;
       if (!isValidChatId(param)) {
-        return errorResponse('validation', 'invalid chat id');
+        return sendError(reply, 'validation', 'invalid chat id');
       }
       const original = await chats.getBySlugOrId(param);
       if (!original) {
-        return errorResponse('not_found', `Chat ${param} not found`);
+        return sendError(reply, 'not_found', `Chat ${param} not found`);
       }
       // Guard against rerun-on-active. The cockpit Retry button only
       // renders for terminal statuses, but a direct API call could
@@ -416,7 +436,8 @@ export function registerChatRoutes(
       // original. Reject loudly with a dedicated kind so the caller can
       // distinguish from generic validation.
       if (!(TERMINAL_STATUSES as readonly string[]).includes(original.status)) {
-        return errorResponse(
+        return sendError(
+          reply,
           'conflict',
           `Chat ${param} is still active (status=${original.status}). Cancel it first, then retry.`,
         );
@@ -472,11 +493,11 @@ export function registerChatRoutes(
   fastify.delete<{
     Params: { id: string };
     Reply: ApiResponse<object>;
-  }>('/chats/:id', async (request) => {
+  }>('/chats/:id', async (request, reply) => {
     try {
       const id = request.params.id;
       if (!isValidChatId(id)) {
-        return errorResponse('validation', 'invalid chat id');
+        return sendError(reply, 'validation', 'invalid chat id');
       }
       const existing = await chats.getBySlugOrId(id);
       if (!existing) {
@@ -554,15 +575,15 @@ export function registerChatRoutes(
     Params: { id: string };
     Body: { answer: string };
     Reply: ApiResponse<object>;
-  }>('/chats/:id/resume', async (request) => {
+  }>('/chats/:id/resume', async (request, reply) => {
     try {
       const chatId = request.params.id;
       if (!isValidChatId(chatId)) {
-        return errorResponse('validation', 'invalid chat id');
+        return sendError(reply, 'validation', 'invalid chat id');
       }
       const { answer } = request.body;
       if (!answer) {
-        return errorResponse('validation', 'answer is required');
+        return sendError(reply, 'validation', 'answer is required');
       }
       const chat = await chats.update(chatId, { status: 'reviewing' });
       return successResponse(chat);

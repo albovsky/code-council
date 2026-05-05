@@ -1,5 +1,5 @@
 // Settings and secrets API endpoints
-import { Settings, Secret } from "@/lib/types";
+import type { ListEnvelope, Settings, Secret } from "@/lib/types";
 import { fetchFromDaemon } from "./client";
 
 export type SandboxProfile = "strict" | "workspace" | "full";
@@ -34,7 +34,8 @@ export interface CliDetection {
 }
 
 export async function detectInstalledClis(): Promise<CliDetection[]> {
-  return fetchFromDaemon<CliDetection[]>("/onboard/detect-clis");
+  const env = await fetchFromDaemon<ListEnvelope<CliDetection>>("/onboard/detect-clis");
+  return env.items;
 }
 
 export async function validateCliPath(
@@ -164,7 +165,8 @@ export async function updateTelemetryEnabled(
 }
 
 export async function listSecrets(): Promise<Secret[]> {
-  return fetchFromDaemon<Secret[]>("/secrets");
+  const env = await fetchFromDaemon<ListEnvelope<Secret>>("/secrets");
+  return env.items;
 }
 
 export async function upsertSecret(
@@ -175,4 +177,18 @@ export async function upsertSecret(
     method: "PUT",
     body: JSON.stringify(secret),
   });
+}
+
+/**
+ * Idempotent rotation. Returns `{ deleted }` indicating whether a row
+ * was actually removed (`false` if it didn't exist). Cockpit can show
+ * an info toast on `false` ("nothing to delete") if it cares.
+ */
+export async function deleteSecret(
+  provider: string,
+): Promise<{ provider: string; deleted: boolean }> {
+  return fetchFromDaemon<{ provider: string; deleted: boolean }>(
+    `/secrets/${encodeURIComponent(provider)}`,
+    { method: "DELETE" },
+  );
 }

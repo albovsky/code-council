@@ -85,18 +85,31 @@ function parseTemplateRow(row: RawTemplateRow): {
 
 // ─── Input schemas ───────────────────────────────────────────────────────
 
-export const CreateChatSchema = z.object({
-  work: z.string().min(1, "work prompt is required"),
-  template: z.string().optional().default("code-review"),
-  files: z.array(z.string()).optional(),
-  /**
-   * Artifact text for review-only templates (e.g. `template: "review-only"`).
-   * Required when the chosen template's first phase has `kind: review_only`.
-   * Ignored for full-pipeline templates. Capped by the template's
-   * artifact.maxBytes (default 1 MiB).
-   */
-  artifact: z.string().optional(),
-});
+/**
+ * Pre-launch (v0.7) naming sweep landed `templateId` as the canonical
+ * field — matches the REST POST /chats body shape and the
+ * `<resource>Id` pattern used elsewhere (`chatId`, `personaId`).
+ * The legacy `template` alias is accepted so existing scripts keep
+ * working through v0.7; will be dropped in v0.8.
+ */
+export const CreateChatSchema = z
+  .object({
+    work: z.string().min(1, "work prompt is required"),
+    templateId: z.string().optional(),
+    template: z.string().optional(),
+    files: z.array(z.string()).optional(),
+    /**
+     * Artifact text for review-only templates (e.g. `templateId: "review-only"`).
+     * Required when the chosen template's first phase has `kind: review_only`.
+     * Ignored for full-pipeline templates. Capped by the template's
+     * artifact.maxBytes (default 1 MiB).
+     */
+    artifact: z.string().optional(),
+  })
+  .transform((input) => ({
+    ...input,
+    templateId: input.templateId ?? input.template ?? "code-review",
+  }));
 
 export const WaitForChatSchema = z.object({
   chatId: z.string().min(1, "chatId is required"),
@@ -122,13 +135,19 @@ export const ListTemplatesSchema = z.object({});
 
 export const ListPersonasSchema = z.object({});
 
-export const InvokePersonaSchema = z.object({
-  personaId: z.string().min(1, "personaId is required"),
-  brief: z.string().min(1, "brief is required"),
-  files: z.array(z.string()).optional(),
-  template: z.string().optional().default("code-review"),
-  repoPath: z.string().optional(),
-});
+export const InvokePersonaSchema = z
+  .object({
+    personaId: z.string().min(1, "personaId is required"),
+    brief: z.string().min(1, "brief is required"),
+    files: z.array(z.string()).optional(),
+    templateId: z.string().optional(),
+    template: z.string().optional(),
+    repoPath: z.string().optional(),
+  })
+  .transform((input) => ({
+    ...input,
+    templateId: input.templateId ?? input.template ?? "code-review",
+  }));
 
 // ─── Output schemas ─────────────────────────────────────────────────────
 
@@ -207,7 +226,7 @@ export async function createChat(input: unknown) {
     method: "POST",
     body: JSON.stringify({
       work: parsed.work,
-      templateId: parsed.template,
+      templateId: parsed.templateId,
       files: parsed.files,
       ...(parsed.artifact !== undefined ? { artifact: parsed.artifact } : {}),
     }),
@@ -268,9 +287,17 @@ export async function listBlocked(input: unknown) {
   // input is empty object, but we validate it anyway for schema consistency
 
   const result = await daemonFetch<unknown>("/blocked");
+  // Daemon now returns the canonical list envelope `{items, total, hasMore}`.
+  // Array fallback covers legacy callers; `.chats` fallback covers an even
+  // older shape that lived briefly during the v0.6 daemon refactor.
+  const obj = (result as Record<string, unknown>) || {};
   const rows = Array.isArray(result)
     ? (result as Array<Record<string, unknown>>)
-    : ((result as Record<string, unknown>).chats as Array<Record<string, unknown>>) || [];
+    : Array.isArray(obj.items)
+      ? (obj.items as Array<Record<string, unknown>>)
+      : Array.isArray(obj.chats)
+        ? (obj.chats as Array<Record<string, unknown>>)
+        : [];
 
   const chats = z.array(BlockedChatSchema).parse(
     rows.map((row) => ({
@@ -321,9 +348,14 @@ export async function listTemplates(input: unknown) {
   ListTemplatesSchema.parse(input);
 
   const result = await daemonFetch<unknown>("/templates");
+  const obj = (result as Record<string, unknown>) || {};
   const rows = Array.isArray(result)
     ? (result as RawTemplateRow[])
-    : ((result as Record<string, unknown>).templates as RawTemplateRow[]) ?? [];
+    : Array.isArray(obj.items)
+      ? (obj.items as RawTemplateRow[])
+      : Array.isArray(obj.templates)
+        ? (obj.templates as RawTemplateRow[])
+        : [];
 
   const templates = z.array(TemplateSchema).parse(rows.map(parseTemplateRow));
   return { templates };
@@ -338,9 +370,14 @@ export async function listPersonas(input: unknown) {
   ListPersonasSchema.parse(input);
 
   const result = await daemonFetch<unknown>("/personas");
+  const obj = (result as Record<string, unknown>) || {};
   const rows = Array.isArray(result)
     ? (result as DaemonPersonaRow[])
-    : ((result as Record<string, unknown>).personas as DaemonPersonaRow[]) ?? [];
+    : Array.isArray(obj.items)
+      ? (obj.items as DaemonPersonaRow[])
+      : Array.isArray(obj.personas)
+        ? (obj.personas as DaemonPersonaRow[])
+        : [];
 
   const personas = z.array(PersonaSchema).parse(rows.map(personaRowToRef));
 
@@ -376,7 +413,7 @@ export async function invokePersona(input: unknown) {
     method: "POST",
     body: JSON.stringify({
       work: composedBrief,
-      templateId: parsed.template,
+      templateId: parsed.templateId,
       files: parsed.files,
       repoPath: parsed.repoPath,
     }),

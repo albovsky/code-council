@@ -13,15 +13,17 @@ import { validateTemplateYaml } from '../../lib/template-validation.js';
 import {
   successResponse,
   errorResponse,
+  listEnvelope,
   type ApiResponse,
+  type ListEnvelope,
 } from '../api-response.js';
 
 export function registerTemplateRoutes(fastify: FastifyInstance): void {
   // List all templates
-  fastify.get<{ Reply: ApiResponse<object[]> }>('/templates', async () => {
+  fastify.get<{ Reply: ApiResponse<ListEnvelope<object>> }>('/templates', async () => {
     try {
       const list = await templates.list();
-      return successResponse(list);
+      return successResponse(listEnvelope(list));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);
@@ -172,10 +174,11 @@ const VALID_LINEAGES = new Set([
 ]);
 
 export function registerPersonaRoutes(fastify: FastifyInstance): void {
-  fastify.get<{ Reply: ApiResponse<object[]> }>('/personas', async () => {
+  fastify.get<{ Reply: ApiResponse<ListEnvelope<object>> }>('/personas', async () => {
     try {
       const { listPersonas } = await import('../../lib/personas.js');
-      return successResponse(await listPersonas());
+      const items = await listPersonas();
+      return successResponse(listEnvelope(items));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);

@@ -1,5 +1,5 @@
 // Chat API endpoints
-import { Chat } from "@/lib/types";
+import type { Chat, ListEnvelope } from "@/lib/types";
 import { fetchFromDaemon } from "./client";
 
 interface RawChatRow {
@@ -68,10 +68,10 @@ export async function listChats(options?: {
   if (options?.status) params.append("status", options.status);
 
   const query = params.toString();
-  const rows = await fetchFromDaemon<RawChatRow[]>(
+  const env = await fetchFromDaemon<ListEnvelope<RawChatRow>>(
     `/chats${query ? `?${query}` : ""}`,
   );
-  return rows.map(fromRow);
+  return env.items.map(fromRow);
 }
 
 export async function getChat(id: string): Promise<Chat> {

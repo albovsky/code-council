@@ -1,13 +1,38 @@
 /**
- * SSE stream handler — `/chats/:id/stream`. Multiplexes onto an active
- * runChat via runner-multiplex; replays past phase_events from DB so a
- * late-attach run page sees history immediately.
+ * SSE stream handler — `/api/v1/chats/:id/stream`. Multiplexes onto an
+ * active runChat via runner-multiplex; replays past phase_events from
+ * DB so a late-attach run page sees history immediately.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ *  SSE event vocabulary — frozen v0.7. Adding a new event TYPE is
+ *  non-breaking (consumers ignore unknown types). Adding a new payload
+ *  KEY to an existing type is non-breaking. RENAMING a type or REMOVING
+ *  a required key is a wire break — bump /api/v2 first.
+ *
+ *  | type             | required payload                                 |
+ *  |------------------|--------------------------------------------------|
+ *  | phase_start      | chatId, phaseIdx, ts                             |
+ *  | phase_progress   | chatId, phaseIdx, round, role, agent, elapsedMs  |
+ *  | phase_done       | chatId, phaseIdx, ts                             |
+ *  | participant_done | chatId, phaseIdx, round, role, agent             |
+ *  | text_delta       | chatId, text, ts                                 |
+ *  | tool_call        | chatId, tool, args, ts                           |
+ *  | cli_error        | chatId, error: { code, message, lineage? }       |
+ *  | error            | chatId, error: { code, message, details? }       |
+ *  | chat_done        | chatId, status, verdict, replay?, ts             |
+ *
+ *  All `error.code` values come from the canonical enum in
+ *  src/daemon/api-response.ts. `ts` is unix ms (grandfathered — we
+ *  intentionally did NOT convert to ISO 8601 in the v0.7 freeze; new
+ *  fields shipped from v0.8 onward should use ISO 8601).
+ * ─────────────────────────────────────────────────────────────────────
  */
 
 import type { FastifyInstance } from 'fastify';
 import { chats, phaseEvents, templates } from '../../lib/db/index.js';
 import { chatLogger } from '../../lib/logger.js';
 import type { TemplateSchema } from '../../lib/template-schema.js';
+import { errorResponse } from '../api-response.js';
 import type { ErrorDetector } from '../error-detector.js';
 import {
   getActiveRun,
@@ -41,14 +66,14 @@ export function registerChatStreamRoute(
     const param = request.params.id;
     if (!isValidChatId(param)) {
       reply.code(400);
-      return { error: 'invalid chat id' };
+      return errorResponse('validation', 'invalid chat id');
     }
 
     try {
       const chat = await chats.getBySlugOrId(param);
       if (!chat) {
         reply.code(404);
-        return { error: 'not found' };
+        return errorResponse('not_found', 'chat not found');
       }
       // From here on, `chatId` is the row's authoritative ULID — every
       // downstream key (activeRuns, subscribers, runWithMultiplex) uses
@@ -58,7 +83,7 @@ export function registerChatStreamRoute(
       const tmplRow = await templates.getById(chat.template_id);
       if (!tmplRow) {
         reply.code(404);
-        return { error: 'template not found' };
+        return errorResponse('not_found', 'template not found');
       }
 
       // Cached by templateId + updated_at so SSE re-attaches don't
@@ -68,9 +93,10 @@ export function registerChatStreamRoute(
         template = getParsedTemplate(tmplRow.id, tmplRow.yaml, tmplRow.updated_at);
       } catch (parseError) {
         reply.code(400);
-        return {
-          error: `Invalid template: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-        };
+        return errorResponse(
+          'validation',
+          `Invalid template: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+        );
       }
 
       // Take ownership of the underlying socket. Without `reply.hijack()`
@@ -228,7 +254,15 @@ export function registerChatStreamRoute(
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
         });
-        reply.raw.write(`data: ${JSON.stringify({ type: 'error', error: message })}\n\n`);
+        // SSE error event uses the canonical envelope shape so clients
+        // can rely on `error.code` + `error.message` regardless of
+        // whether the failure surfaced over REST or SSE.
+        reply.raw.write(
+          `data: ${JSON.stringify({
+            type: 'error',
+            error: { code: 'internal', message },
+          })}\n\n`,
+        );
       }
       reply.raw.end();
     }

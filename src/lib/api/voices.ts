@@ -2,6 +2,7 @@
 //
 // See planning/voices.md for the abstraction's design rationale.
 
+import type { ListEnvelope } from "@/lib/types";
 import { fetchFromDaemon } from "./client";
 
 export type VoiceLineage = "anthropic" | "openai" | "google" | "opencode" | "moonshot";
@@ -60,7 +61,8 @@ function buildQuery(filter?: VoiceListFilter): string {
 }
 
 export async function listVoices(filter?: VoiceListFilter): Promise<Voice[]> {
-  return fetchFromDaemon<Voice[]>(`/voices${buildQuery(filter)}`);
+  const env = await fetchFromDaemon<ListEnvelope<Voice>>(`/voices${buildQuery(filter)}`);
+  return env.items;
 }
 
 export async function updateVoice(id: string, patch: VoiceUpdate): Promise<Voice> {

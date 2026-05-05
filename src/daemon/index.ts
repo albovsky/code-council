@@ -16,6 +16,7 @@ import { ErrorDetector } from './error-detector.js';
 import { startReaper } from './reaper.js';
 import { activeRunsCount, activeRunsSnapshot } from './runner-multiplex.js';
 import { registerChatRoutes } from './routes/chats.js';
+import { registerChatEventsRoute } from './routes/chats-events.js';
 import { registerOpenRouterRoutes } from './routes/openrouter.js';
 import {
   registerPersonaRoutes,
@@ -153,31 +154,47 @@ async function main(): Promise<void> {
   }
 
   // ─── Routes ─────────────────────────────────────────────────────────
-
-  fastify.get<{ Reply: ApiResponse<{ ok: boolean; version: string; uptime: number }> }>(
-    '/health',
-    async () => {
-      return successResponse({
-        ok: true,
-        version: VERSION,
-        uptime: Date.now() - startTime,
-      });
-    },
-  );
-
+  //
+  // Every public REST + SSE route mounts under /api/v1. Pre-launch
+  // shape-freeze (v0.7) — adding a new major shape later means adding
+  // /api/v2 without breaking existing consumers.
+  //
+  // The cockpit, MCP client, `chorus doctor`, and `bin/chorus.mjs`
+  // call /api/v1/* in lockstep. There are NO bare-route aliases —
+  // the daemon binds to 127.0.0.1 and no third-party scripts exist.
   // Initialize tmux manager BEFORE registering chat routes — the chat
   // route handlers capture it for the duration of the daemon.
   tmuxMgr = new TmuxManagerImpl();
 
-  registerChatRoutes(fastify, { tmuxMgr, errorDetector });
-  registerTemplateRoutes(fastify);
-  registerPersonaRoutes(fastify);
-  registerSettingsRoutes(fastify);
-  registerSecretRoutes(fastify);
-  registerSystemRoutes(fastify, { chorusBinPath: CHORUS_BIN_PATH });
-  registerVoiceRoutes(fastify);
-  registerOpenRouterRoutes(fastify);
-  registerStatsRoutes(fastify);
+  await fastify.register(
+    async (api) => {
+      api.get<{
+        Reply: ApiResponse<{ version: string; uptime: number }>;
+      }>('/health', async () => {
+        // The redundant inner `ok: true` from earlier shipped versions
+        // was dropped here — the envelope's outer `ok: true` is the
+        // canonical liveness signal. Consumers that want a flat
+        // monitor-friendly probe still read `data.version` /
+        // `data.uptime`.
+        return successResponse({
+          version: VERSION,
+          uptime: Date.now() - startTime,
+        });
+      });
+
+      registerChatRoutes(api, { tmuxMgr: tmuxMgr!, errorDetector });
+      registerChatEventsRoute(api);
+      registerTemplateRoutes(api);
+      registerPersonaRoutes(api);
+      registerSettingsRoutes(api);
+      registerSecretRoutes(api);
+      registerSystemRoutes(api, { chorusBinPath: CHORUS_BIN_PATH });
+      registerVoiceRoutes(api);
+      registerOpenRouterRoutes(api);
+      registerStatsRoutes(api);
+    },
+    { prefix: '/api/v1' },
+  );
 
   await seedBuiltinTemplates();
 

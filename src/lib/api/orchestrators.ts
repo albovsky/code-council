@@ -1,5 +1,6 @@
 // Orchestrator integrations API — used by the /connect page to surface
 // "is Claude Code wired up?" status and the one-click "Connect" button.
+import type { ListEnvelope } from "@/lib/types";
 import { fetchFromDaemon } from "./client";
 
 export type OrchestratorName =
@@ -30,7 +31,8 @@ export interface ConnectResult {
 }
 
 export async function listOrchestrators(): Promise<OrchestratorStatus[]> {
-  return fetchFromDaemon<OrchestratorStatus[]>("/orchestrators");
+  const env = await fetchFromDaemon<ListEnvelope<OrchestratorStatus>>("/orchestrators");
+  return env.items;
 }
 
 export async function connectOrchestrator(

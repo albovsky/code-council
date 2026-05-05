@@ -4,9 +4,14 @@ import { ApiResponse } from "@/lib/types";
 // Server-side: hit the daemon directly on this host.
 // Browser-side: go through the Next.js proxy at /api/daemon (the browser
 // cannot reach 127.0.0.1 on the server).
+//
+// API_PREFIX freezes the wire shape at v0.7 — every path passed to
+// fetchFromDaemon is implicitly under /api/v1. v0.8 may add /api/v2
+// alongside without breaking existing consumers.
 const SERVER_BASE =
   process.env.CHORUS_DAEMON_URL || "http://127.0.0.1:7707";
 const CLIENT_BASE = "/api/daemon";
+const API_PREFIX = "/api/v1";
 
 function getBaseUrl(): string {
   if (typeof window === "undefined") return SERVER_BASE;
@@ -35,9 +40,15 @@ export async function fetchFromDaemon<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const base = getBaseUrl();
-  const url = base.endsWith("/") || path.startsWith("/")
-    ? `${base.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`
-    : `${base}/${path}`;
+  // Prepend /api/v1 unless the caller already supplied it. Keeping a
+  // bypass for already-prefixed paths makes the migration safe even if
+  // some lingering consumer hand-builds the full URL.
+  const versionedPath = path.startsWith(API_PREFIX)
+    ? path
+    : `${API_PREFIX}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = base.endsWith("/") || versionedPath.startsWith("/")
+    ? `${base.replace(/\/$/, "")}${versionedPath.startsWith("/") ? versionedPath : `/${versionedPath}`}`
+    : `${base}/${versionedPath}`;
 
   try {
     const response = await fetch(url, {

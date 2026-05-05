@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { chatEventsBus } from '../chat-events-bus.js';
 import { generateUlid, getDb } from './connection.js';
 
 const ChatRowSchema = z.object({
@@ -101,6 +102,7 @@ export const chats = {
         });
         const row = await chats.getById(ulid);
         if (!row) throw new Error(`chats.create: row vanished after insert: ${ulid}`);
+        chatEventsBus.emitChange(row.id, 'created');
         return row;
       } catch (err: unknown) {
         // libsql surfaces UNIQUE violations as Error with message
@@ -223,6 +225,7 @@ export const chats = {
 
     const row = await chats.getById(id);
     if (!row) throw new Error(`chats.update: row vanished: ${id}`);
+    chatEventsBus.emitChange(row.id, 'updated');
     return row;
   },
 
@@ -246,6 +249,7 @@ export const chats = {
       await tx.execute({ sql: 'DELETE FROM phase_events WHERE chat_id = ?', args: [id] });
       await tx.execute({ sql: 'DELETE FROM chats WHERE id = ?', args: [id] });
       await tx.commit();
+      chatEventsBus.emitChange(id, 'deleted');
     } catch (e) {
       await tx.rollback();
       throw e;

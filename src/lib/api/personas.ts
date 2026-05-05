@@ -1,3 +1,4 @@
+import type { ListEnvelope } from "@/lib/types";
 import { fetchFromDaemon } from "./client";
 
 /**
@@ -47,8 +48,8 @@ function fromRow(row: RawPersonaRow): Persona {
 
 /** List all personas — used for the sidebar Personas page. */
 export async function listPersonas(): Promise<Persona[]> {
-  const rows = await fetchFromDaemon<RawPersonaRow[]>("/personas");
-  return rows.map(fromRow);
+  const env = await fetchFromDaemon<ListEnvelope<RawPersonaRow>>("/personas");
+  return env.items.map(fromRow);
 }
 
 /** Fetch a single persona including its full system_prompt. */

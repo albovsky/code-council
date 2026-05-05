@@ -75,7 +75,7 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
   const [daemonVersion, setDaemonVersion] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/daemon/health")
+    fetch("/api/daemon/api/v1/health")
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (cancelled || !j) return;
@@ -108,32 +108,76 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
     // Initial fetch on mount + every pathname change.
     fetchChats();
 
-    // Poll every 5s while the tab is visible. Pause when hidden so we
-    // don't burn requests on a backgrounded tab. Resume + immediate
-    // refresh on visibility-change so the sidebar reflects status updates
-    // (drafting → reviewing → approved/merged) the user expects without a
-    // manual page reload. Daemon list endpoint is cheap (single SQLite read).
+    // Real-time path: subscribe to /chats/events SSE so chats fired
+    // via MCP / external curl appear instantly. Refetch on any
+    // change event (created/updated/deleted) — list is short, daemon
+    // read is cheap, so we don't bother patching state incrementally.
+    //
+    // Fallback path: 2s poll when SSE is closed (initial connect
+    // failure or tab hidden). 2s is the user-perceived "instant"
+    // ceiling and safe even at scale because the list endpoint is a
+    // single SQLite read of 12 rows.
+    let evtSrc: EventSource | null = null;
     let interval: ReturnType<typeof setInterval> | null = null;
-    const start = () => {
+    let sseConnected = false;
+
+    const startPoll = () => {
       if (interval) return;
-      interval = setInterval(fetchChats, 12000);
+      interval = setInterval(fetchChats, 2000);
     };
-    const stop = () => {
+    const stopPoll = () => {
       if (interval) {
         clearInterval(interval);
         interval = null;
       }
     };
-    const onVisibility = () => {
-      if (document.hidden) {
-        stop();
-      } else {
-        fetchChats();
-        start();
+
+    const startSse = () => {
+      if (evtSrc) return;
+      try {
+        evtSrc = new EventSource("/api/daemon/api/v1/chats/events");
+        evtSrc.onopen = () => {
+          sseConnected = true;
+          stopPoll(); // SSE took over — drop the safety-net poll
+        };
+        evtSrc.onmessage = () => {
+          // Any change event triggers a refetch; payload is metadata only.
+          fetchChats();
+        };
+        evtSrc.onerror = () => {
+          // EventSource auto-reconnects with backoff. While it's
+          // disconnected we resume polling so the UI keeps updating.
+          sseConnected = false;
+          startPoll();
+        };
+      } catch {
+        // EventSource unsupported / blocked — fall back to poll only.
+        startPoll();
       }
     };
+
+    const stopSse = () => {
+      if (evtSrc) {
+        evtSrc.close();
+        evtSrc = null;
+        sseConnected = false;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopSse();
+        stopPoll();
+      } else {
+        fetchChats();
+        startSse();
+        if (!sseConnected) startPoll(); // until SSE opens
+      }
+    };
+
     if (typeof document !== "undefined" && !document.hidden) {
-      start();
+      startSse();
+      startPoll(); // safety net until SSE opens
     }
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", onVisibility);
@@ -141,7 +185,8 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
 
     return () => {
       cancelled = true;
-      stop();
+      stopSse();
+      stopPoll();
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }

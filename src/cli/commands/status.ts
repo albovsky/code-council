@@ -8,7 +8,7 @@ export function registerStatusCommand(program: Command): void {
     .description('Check daemon health')
     .action(async () => {
       try {
-        const response = await fetch('http://127.0.0.1:7707/health');
+        const response = await fetch(`${DAEMON_URL}/api/v1/health`);
         if (!response.ok) {
           console.log('');
           console.log(
@@ -20,11 +20,11 @@ export function registerStatusCommand(program: Command): void {
 
         const envelope = (await response.json()) as {
           ok: boolean;
-          data?: { ok: boolean; version: string; uptime: number };
+          data?: { version: string; uptime: number };
         };
         const data = envelope.data;
 
-        if (envelope.ok && data && data.ok) {
+        if (envelope.ok && data) {
           const uptime = Math.floor(data.uptime / 1000);
           const human =
             uptime < 60

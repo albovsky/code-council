@@ -1,6 +1,6 @@
 // Template API endpoints
 import yaml from "yaml";
-import { Template } from "@/lib/types";
+import type { ListEnvelope, Template } from "@/lib/types";
 import { fetchFromDaemon } from "./client";
 
 interface RawTemplateRow {
@@ -197,8 +197,8 @@ function parseRow(row: RawTemplateRow): Template {
 }
 
 export async function listTemplates(): Promise<Template[]> {
-  const rows = await fetchFromDaemon<RawTemplateRow[]>("/templates");
-  return rows.map(parseRow);
+  const env = await fetchFromDaemon<ListEnvelope<RawTemplateRow>>("/templates");
+  return env.items.map(parseRow);
 }
 
 export async function getTemplate(id: string): Promise<Template> {

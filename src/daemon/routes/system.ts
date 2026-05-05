@@ -12,7 +12,9 @@ import { chats } from '../../lib/db/index.js';
 import {
   successResponse,
   errorResponse,
+  listEnvelope,
   type ApiResponse,
+  type ListEnvelope,
 } from '../api-response.js';
 
 export interface SystemRouteDeps {
@@ -25,9 +27,10 @@ export function registerSystemRoutes(
   deps: SystemRouteDeps,
 ): void {
   // List blocked chats — used by the cockpit's /blocked page.
-  fastify.get<{ Reply: ApiResponse<object[]> }>('/blocked', async () => {
+  fastify.get<{ Reply: ApiResponse<ListEnvelope<object>> }>('/blocked', async () => {
     try {
-      return successResponse(await chats.list({ status: 'blocked' }));
+      const items = await chats.list({ status: 'blocked' });
+      return successResponse(listEnvelope(items));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);
@@ -35,10 +38,11 @@ export function registerSystemRoutes(
   });
 
   // ─── CLI health snapshot ──────────────────────────────────────────────
-  fastify.get<{ Reply: ApiResponse<object[]> }>('/cli/health', async () => {
+  fastify.get<{ Reply: ApiResponse<ListEnvelope<object>> }>('/cli/health', async () => {
     try {
       const { getAllHealth } = await import('../../lib/cli-health.js');
-      return successResponse(await getAllHealth());
+      const items = await getAllHealth();
+      return successResponse(listEnvelope(items));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('internal', message);
@@ -46,12 +50,12 @@ export function registerSystemRoutes(
   });
 
   // ─── Onboarding: detect installed CLIs + validate manual paths ────────
-  fastify.get<{ Reply: ApiResponse<object[]> }>(
+  fastify.get<{ Reply: ApiResponse<ListEnvelope<object>> }>(
     '/onboard/detect-clis',
     async () => {
       try {
         const { detectAllClis } = await import('../../lib/cli-detect.js');
-        return successResponse(detectAllClis());
+        return successResponse(listEnvelope(detectAllClis()));
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         return errorResponse('internal', message);
@@ -170,10 +174,10 @@ export function registerSystemRoutes(
   });
 
   // ─── Orchestrators (editors that call chorus via MCP) ────────────────
-  fastify.get<{ Reply: ApiResponse<object[]> }>('/orchestrators', async () => {
+  fastify.get<{ Reply: ApiResponse<ListEnvelope<object>> }>('/orchestrators', async () => {
     try {
       const { listOrchestrators } = await import('../orchestrators/index.js');
-      return successResponse(listOrchestrators());
+      return successResponse(listEnvelope(listOrchestrators()));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('internal', message);

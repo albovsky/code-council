@@ -46,4 +46,19 @@ export const secrets = {
         .parse(row),
     );
   },
+
+  /**
+   * Idempotent delete — returns true if a row was actually removed,
+   * false if the secret didn't exist. Callers can use the boolean to
+   * disambiguate "rotated" from "no-op", but the wire surface
+   * (DELETE /secrets/:provider) treats both as success per REST norms.
+   */
+  async delete(provider: string): Promise<boolean> {
+    const db = await getDb();
+    const result = await db.execute({
+      sql: 'DELETE FROM secrets WHERE provider = ?',
+      args: [provider],
+    });
+    return Number(result.rowsAffected ?? 0) > 0;
+  },
 };

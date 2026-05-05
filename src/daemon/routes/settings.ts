@@ -10,7 +10,10 @@ import { settings, secrets } from '../../lib/db/index.js';
 import {
   successResponse,
   errorResponse,
+  listEnvelope,
+  sendError,
   type ApiResponse,
+  type ListEnvelope,
 } from '../api-response.js';
 
 export function registerSettingsRoutes(fastify: FastifyInstance): void {
@@ -202,9 +205,10 @@ export function registerSettingsRoutes(fastify: FastifyInstance): void {
 }
 
 export function registerSecretRoutes(fastify: FastifyInstance): void {
-  fastify.get<{ Reply: ApiResponse<object[]> }>('/secrets', async () => {
+  fastify.get<{ Reply: ApiResponse<ListEnvelope<object>> }>('/secrets', async () => {
     try {
-      return successResponse(await secrets.list());
+      const items = await secrets.list();
+      return successResponse(listEnvelope(items));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);
@@ -215,15 +219,35 @@ export function registerSecretRoutes(fastify: FastifyInstance): void {
     Params: { provider: string };
     Body: { value: string; kind: string; meta?: Record<string, unknown> };
     Reply: ApiResponse<object>;
-  }>('/secrets/:provider', async (request) => {
+  }>('/secrets/:provider', async (request, reply) => {
     try {
       const { provider } = request.params;
       const { value, kind, meta } = request.body;
       if (!value || !kind) {
-        return errorResponse('validation', 'value and kind are required');
+        return sendError(reply, 'validation', 'value and kind are required');
       }
       await secrets.set(provider, kind as 'api_key' | 'cli_subscription', value, meta);
       return successResponse({ provider, kind, updated_at: Date.now() });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('db_error', message);
+    }
+  });
+
+  /**
+   * Idempotent secret rotation entry-point. Returns 200 with `{deleted}`
+   * indicating whether a row actually existed. Cockpit uses this when the
+   * user removes a saved API key from settings; pre-fix the only way to
+   * rotate was hand-editing chorus.db.
+   */
+  fastify.delete<{
+    Params: { provider: string };
+    Reply: ApiResponse<{ provider: string; deleted: boolean }>;
+  }>('/secrets/:provider', async (request) => {
+    try {
+      const { provider } = request.params;
+      const deleted = await secrets.delete(provider);
+      return successResponse({ provider, deleted });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);

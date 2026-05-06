@@ -218,7 +218,7 @@ export class ErrorDetector {
       lineage === 'moonshot'
     ) {
       const authPrompt =
-        /(?:please (?:run|log\s*in|sign\s*in)|run\s+`?(?:claude|codex|gemini|opencode|kimi)\s+login|to\s+sign\s+in|not logged in|not authenticated|no active session|authentication required|api key (?:invalid|missing|expired|revoked))/i.exec(
+        /(?:please (?:run|log\s*in|sign\s*in)|run\s+`?(?:claude|codex|gemini|opencode|kimi)\s+login|to\s+sign\s+in|not logged in|not authenticated|no active session|authentication required|api key (?:invalid|missing|expired|revoked|not (?:found|set))|(?:[A-Z_]+_)?API_KEY\s+(?:environment variable\s+)?not\s+(?:found|set))/i.exec(
           paneText,
         );
       if (authPrompt) {

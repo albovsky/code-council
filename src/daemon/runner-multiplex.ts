@@ -56,10 +56,18 @@ export function phaseEventToRunnerEvent(
   chatId: string,
   ev: Awaited<ReturnType<typeof phaseEvents.list>>[number],
 ): Record<string, unknown> | null {
+  // State → event-type mapping for replay. `warning` was added in
+  // chorus-085 for per-slot fallback success (and surfaces failed
+  // reviewer attempts that nonetheless got past the threshold). Pre-
+  // fix this state was unmapped → returned null → replay dropped the
+  // event → on page reload the failed reviewer's card showed QUEUED
+  // forever (the failure was lost). Map to phase_done so the card at
+  // least surfaces as completed; the failure summary written to
+  // answer.md drives the actual error display.
   const baseType =
     ev.state === 'drafting'
       ? 'phase_start'
-      : ev.state === 'submitted'
+      : ev.state === 'submitted' || ev.state === 'warning' || ev.state === 'errored'
         ? 'phase_done'
         : ev.state === 'blocked'
           ? 'phase_failed'

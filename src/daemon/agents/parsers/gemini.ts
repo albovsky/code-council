@@ -149,15 +149,44 @@ export function parseGeminiExit(
   _code: number | null,
 ): AgentEvent[] {
   if (!fullStderr) return [];
-  if (!looksLikeQuotaExhausted(fullStderr)) return [];
-  const reset = extractResetWindow(fullStderr);
-  return [
-    {
-      type: 'error',
-      kind: 'quota_exhausted',
-      message: reset
-        ? `Gemini quota exhausted — resets in ${reset}.`
-        : `Gemini quota exhausted (Google API returned 429).`,
-    },
-  ];
+
+  // Auth-not-configured: gemini-cli prints
+  //   "GEMINI_API_KEY environment variable not found. Add that to your
+  //    environment and try again..."
+  // and exits 1. Without this branch the runner emits the generic
+  // cli_failed with a noisy stderr tail and the user has no clear CTA.
+  // Also covers GOOGLE_API_KEY and the legacy "GOOGLE_GENAI_API_KEY"
+  // for completeness — gemini-cli has accepted all three over its
+  // version history.
+  const apiKeyMissing =
+    /(GEMINI|GOOGLE(?:_GENAI)?)_API_KEY\s+(?:environment variable\s+)?not\s+(?:found|set)/i.exec(
+      fullStderr,
+    );
+  if (apiKeyMissing) {
+    const envName = apiKeyMissing[0].split(/\s+/)[0];
+    return [
+      {
+        type: 'error',
+        kind: 'auth_error',
+        message:
+          `Gemini CLI not authenticated — ${envName} is not set. ` +
+          `Get a key at aistudio.google.com/apikey, or run \`gemini\` for the OAuth flow.`,
+      },
+    ];
+  }
+
+  if (looksLikeQuotaExhausted(fullStderr)) {
+    const reset = extractResetWindow(fullStderr);
+    return [
+      {
+        type: 'error',
+        kind: 'quota_exhausted',
+        message: reset
+          ? `Gemini quota exhausted — resets in ${reset}.`
+          : `Gemini quota exhausted (Google API returned 429).`,
+      },
+    ];
+  }
+
+  return [];
 }

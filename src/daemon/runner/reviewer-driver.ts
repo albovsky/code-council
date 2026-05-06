@@ -62,9 +62,36 @@ export async function runReviewers(
   }[] = [];
 
   const candidates = phase.reviewer.candidates;
+  const required = phase.reviewer.require;
   let cursor = 0;
+
+  // Early-exit signal: aborts in-flight reviewers and stops new ones
+  // from being claimed once consensus is reached (or has become
+  // impossible). Without this, a chat with 6 reviewers and require=2
+  // would fan out all 6 even after 2 agreed — wasting tokens, and
+  // worse, leaving the user with a perpetually-spinning page if any
+  // remaining reviewer has a broken CLI (e.g. gemini-cli with no
+  // GEMINI_API_KEY hangs the worker without emitting a clear failure).
+  // AbortSignal.any composes the external abort (chat-cancel from the
+  // user) with our internal "consensus done" signal.
+  const internalAbort = new AbortController();
+  const combinedSignal = AbortSignal.any([abortSignal, internalAbort.signal]);
+
+  function shouldStop(): { stop: boolean; reason: string } {
+    const agreedSoFar = reviews.filter((r) => r.outcome === 'agreed').length;
+    const remaining = candidates.length - reviews.length;
+    if (agreedSoFar >= required) {
+      return { stop: true, reason: 'consensus_reached' };
+    }
+    if (agreedSoFar + remaining < required) {
+      return { stop: true, reason: 'consensus_impossible' };
+    }
+    return { stop: false, reason: '' };
+  }
+
   async function worker(): Promise<void> {
     while (true) {
+      if (combinedSignal.aborted) return;
       const idx = cursor++;
       if (idx >= candidates.length) return;
       const candidate = candidates[idx];
@@ -82,7 +109,7 @@ export async function runReviewers(
           tmuxMgr,
           errorDetector,
           onEvent,
-          abortSignal,
+          combinedSignal,
           templateFallbackReviewer,
         );
         reviews.push({
@@ -95,6 +122,13 @@ export async function runReviewers(
           outcome: 'failed',
         });
       }
+      // After every completion, re-evaluate. Only stop on consensus_reached;
+      // consensus_impossible we let run to completion so the user sees every
+      // reviewer's reasoning (helpful for debugging "why couldn't we agree").
+      const { stop, reason } = shouldStop();
+      if (stop && reason === 'consensus_reached') {
+        internalAbort.abort('consensus_reached');
+      }
     }
   }
   const workerCount = Math.min(REVIEWER_CONCURRENCY, candidates.length);
@@ -102,7 +136,6 @@ export async function runReviewers(
 
   const agreedCount = reviews.filter((r) => r.outcome === 'agreed').length;
   const failedCount = reviews.filter((r) => r.outcome === 'failed').length;
-  const required = phase.reviewer.require;
   const agreed = agreedCount >= required;
   const allFailed = failedCount === reviews.length && reviews.length > 0;
 

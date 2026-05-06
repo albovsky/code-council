@@ -129,6 +129,31 @@ describe('parseGeminiExit — stderr-driven quota detection', () => {
     expect(parseGeminiExit('', 'random stderr noise', 1)).toEqual([]);
     expect(parseGeminiExit('', '', 0)).toEqual([]);
   });
+
+  it('emits auth_error when GEMINI_API_KEY env var is missing', async () => {
+    const { parseGeminiExit } = await import('@/daemon/agents/parsers/gemini');
+    const stderr =
+      '(node:105820) [DEP0040] DeprecationWarning: punycode...\n' +
+      "Error connecting to MCP server 'chorus': MCP error -32000: Connection closed\n" +
+      'GEMINI_API_KEY environment variable not found. Add that to your environment and try again (no reload needed if using .env)!';
+    const events = parseGeminiExit('', stderr, 1);
+    expect(events).toHaveLength(1);
+    expect((events[0] as { kind: string }).kind).toBe('auth_error');
+    expect((events[0] as { message: string }).message).toMatch(
+      /GEMINI_API_KEY/,
+    );
+    expect((events[0] as { message: string }).message).toMatch(
+      /aistudio\.google\.com/,
+    );
+  });
+
+  it('also catches GOOGLE_API_KEY variant (legacy alias)', async () => {
+    const { parseGeminiExit } = await import('@/daemon/agents/parsers/gemini');
+    const stderr = 'GOOGLE_API_KEY not set. Configure your environment.';
+    const events = parseGeminiExit('', stderr, 1);
+    expect(events).toHaveLength(1);
+    expect((events[0] as { kind: string }).kind).toBe('auth_error');
+  });
 });
 
 describe('parseOpencodeExit — single-blob fallback (older opencode builds)', () => {

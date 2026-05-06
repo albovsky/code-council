@@ -78,6 +78,41 @@ export function registerUpdateCommand(program: Command): void {
 
         const prefix = detectNpmPrefix();
 
+        // Pre-flight writability check. npm's atomic-install algorithm
+        // renames the existing chorus-codes/ folder before unpacking the
+        // new tarball; the rename fails with EACCES whenever a Windows
+        // process (Windows Defender, VSCode indexer, Search) holds a
+        // handle into the folder. WSL users with nvm installed on a
+        // Windows drive (/mnt/c, /mnt/d, etc.) hit this every time.
+        // Surfacing a clear message + migration steps before we even
+        // shell out to npm beats the cryptic stack trace npm prints.
+        if (prefix) {
+          const probe = checkPrefixUsable(prefix);
+          if (!probe.ok) {
+            console.log('');
+            console.log(
+              header(
+                sym.err,
+                "Can't update chorus at this prefix",
+                probe.reason,
+              ),
+            );
+            console.log('');
+            console.log(c.dim('   Migrate to a Linux-side npm prefix:'));
+            console.log(`     mkdir -p ~/.npm-global`);
+            console.log(`     npm config set prefix ~/.npm-global`);
+            console.log(
+              `     echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc`,
+            );
+            console.log(`     source ~/.bashrc`);
+            console.log(`     npm install -g chorus-codes`);
+            console.log('');
+            console.log(c.dim('   After that, future `chorus update` calls work normally.'));
+            console.log('');
+            process.exit(1);
+          }
+        }
+
         console.log('');
         console.log(
           header(
@@ -206,6 +241,63 @@ export function versionGreater(a: string, b: string): boolean {
     if (ai < bi) return false;
   }
   return false;
+}
+
+/**
+ * Pre-flight check before `npm install -g`. Two failure modes worth
+ * catching with a friendly message instead of an opaque npm stack:
+ *
+ *   1. Prefix is on a Windows-mounted drive in WSL (/mnt/<letter>/...).
+ *      Windows-side processes hold handles into the install dir and
+ *      refuse npm's rename-on-update. Confirmed by user reports —
+ *      EACCES every time, even after stopping chorus.
+ *   2. Prefix isn't writable by the current user (corporate
+ *      /usr/local lockdowns, sudo'd install vs nvm-managed user
+ *      prefix).
+ *
+ * Both have the same remediation: migrate to an unprivileged prefix
+ * on the Linux ext4 filesystem.
+ */
+export function checkPrefixUsable(
+  prefix: string,
+): { ok: true } | { ok: false; reason: string } {
+  // Windows-mounted drive detection. /mnt/c, /mnt/d, etc. — covers
+  // the canonical WSL drvfs mount points. /mnt/wsl is internal WSL
+  // and not affected, so explicit single-letter match keeps the
+  // false-positive rate at zero.
+  const lower = prefix.toLowerCase();
+  if (/^\/mnt\/[a-z]\//.test(lower) || /^\/mnt\/[a-z]$/.test(lower)) {
+    return {
+      ok: false,
+      reason: `prefix is on a Windows-mounted drive (${prefix}). Windows file handles block npm's rename-on-update.`,
+    };
+  }
+
+  // Direct write probe in <prefix>/lib/node_modules. node_modules may
+  // not exist yet on a fresh prefix; mkdir + write + unlink is the
+  // safest test.
+  try {
+    const targetDir = path.join(prefix, 'lib', 'node_modules');
+    fs.mkdirSync(targetDir, { recursive: true });
+    const probePath = path.join(
+      targetDir,
+      `.chorus-update-probe-${process.pid}-${Date.now()}`,
+    );
+    fs.writeFileSync(probePath, 'probe');
+    fs.unlinkSync(probePath);
+    return { ok: true };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') {
+      return {
+        ok: false,
+        reason: `prefix isn't writable by the current user (${code} on ${prefix}/lib/node_modules).`,
+      };
+    }
+    // Other errors (ENOENT on non-existent ancestor, EISDIR weirdness)
+    // — let npm try and surface the real cause if our probe was wrong.
+    return { ok: true };
+  }
 }
 
 /**

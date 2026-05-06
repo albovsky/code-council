@@ -42,7 +42,22 @@ export function registerStartCommand(program: Command): void {
         try {
           const chorusDir = path.join(os.homedir(), '.chorus');
 
-          if (await alreadyRunningHealthy(options.ui)) return;
+          // First-pass already-running check. If a daemon is up AND
+          // (we don't need the cockpit OR the cockpit is also up),
+          // bail out. Otherwise fall through to the upgrade path
+          // below.
+          const alreadyHandled = await alreadyRunningHealthy(options.ui);
+          if (alreadyHandled === 'satisfied') return;
+
+          // Upgrade path: daemon is healthy but cockpit isn't running
+          // and the user asked for --ui. Spawn just the cockpit and
+          // update daemon.json. No need to acquire the start.lock —
+          // we're not racing another start, just attaching the missing
+          // process.
+          if (alreadyHandled === 'cockpit_missing_ui_requested') {
+            await spawnCockpitForExistingDaemon(chorusDir);
+            return;
+          }
 
           // Concurrent-start guard. Two MCP shims hitting auto-start
           // simultaneously would otherwise both pickPortPair → spawn
@@ -51,17 +66,32 @@ export function registerStartCommand(program: Command): void {
           // forgotten port. Using O_EXCL on the lockfile means the
           // loser fails fast and falls through to alreadyRunningHealthy
           // on retry (after the winner finishes spawning).
-          const lockReleased = await acquireStartLock(chorusDir);
-          if (!lockReleased) {
+          const acquired = acquireStartLock(chorusDir);
+          if (!acquired) {
             // Another start is in flight. Poll briefly for daemon.json
-            // to appear, then fall back to the already-running path.
+            // to appear; if it shows up, we're done. If the lock is
+            // stale (owner PID dead), reclaim it. Never blindly steal
+            // the lock on timeout — the winner may just be slow.
             await waitForAnotherStartToWin();
-            if (await alreadyRunningHealthy(options.ui)) return;
-            // Otherwise: stale lock + no winner. Force-clear and retry.
-            clearStartLock(chorusDir);
-            if (!(await acquireStartLock(chorusDir))) {
+            const second = await alreadyRunningHealthy(options.ui);
+            if (second === 'satisfied') return;
+            if (second === 'cockpit_missing_ui_requested') {
+              await spawnCockpitForExistingDaemon(chorusDir);
+              return;
+            }
+            // No winner appeared. Check whether the lock owner is
+            // actually dead before clearing — a slow but live winner
+            // must NOT be elbowed aside or both processes will spawn.
+            if (!isLockOwnerAlive(chorusDir)) {
+              clearStartLock(chorusDir);
+              if (!acquireStartLock(chorusDir)) {
+                throw new Error(
+                  'Could not reclaim stale start lock. Try `chorus stop` then retry.',
+                );
+              }
+            } else {
               throw new Error(
-                'Could not acquire start lock after fallback. Try `chorus stop` then retry.',
+                'Another `chorus start` is still running. If this persists, run `chorus stop` then retry.',
               );
             }
           }
@@ -92,13 +122,11 @@ export function registerStartCommand(program: Command): void {
  * false if another start has the lock. Stale-lock recovery is the
  * caller's responsibility.
  */
-async function acquireStartLock(chorusDir: string): Promise<boolean> {
+function acquireStartLock(chorusDir: string): boolean {
   fs.mkdirSync(chorusDir, { recursive: true });
   const lockPath = path.join(chorusDir, 'start.lock');
   try {
-    // O_EXCL fails if file exists; combined with O_CREAT this is the
-    // atomic check-and-create primitive Linux gives us. Write our PID
-    // into it so a stale lock can be diagnosed.
+    // 'wx' = O_CREAT | O_EXCL | O_WRONLY. Atomic create-or-fail.
     const fd = fs.openSync(lockPath, 'wx');
     fs.writeSync(fd, String(process.pid));
     fs.closeSync(fd);
@@ -119,6 +147,27 @@ function releaseStartLock(chorusDir: string): void {
 
 function clearStartLock(chorusDir: string): void {
   releaseStartLock(chorusDir);
+}
+
+/**
+ * Read the PID stamped into start.lock and check if that process is
+ * still alive. Used to distinguish a stale lock (winner crashed before
+ * unlinking) from a slow-but-live winner. Pre-fix the loser would
+ * blindly steal the lock after an 8s timeout, allowing both processes
+ * to spawn daemons concurrently when the winner happened to be slow.
+ */
+function isLockOwnerAlive(chorusDir: string): boolean {
+  const lockPath = path.join(chorusDir, 'start.lock');
+  try {
+    const raw = fs.readFileSync(lockPath, 'utf-8').trim();
+    const pid = Number.parseInt(raw, 10);
+    if (!Number.isFinite(pid) || pid <= 0) return false;
+    return isPidAlive(pid);
+  } catch {
+    // Lock file vanished between the failed acquire and this read —
+    // treat as "not alive" so the caller retries acquisition cleanly.
+    return false;
+  }
 }
 
 /**
@@ -152,36 +201,49 @@ async function captureAndPersistPath(): Promise<void> {
   }
 }
 
+type AlreadyRunningResult =
+  | 'satisfied' // healthy chorus + (no UI requested OR cockpit also up)
+  | 'cockpit_missing_ui_requested' // daemon up, cockpit NOT up, --ui flag set → upgrade path
+  | 'not_running'; // no live daemon
+
 /**
  * Detect a healthy chorus already running on this host before we try
- * to spawn another one. Replaces the v0.7 pidfile + default-port pair:
- * since v0.8 records both ports in daemon.json, a single source check
- * covers both "I started chorus 5 minutes ago and forgot" and "another
- * uid has chorus on a different port" cases.
+ * to spawn another one. Returns:
+ *   - 'satisfied': nothing to do (or just printed status + opened
+ *     browser). Caller should return immediately.
+ *   - 'cockpit_missing_ui_requested': the daemon is alive but was
+ *     started in --daemon-only mode; user just asked for --ui. Caller
+ *     should upgrade by spawning only the cockpit.
+ *   - 'not_running': fall through to the normal start sequence.
  *
- * Cross-uid hardening: the daemon.json file itself is in $HOME, so we
- * only see *our* daemon. A sudo-started daemon's daemon.json lives in
- * root's $HOME and is invisible to the unprivileged probe. The orphan
- * reaper handles that case via cmdline + cwd matching.
+ * Cross-uid hardening: daemon.json lives in $HOME, so we only see
+ * *our* daemon. A sudo-started daemon's daemon.json lives in root's
+ * $HOME and is invisible to the unprivileged probe. The orphan reaper
+ * handles that case via cmdline + cwd matching.
  */
 async function alreadyRunningHealthy(
   uiFlag: boolean | undefined,
-): Promise<boolean> {
-  // Use a longer health timeout here than at runtime resolution: WSL
-  // loopback is slow on cold start (we observed 3-4s round-trips), and
-  // we'd rather wait 5s once than mis-diagnose a healthy daemon as
-  // dead and pile a second one on top of it.
+): Promise<AlreadyRunningResult> {
+  // Longer health timeout than runtime resolution: WSL loopback is
+  // slow on cold start (3-4s observed). We'd rather wait 5s once than
+  // mis-diagnose a healthy daemon and pile a second one on top.
   const live = await readLiveDaemonInfo({ healthTimeoutMs: 5000 });
-  if (!live) return false;
+  if (!live) return 'not_running';
+
+  const cockpitRunning =
+    live.cockpitPid !== null && isPidAlive(live.cockpitPid);
+
+  // Upgrade path: daemon up, no cockpit, user wants --ui. Tell the
+  // caller to handle this without printing anything; the cockpit
+  // spawn will print the URL when it lands.
+  if (uiFlag && !cockpitRunning) {
+    return 'cockpit_missing_ui_requested';
+  }
 
   console.log('');
   console.log(
     header(sym.ok, 'Chorus is already running', `version ${live.version || pkg.version}`),
   );
-  // Only point at the cockpit URL when a cockpit was actually started.
-  // A `--daemon-only` start records cockpitPid=null; the cockpit port
-  // itself is reserved but no Next.js process is bound to it.
-  const cockpitRunning = live.cockpitPid !== null;
   if (cockpitRunning) {
     const cockpitUrl = `http://127.0.0.1:${live.cockpitPort}`;
     console.log('');
@@ -197,10 +259,106 @@ async function alreadyRunningHealthy(
     }
   } else {
     console.log('');
-    console.log(c.dim('   Daemon-only mode. Run `chorus start --ui` to bring up the cockpit.'));
+    console.log(
+      c.dim('   Daemon-only mode. Run `chorus start --ui` to bring up the cockpit.'),
+    );
     console.log('');
   }
-  return true;
+  return 'satisfied';
+}
+
+/**
+ * Bring up just the Next.js cockpit and re-write daemon.json with the
+ * new cockpitPid. Used when a `--daemon-only` daemon is already running
+ * and the user now passes `--ui` to attach the UI without restarting.
+ */
+async function spawnCockpitForExistingDaemon(
+  chorusDir: string,
+): Promise<void> {
+  const live = await readLiveDaemonInfo({ healthTimeoutMs: 5000 });
+  if (!live) {
+    // Edge case: daemon died between the alreadyRunningHealthy check
+    // and this call. Caller's own logic will pick it up on retry.
+    throw new Error('Daemon disappeared while attaching cockpit. Retry `chorus start`.');
+  }
+  const packageRoot = path.resolve(__dirname, '..', '..', '..');
+  const nextEntry = path.resolve(
+    packageRoot,
+    'node_modules',
+    'next',
+    'dist',
+    'bin',
+    'next',
+  );
+  if (
+    !fs.existsSync(nextEntry) ||
+    !fs.existsSync(path.join(packageRoot, '.next'))
+  ) {
+    console.log('');
+    console.log(c.red('  ✗ Cockpit UI not found. Try `npm install -g chorus-codes` to repair.'));
+    console.log('');
+    return;
+  }
+  const logsDir = path.join(chorusDir, 'logs');
+  fs.mkdirSync(logsDir, { recursive: true });
+  const webLogPath = path.join(logsDir, 'web.log');
+  const webLogFd = fs.openSync(webLogPath, 'a');
+  const webPidFile = path.join(chorusDir, 'web.pid');
+
+  const webChild = spawn(
+    'node',
+    [
+      nextEntry,
+      'start',
+      '-p',
+      String(live.cockpitPort),
+      '-H',
+      '127.0.0.1',
+    ],
+    {
+      cwd: packageRoot,
+      detached: true,
+      stdio: ['ignore', webLogFd, webLogFd],
+      env: {
+        ...process.env,
+        CHORUS_DAEMON_URL: `http://127.0.0.1:${live.daemonPort}`,
+        PORT: String(live.cockpitPort),
+      },
+    },
+  );
+  if (!webChild.pid) {
+    throw new Error('Failed to spawn cockpit process');
+  }
+  fs.writeFileSync(webPidFile, webChild.pid.toString());
+  webChild.unref();
+
+  // Update daemon.json so future stops know about the cockpit PID.
+  writeDaemonInfo({
+    schemaVersion: 1,
+    daemonPort: live.daemonPort,
+    cockpitPort: live.cockpitPort,
+    daemonPid: live.daemonPid,
+    cockpitPid: webChild.pid,
+    startedAt: live.startedAt,
+    version: live.version,
+  });
+
+  console.log('');
+  console.log(
+    header(sym.ok, 'Cockpit attached', `cockpit PID ${webChild.pid}`),
+  );
+  const cockpitUrl = `http://127.0.0.1:${live.cockpitPort}`;
+  console.log('');
+  console.log(`   ${c.gray('Open')}  ${c.cyan(cockpitUrl)}`);
+  const env = detectRuntimeEnv();
+  if (env.hint) {
+    console.log('');
+    console.log(tip(env.hint));
+  }
+  console.log('');
+  if (shouldAutoOpenBrowser(env)) {
+    open(cockpitUrl);
+  }
 }
 
 /**

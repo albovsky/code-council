@@ -83,12 +83,24 @@ Reproduces 1-in-20, no obvious pattern. Drop the failing test + suspect code int
 ## Quick start
 
 ```bash
-npm i -g chorus-codes      # install
+npm i -g chorus-codes      # install (no sudo — see below)
 chorus init                # finds AI tools you already have, wires up MCP
 chorus start --ui          # opens http://localhost:5050
 ```
 
 Paste a task. Hit submit. Watch the AIs argue.
+
+> **Don't `sudo npm install -g`** if you use nvm, fnm, asdf, or any per-user
+> Node manager. `sudo` writes to root's npm prefix (`/usr/local/...`) but
+> your `chorus` command resolves through your user prefix — the install
+> succeeds in a place PATH never sees, leaving you on a stale version.
+> If `npm install -g` errors with EACCES, set up an unprivileged prefix:
+> `npm config set prefix ~/.npm-global` then add `~/.npm-global/bin` to
+> your PATH.
+
+To upgrade later: `chorus update`. The updater locates the running binary
+and writes to that exact install location, so it always lands where PATH
+expects regardless of how you installed.
 
 ### Or drive it from any AI CLI you already use
 

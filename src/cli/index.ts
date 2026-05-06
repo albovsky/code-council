@@ -9,6 +9,7 @@ import { registerInitCommand } from './commands/init.js';
 import { registerStartCommand } from './commands/start.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerStopCommand } from './commands/stop.js';
+import { registerUpdateCommand } from './commands/update.js';
 import { detectRuntimeEnv, shouldAutoOpenBrowser } from './runtime-env.js';
 import { pkg } from './shared.js';
 import { c, sym, tip } from './ui.js';
@@ -59,6 +60,7 @@ registerStartCommand(program);
 registerStopCommand(program);
 registerStatusCommand(program);
 registerDoctorCommand(program);
+registerUpdateCommand(program);
 
 program
   .command('ui')

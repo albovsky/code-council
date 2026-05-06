@@ -25,6 +25,11 @@ import {
 import { detectRuntimeEnv, shouldAutoOpenBrowser } from '../runtime-env.js';
 import { pkg } from '../shared.js';
 import { c, header, sym, tip } from '../ui.js';
+import {
+  fetchLatestVersion,
+  resolveChorusBinaryPath,
+  versionGreater,
+} from './update.js';
 
 interface PortPair {
   daemonPort: number;
@@ -632,7 +637,22 @@ async function spawnDaemonAndCockpit(
   child.unref();
 
   console.log('');
-  console.log(header(sym.ok, 'Chorus started', `daemon PID ${child.pid}`));
+  console.log(
+    header(
+      sym.ok,
+      `Chorus started v${pkg.version}`,
+      `daemon PID ${child.pid}`,
+    ),
+  );
+  // Path of the resolved binary helps users diagnose multi-install
+  // confusion (sudo npm install vs nvm-managed npm). Quiet by default
+  // — only printed when running from a global install location, since
+  // dev checkouts already know what binary they're running.
+  const binPath = resolveChorusBinaryPath();
+  if (binPath && binPath.includes('node_modules')) {
+    console.log(`   ${c.dim('from')}  ${c.dim(binPath)}`);
+  }
+
   if (!options.daemonOnly) {
     const cockpitUrl = `http://127.0.0.1:${ports.cockpitPort}`;
     console.log('');
@@ -644,6 +664,27 @@ async function spawnDaemonAndCockpit(
     }
   }
   console.log('');
+
+  // Async update check — fires in the background so the start path is
+  // never blocked on a network call. Prints a one-line nudge after
+  // the start banner if a newer version is on npm. Failures (offline,
+  // registry timeout, etc.) silently skip — never burden the user with
+  // "couldn't check for updates" noise on a healthy start.
+  void checkForUpdate();
+}
+
+async function checkForUpdate(): Promise<void> {
+  try {
+    const latest = await fetchLatestVersion();
+    if (!latest) return;
+    if (!versionGreater(latest, pkg.version)) return;
+    console.log(
+      `   ${c.dim('•')} ${c.cyan(`chorus ${latest}`)} ${c.dim('is available — run')} ${c.cyan('chorus update')}`,
+    );
+    console.log('');
+  } catch {
+    /* never block a healthy start on a network failure */
+  }
 }
 
 /**

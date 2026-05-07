@@ -20,6 +20,30 @@ import {
 export interface SystemRouteDeps {
   /** Absolute path to bin/chorus.mjs — used by /orchestrators/:name/connect. */
   chorusBinPath: string;
+  /** Daemon's own version string (from package.json at boot). Used by
+   *  /update-check to compare against npm's `latest` dist-tag. */
+  version: string;
+}
+
+// In-memory cache for the latest npm version. Tightened to 30 min after
+// early-launch users complained banners lagged a release by hours. The
+// dist-tags endpoint is tiny (~30 bytes); 30-min freshness is plenty
+// generous and catches a same-day patch within one cockpit reload.
+// Daemon restart busts the cache (in-process Map), so users who
+// `chorus update` always see fresh state on first cockpit load.
+const NPM_LATEST_TTL_MS = 30 * 60 * 1000;
+let npmLatestCache: { value: string | null; fetchedAt: number } | null = null;
+
+async function getCachedLatestVersion(
+  fetcher: () => Promise<string | null>,
+): Promise<string | null> {
+  const now = Date.now();
+  if (npmLatestCache && now - npmLatestCache.fetchedAt < NPM_LATEST_TTL_MS) {
+    return npmLatestCache.value;
+  }
+  const value = await fetcher();
+  npmLatestCache = { value, fetchedAt: now };
+  return value;
 }
 
 export function registerSystemRoutes(
@@ -36,6 +60,37 @@ export function registerSystemRoutes(
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('db_error', message);
+    }
+  });
+
+  // ─── Update availability check ────────────────────────────────────────
+  // Polls npm's dist-tags endpoint (~30 bytes) and returns whether a
+  // newer version of chorus-codes is on the registry. Cached in memory
+  // for 4h to avoid hammering npm — the user's update cadence is days,
+  // not minutes, so 4h freshness is plenty. The cockpit sidebar banner
+  // calls this on mount; CLI's chorus-start checkForUpdate also already
+  // reuses fetchLatestVersion from cli/commands/update.ts (same source).
+  fastify.get<{
+    Reply: ApiResponse<{
+      current: string;
+      latest: string | null;
+      updateAvailable: boolean;
+    }>;
+  }>('/update-check', async () => {
+    try {
+      const { fetchLatestVersion, versionGreater } = await import(
+        '../../cli/commands/update.js'
+      );
+      const current = deps.version;
+      const latest = await getCachedLatestVersion(() =>
+        fetchLatestVersion('chorus-codes'),
+      );
+      const updateAvailable =
+        latest !== null && versionGreater(latest, current);
+      return successResponse({ current, latest, updateAvailable });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('internal', message);
     }
   });
 

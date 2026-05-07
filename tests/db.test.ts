@@ -136,6 +136,75 @@ describe('chats', () => {
     expect(refetched?.verdict).toBe('request_changes');
   });
 
+  it('template_snapshot starts null and round-trips after setTemplateSnapshot', async () => {
+    const created = await chats.create({ work: 'w', template_id: 'code-review' });
+    expect(created.template_snapshot).toBeNull();
+
+    const snapshot = JSON.stringify({ id: 'code-review', phases: [{ x: 1 }] });
+    await chats.setTemplateSnapshot(created.id, snapshot);
+
+    const fetched = await chats.getById(created.id);
+    expect(fetched?.template_snapshot).toBe(snapshot);
+  });
+
+  it('setTemplateSnapshot is write-once — second call does not overwrite', async () => {
+    const created = await chats.create({ work: 'w', template_id: 'code-review' });
+    const first = JSON.stringify({ id: 'code-review', version: 1 });
+    const second = JSON.stringify({ id: 'code-review', version: 2 });
+
+    await chats.setTemplateSnapshot(created.id, first);
+    await chats.setTemplateSnapshot(created.id, second); // should be a no-op
+
+    const fetched = await chats.getById(created.id);
+    expect(fetched?.template_snapshot).toBe(first);
+  });
+
+  it('chats.update does not clobber template_snapshot', async () => {
+    // Regression guard: the UPDATE statement must NOT reset
+    // template_snapshot to NULL. Editing the template in the cockpit (which
+    // doesn't go through chats.update at all) was the original bug; this
+    // test pins the contract that `update()` is also snapshot-safe.
+    const created = await chats.create({ work: 'w', template_id: 'code-review' });
+    const snapshot = JSON.stringify({ id: 'code-review', phases: [] });
+    await chats.setTemplateSnapshot(created.id, snapshot);
+
+    await chats.update(created.id, { status: 'reviewing' });
+
+    const fetched = await chats.getById(created.id);
+    expect(fetched?.template_snapshot).toBe(snapshot);
+    expect(fetched?.status).toBe('reviewing');
+  });
+
+  it('setTemplateSnapshot does not bump updated_at', async () => {
+    // The snapshot write is internal runner bookkeeping, not a user-
+    // visible mutation. Bumping updated_at would re-shuffle the chat to
+    // the top of the recent-list every time a chat fired, which is
+    // disorienting (user didn't touch anything). The helper omits
+    // `updated_at = ?` from its UPDATE — pin that contract here.
+    const created = await chats.create({ work: 'w', template_id: 'code-review' });
+    const before = created.updated_at;
+    // Sleep one tick so any naïve `updated_at = Date.now()` would
+    // produce a different value, otherwise the test would pass by
+    // coincidence on a fast machine.
+    await new Promise((r) => setTimeout(r, 5));
+
+    await chats.setTemplateSnapshot(created.id, JSON.stringify({ id: 't' }));
+
+    const fetched = await chats.getById(created.id);
+    expect(fetched?.updated_at).toBe(before);
+  });
+
+  it('setTemplateSnapshot tolerates rows that already have a snapshot — no error', async () => {
+    // Daemon-restart-resume scenario: runChat re-enters and calls the
+    // helper again. The IS-NULL guard makes the second UPDATE affect
+    // zero rows. Must not throw or surface a constraint error.
+    const created = await chats.create({ work: 'w', template_id: 'code-review' });
+    await chats.setTemplateSnapshot(created.id, JSON.stringify({ id: 'a' }));
+    await expect(
+      chats.setTemplateSnapshot(created.id, JSON.stringify({ id: 'b' })),
+    ).resolves.toBeUndefined();
+  });
+
   it('list filters by status + orders by updated_at DESC', async () => {
     const a = await chats.create({ work: 'a', template_id: 't' });
     const b = await chats.create({ work: 'b', template_id: 't' });

@@ -6,6 +6,8 @@ import { precheckLineage } from '../../lib/cli-precheck.js';
 import { personas } from '../../lib/db/index.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
 import { getTransport } from '../../lib/settings/transport.js';
+import { CLI_LINEAGES, type CliLineageKey } from '../../lib/settings/concurrency.js';
+import { acquire as acquireCliSlot } from '../cli-semaphore.js';
 import { isHttpDispatchedShim, pickShimForVoice } from '../agents/index.js';
 import type { ErrorDetector } from '../error-detector.js';
 import { waitForAnswer } from '../output-watcher.js';
@@ -21,13 +23,26 @@ import type { Lineage } from '../agents/types.js';
 import type { RunnerEvent } from './types.js';
 import { verdictFromReviewerText } from './verdict.js';
 
-// Cap concurrent reviewer subprocesses per chat. Templates with 4+
-// reviewer candidates would otherwise spawn the full set in parallel —
-// which in practice means simultaneous LLM-CLI subprocesses each holding
-// a shim child + stream parser, plus per-chat cwd. At load=133 last week
-// the root cause was unbounded fan-out across re-attached SSE sessions;
-// the per-chat ceiling stops a single big template from melting the host.
-const REVIEWER_CONCURRENCY = 3;
+/**
+ * Local-CLI reviewer concurrency is enforced daemon-wide by
+ * `cli-semaphore.ts` — global cap (`maxParallelCli`) + per-CLI cap
+ * (`perCli['opencode-cli']` etc.). Settings are user-tunable via
+ * /settings; defaults are the same numbers we used to hardcode here
+ * (3 global, opencode/gemini/kimi capped at 2 each). The semaphore is
+ * shared across chats, not per-chat — that's where the OOM risk lives.
+ *
+ * HTTP-dispatched shims (openrouter and friends) bypass the semaphore
+ * entirely — they're network calls and don't consume local resources.
+ */
+
+/**
+ * Type guard for shim names that map to our capped CLI lineage keys.
+ * Anything that isn't one of these is treated as a non-cap'd lineage
+ * (defensive — covers future shim names we forgot to add to CLI_LINEAGES).
+ */
+function isCappedLineage(shimName: string): shimName is CliLineageKey {
+  return (CLI_LINEAGES as readonly string[]).includes(shimName);
+}
 
 export async function runReviewers(
   chatDir: string,
@@ -63,76 +78,73 @@ export async function runReviewers(
 
   const candidates = phase.reviewer.candidates;
   const required = phase.reviewer.require;
-  let cursor = 0;
 
-  // Early-exit signal: aborts in-flight reviewers and stops new ones
-  // from being claimed once consensus is reached (or has become
-  // impossible). Without this, a chat with 6 reviewers and require=2
-  // would fan out all 6 even after 2 agreed — wasting tokens, and
-  // worse, leaving the user with a perpetually-spinning page if any
-  // remaining reviewer has a broken CLI (e.g. gemini-cli with no
-  // GEMINI_API_KEY hangs the worker without emitting a clear failure).
-  // AbortSignal.any composes the external abort (chat-cancel from the
-  // user) with our internal "consensus done" signal.
-  const internalAbort = new AbortController();
-  const combinedSignal = AbortSignal.any([abortSignal, internalAbort.signal]);
-
-  function shouldStop(): { stop: boolean; reason: string } {
-    const agreedSoFar = reviews.filter((r) => r.outcome === 'agreed').length;
-    const remaining = candidates.length - reviews.length;
-    if (agreedSoFar >= required) {
-      return { stop: true, reason: 'consensus_reached' };
-    }
-    if (agreedSoFar + remaining < required) {
-      return { stop: true, reason: 'consensus_impossible' };
-    }
-    return { stop: false, reason: '' };
-  }
-
-  async function worker(): Promise<void> {
-    while (true) {
-      if (combinedSignal.aborted) return;
-      const idx = cursor++;
-      if (idx >= candidates.length) return;
-      const candidate = candidates[idx];
-      try {
-        const res = await runReviewer(
-          chatDir,
-          chatId,
-          phase,
-          phaseIdx,
-          round,
-          idx,
-          doerOutput,
-          work,
-          filesBlock,
-          tmuxMgr,
-          errorDetector,
-          onEvent,
-          combinedSignal,
-          templateFallbackReviewer,
-        );
-        reviews.push({
-          reviewer: `${candidate.lineage}-${idx}`,
-          outcome: res === null ? 'failed' : res ? 'agreed' : 'disagreed',
-        });
-      } catch {
-        reviews.push({
-          reviewer: `${candidate.lineage}-${idx}`,
-          outcome: 'failed',
-        });
-      }
-      // After every completion, re-evaluate. Only stop on consensus_reached;
-      // consensus_impossible we let run to completion so the user sees every
-      // reviewer's reasoning (helpful for debugging "why couldn't we agree").
-      const { stop, reason } = shouldStop();
-      if (stop && reason === 'consensus_reached') {
-        internalAbort.abort('consensus_reached');
-      }
+  // Split candidates by transport. HTTP-dispatched shims (openrouter,
+  // future API-only shims) consume zero local CPU/RAM — they're just
+  // network calls — so they bypass the cli-semaphore entirely and run
+  // unbounded parallel. Per-shim rate limiting (e.g. OpenRouter's 429
+  // with Retry-After) is the upstream's job; chorus shouldn't double-
+  // throttle. Local CLI candidates go through the semaphore which
+  // enforces both the global cap and the per-CLI cap; the wait happens
+  // INSIDE runReviewer right before spawn so a reviewer that's queued
+  // still emits its phase_start / participant cards, just in a
+  // "waiting for slot" state.
+  const localCandidateIdxs: number[] = [];
+  const httpCandidateIdxs: number[] = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    const reviewerModel = candidate.models?.[0];
+    const shim = pickShimForVoice(candidate.lineage as Lineage, reviewerModel);
+    if (isHttpDispatchedShim(shim)) {
+      httpCandidateIdxs.push(i);
+    } else {
+      localCandidateIdxs.push(i);
     }
   }
-  const workerCount = Math.min(REVIEWER_CONCURRENCY, candidates.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  async function runOne(idx: number): Promise<void> {
+    if (abortSignal.aborted) return;
+    const candidate = candidates[idx];
+    try {
+      const res = await runReviewer(
+        chatDir,
+        chatId,
+        phase,
+        phaseIdx,
+        round,
+        idx,
+        doerOutput,
+        work,
+        filesBlock,
+        tmuxMgr,
+        errorDetector,
+        onEvent,
+        abortSignal,
+        templateFallbackReviewer,
+      );
+      reviews.push({
+        reviewer: `${candidate.lineage}-${idx}`,
+        outcome: res === null ? 'failed' : res ? 'agreed' : 'disagreed',
+      });
+    } catch {
+      reviews.push({
+        reviewer: `${candidate.lineage}-${idx}`,
+        outcome: 'failed',
+      });
+    }
+  }
+
+  // Both buckets fire in parallel — the cli-semaphore inside
+  // runReviewer is what enforces the local-CLI caps, so we don't need
+  // a worker pool here. Reviewers continue to all run to completion
+  // (no cancel-on-consensus); that's the established behaviour from
+  // chorus-085 (see memory `feedback_let_all_reviewers_finish`),
+  // unchanged by this PR. We're only swapping the worker-pool
+  // implementation for a daemon-wide semaphore.
+  await Promise.all([
+    ...localCandidateIdxs.map((i) => runOne(i)),
+    ...httpCandidateIdxs.map((i) => runOne(i)),
+  ]);
 
   const agreedCount = reviews.filter((r) => r.outcome === 'agreed').length;
   const failedCount = reviews.filter((r) => r.outcome === 'failed').length;
@@ -174,13 +186,14 @@ async function runReviewer(
   const reviewerModel = candidate.models?.[0];
   const shim = pickShimForVoice(candidate.lineage, reviewerModel);
   const agentName = shim.name;
+  const isHttp = isHttpDispatchedShim(shim);
 
   // Pre-spawn precheck — same gate as runDoer. A reviewer that fails
   // precheck returns null, which the phase loop already handles by
   // counting it toward the all-reviewers-failed threshold and continuing
   // with the remaining reviewers. HTTP-dispatched shims (openrouter)
   // skip this — auth is the secrets table, checked inside the shim.
-  if (!isHttpDispatchedShim(shim)) {
+  if (!isHttp) {
     const preRev = await precheckLineage(candidate.lineage as CliLineage);
     if (!preRev.ok) {
       onEvent({
@@ -203,6 +216,34 @@ async function runReviewer(
     }
   }
 
+  // Acquire the daemon-wide CLI slot (global + per-lineage). Local CLI
+  // only — HTTP-dispatched shims aren't a memory pressure source and
+  // bypass the semaphore. The slot is held for the reviewer's entire
+  // lifetime, including any per-slot fallback chain — this is
+  // conservative when a fallback swaps to a different lineage (we keep
+  // the original slot rather than swap), but worst case is over-
+  // counting the original lineage's quota during the swap window. The
+  // global cap still holds.
+  //
+  // The abortSignal is passed so a chat cancelled while this reviewer
+  // is queued behind the cap doesn't leave a stale waiter blocking the
+  // semaphore head forever. On abort, acquire rejects → we return null
+  // (treated as a failed reviewer by the phase loop) without spawning.
+  //
+  // `releaseSlot` is null for HTTP shims and the precheck-failed early-
+  // return; the finally block below is robust to that.
+  let releaseSlot: (() => void) | null = null;
+  if (!isHttp && isCappedLineage(agentName)) {
+    try {
+      releaseSlot = await acquireCliSlot(agentName, abortSignal);
+    } catch {
+      // Aborted while waiting for slot — don't proceed. The phase loop
+      // counts this reviewer as failed which preserves "all-failed"
+      // semantics for the chat-level verdict.
+      return null;
+    }
+  }
+
   const roundDir = path.join(chatDir, `round-${round}`);
   const reviewerDir = path.join(roundDir, `reviewer-${agentName}-${reviewerIdx}`);
 
@@ -213,6 +254,13 @@ async function runReviewer(
   const askFile = path.join(reviewerDir, 'ask.md');
   const answerFile = path.join(reviewerDir, 'answer.md');
 
+  // Outer try/finally — guarantees the cli-semaphore slot is returned
+  // on every path: headless's nested try/finally for participantAborts,
+  // tmux's nested try/finally for the poll interval, AND any thrown
+  // error in persona resolution or ask building. `releaseSlot` is null
+  // for HTTP shims (acquire was skipped) — the optional-call is the
+  // guard.
+  try {
   // Resolve reviewer persona — same fallback + warning pattern as runDoer.
   let reviewerPersonaPrompt: string | undefined;
   if (candidate.persona) {
@@ -329,6 +377,17 @@ async function runReviewer(
           const message = sameLineage
             ? `Reviewer model "${from.model ?? '(default)'}" produced no answer; retrying with "${to.model ?? '(default)'}".`
             : `Reviewer ${from.lineage}/${from.model ?? '(default)'} failed; switching to ${to.lineage}/${to.model ?? '(default)'} (cross-lineage fallback).`;
+          // Structured daemon-log line. Pairs with the [reviewer] attempt-
+          // failed line that was just emitted by reviewer.ts: tail the log
+          // and you see "attempt failed" → "fallback fired" → next
+          // "attempt failed" or success in order, per slot.
+          console.warn(
+            `[reviewer] fallback fired chat=${chatId} round=${round} ` +
+              `slot=${agentName}-${reviewerIdx} reason=${reason} ` +
+              `from=${from.lineage}/${from.model ?? '(default)'} ` +
+              `to=${to.lineage}/${to.model ?? '(default)'} ` +
+              `chain_idx=${fromIdx}`,
+          );
           onEvent({
             chatId,
             type: 'cli_warning',
@@ -485,5 +544,8 @@ async function runReviewer(
     return null;
   } finally {
     clearInterval(pollHandle);
+  }
+  } finally {
+    releaseSlot?.();
   }
 }

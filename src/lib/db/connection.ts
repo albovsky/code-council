@@ -133,6 +133,11 @@ async function initDb(): Promise<Client> {
   // Nullable for legacy rows; backfilled on first list-load. UNIQUE
   // partial index lets us resolve /runs/<slug> in O(1).
   if (!has('slug')) await db.execute('ALTER TABLE chats ADD COLUMN slug TEXT');
+  // Frozen template JSON written once when the runner first fires; readers
+  // prefer this over the live template by id so old runs don't change shape
+  // when the user edits the template later. NULL on legacy rows is fine —
+  // readers fall back to the live template lookup.
+  if (!has('template_snapshot')) await db.execute('ALTER TABLE chats ADD COLUMN template_snapshot TEXT');
   await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_slug ON chats(slug) WHERE slug IS NOT NULL');
   await backfillChatSlugs(db);
 

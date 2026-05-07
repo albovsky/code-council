@@ -30,6 +30,13 @@ const ChatRowSchema = z.object({
   ship_error: z.string().nullable().default(null),
   artifact: z.string().nullable().default(null),
   verdict: z.string().nullable().default(null),
+  /**
+   * Frozen template JSON captured at first run-fire. Stays NULL on chats
+   * that pre-date the column. Stored as a JSON string in SQLite; readers
+   * upstream parse it. The DB row keeps it as a raw string so we don't
+   * pay the parse cost on list pages that never use it.
+   */
+  template_snapshot: z.string().nullable().default(null),
   created_at: z.number().int(),
   updated_at: z.number().int(),
   finished_at: z.number().int().nullable(),
@@ -231,6 +238,28 @@ export const chats = {
 
   async cancel(id: string): Promise<ChatRow> {
     return chats.update(id, { status: 'cancelled', finished_at: Date.now() });
+  },
+
+  /**
+   * Write-once template snapshot. The runner calls this on first fire so
+   * the cockpit can render old runs against the template they actually
+   * used, even if the live template gets edited later.
+   *
+   * Idempotent: the `IS NULL` predicate makes a second call (e.g. after
+   * a daemon restart resumes a chat) a no-op. We never overwrite an
+   * existing snapshot — by definition the chat already ran against it.
+   *
+   * `update_at` is intentionally NOT bumped here. This is internal
+   * runner bookkeeping, not a user-visible mutation; bumping it would
+   * reorder the chat in the cockpit's recent-list every time a chat
+   * fired, even though nothing the user cares about changed.
+   */
+  async setTemplateSnapshot(id: string, snapshotJson: string): Promise<void> {
+    const db = await getDb();
+    await db.execute({
+      sql: 'UPDATE chats SET template_snapshot = ? WHERE id = ? AND template_snapshot IS NULL',
+      args: [snapshotJson, id],
+    });
   },
 
   /**

@@ -1,5 +1,6 @@
 // Chat API endpoints
-import type { Chat, ListEnvelope } from "@/lib/types";
+import { TemplateSchema } from "@/lib/template-schema";
+import type { Chat, ListEnvelope, Template } from "@/lib/types";
 import { fetchFromDaemon } from "./client";
 
 interface RawChatRow {
@@ -18,6 +19,11 @@ interface RawChatRow {
   ship_error?: string | null;
   artifact?: string | null;
   verdict?: string | null;
+  /** JSON-encoded Template snapshot captured at first run-fire. NULL on
+   *  legacy rows. The daemon stores it as a string to keep list-page
+   *  reads cheap; we parse here so the rest of the cockpit gets a
+   *  ready-to-use Template object. */
+  template_snapshot?: string | null;
   created_at: number;
   updated_at: number;
   finished_at?: number | null;
@@ -27,12 +33,51 @@ interface RawChatRow {
  * Daemon stores chats with snake_case columns; the UI contract is camelCase.
  * Translate at the boundary so the rest of the app doesn't care.
  */
+/**
+ * Exported as a `_testing` seam — tests for the snapshot parse + zod
+ * validation path need to drive `fromRow()` directly, not over HTTP.
+ * Not part of the public API.
+ * @internal
+ */
+export const _testing = {
+  fromRow: (row: RawChatRow): Chat => fromRow(row),
+};
+
 function fromRow(row: RawChatRow): Chat {
   let attached: string[] | undefined;
   if (row.attached_files) {
     try {
       const parsed = JSON.parse(row.attached_files);
       if (Array.isArray(parsed)) attached = parsed;
+    } catch {
+      // ignore — leave undefined
+    }
+  }
+  let templateSnapshot: Template | undefined;
+  if (row.template_snapshot) {
+    try {
+      // Two layers of defense:
+      //   1. JSON.parse — corrupt/malformed string (manual DB edit, FS hiccup).
+      //   2. TemplateSchema.safeParse — schema drift between when this
+      //      snapshot was captured and the current Template shape (new
+      //      required field added in v0.x). Without this layer an unchecked
+      //      cast would silently propagate structurally-incomplete objects
+      //      to renderers, which then crash on missing fields. With it, old
+      //      snapshots that no longer satisfy the current schema degrade
+      //      cleanly to undefined → caller falls back to live template.
+      //
+      // Type note: the daemon-side `TemplateSchema` (runtime contract,
+      // template-schema.ts) and the cockpit-side `Template` interface
+      // (UI / marketplace shape, types.ts) overlap in the fields the run
+      // page actually reads (id, name, phases). The cast bridges that
+      // overlap; the schema validation above is the substantive check
+      // that the data is well-formed.
+      const parsed = JSON.parse(row.template_snapshot);
+      const result = TemplateSchema.safeParse(parsed);
+      if (result.success) {
+        templateSnapshot = result.data as unknown as Template;
+      }
+      // else: leave undefined — caller's fallback handles it
     } catch {
       // ignore — leave undefined
     }
@@ -51,6 +96,7 @@ function fromRow(row: RawChatRow): Chat {
     shipError: row.ship_error ?? undefined,
     artifact: row.artifact ?? undefined,
     verdict: row.verdict ?? undefined,
+    templateSnapshot,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     finishedAt: row.finished_at ?? undefined,

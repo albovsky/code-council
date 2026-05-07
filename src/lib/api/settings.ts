@@ -123,6 +123,29 @@ export async function updateTransport(
   });
 }
 
+export interface ConcurrencySettings {
+  maxParallelCli: number;
+  perCli: Record<string, number>;
+  cliLineages?: readonly string[];
+  defaults?: {
+    maxParallelCli: number;
+    perCli: Record<string, number>;
+  };
+}
+
+export async function getConcurrencySettings(): Promise<ConcurrencySettings> {
+  return fetchFromDaemon<ConcurrencySettings>("/settings/concurrency");
+}
+
+export async function updateConcurrencySettings(
+  patch: { maxParallelCli?: number; perCli?: Record<string, number> },
+): Promise<ConcurrencySettings> {
+  return fetchFromDaemon<ConcurrencySettings>("/settings/concurrency", {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}
+
 export type BillingMode = "api" | "subscription" | "mixed";
 
 export interface BillingSettings {

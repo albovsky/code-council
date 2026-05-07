@@ -19,6 +19,7 @@ import {
   recordHealth,
   type CliLineage,
 } from '../../lib/cli-health.js';
+import { synthesizeCostUsd } from '../../lib/model-pricing.js';
 import { StreamFileWriter } from './stream-file-writer.js';
 import { verdictFromReviewerText } from './verdict.js';
 import type { RunnerEvent } from './types.js';
@@ -179,12 +180,38 @@ export async function runReviewerHeadless(args: {
         // after a daemon restart or browser reload. Sidecar mirrors the
         // existing _meta.json (transport metadata) shape — write best-
         // effort, ignore errors.
+        //
+        // Cost synthesis: when the CLI emits tokens but no costUsd
+        // (gemini-cli reports total_tokens only; codex reports nothing
+        // in `exec` mode), look up the model in the OpenRouter pricing
+        // catalog and compute cost from tokens × $/token. Fills the
+        // "plan equivalent" column on the home page for the providers
+        // whose own JSON doesn't carry pricing. Best-effort: a missing
+        // model in the catalog or an offline daemon falls through to
+        // costUsd unset rather than reporting a fake $0.
+        let usageForStats = capturedUsage;
+        if (
+          usageForStats &&
+          usageForStats.costUsd === undefined &&
+          (usageForStats.inputTokens ||
+            usageForStats.outputTokens ||
+            usageForStats.cachedInputTokens)
+        ) {
+          try {
+            const synth = await synthesizeCostUsd(candidateModel, usageForStats);
+            if (synth !== undefined) {
+              usageForStats = { ...usageForStats, costUsd: synth };
+            }
+          } catch {
+            /* synthesis is informational — leave costUsd unset on failure */
+          }
+        }
         try {
           fs.writeFileSync(
             path.join(reviewerDir, '_stats.json'),
             JSON.stringify({
               durationMs: Date.now() - startedAt,
-              ...(capturedUsage ? { usage: capturedUsage } : {}),
+              ...(usageForStats ? { usage: usageForStats } : {}),
             }),
             'utf-8',
           );
@@ -349,6 +376,46 @@ export async function runReviewerHeadless(args: {
       } catch {
         /* best-effort — don't fail the runner because of a write error */
       }
+    }
+    // Persist a per-attempt sidecar so failures of EARLIER fallback chain
+    // entries survive after a later attempt overwrites answer.md. Without
+    // this, when (e.g.) kimi-k2.5 fails and the chain falls through to
+    // claude-sonnet-4-6, the only on-disk record is "_swaps.json:
+    // lineage_fallback" — the actual reason kimi failed (auth, model-not-
+    // found, quota, ...) is gone. Writing in finally guarantees the row
+    // lands regardless of how the run exits (success, error, abort).
+    // Append-only JSONL keyed by (round, model) so multi-step fallback
+    // chains leave a trail.
+    if (errored) {
+      const errorKind = errorSummary?.kind ?? 'unknown';
+      const errorMessage = errorSummary?.message ?? '(no message captured)';
+      const durationMs = Date.now() - startedAt;
+      try {
+        const attemptsFile = path.join(reviewerDir, '_attempts.jsonl');
+        const entry = {
+          ts: Date.now(),
+          round,
+          lineage: candidateLineage,
+          model: candidateModel ?? null,
+          errorKind,
+          errorMessage,
+          durationMs,
+        };
+        fs.appendFileSync(attemptsFile, JSON.stringify(entry) + '\n');
+      } catch {
+        /* best-effort — diagnostics shouldn't fail the run */
+      }
+      // Daemon-log line — same content as the JSONL row but at the
+      // daemon level so a single tail of ~/.chorus/logs/daemon.log
+      // shows every failed reviewer attempt across every chat without
+      // walking per-chat dirs. Grep-friendly key=value format mirrors
+      // the openrouter shim's own warn lines.
+      console.warn(
+        `[reviewer] attempt failed chat=${chatId} round=${round} ` +
+          `lineage=${candidateLineage} model=${candidateModel ?? '(default)'} ` +
+          `kind=${errorKind} duration_ms=${durationMs} ` +
+          `message=${JSON.stringify(errorMessage).slice(0, 300)}`,
+      );
     }
     // Mirror runDoerHeadless: surface answer.md write failures as a
     // cli_warning so the user sees "stream stopped writing" instead of

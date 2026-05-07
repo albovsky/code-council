@@ -39,10 +39,26 @@ interface StatsSummary {
   avgDurationMs: number;
   /** Most-used template_id + run count. Null when no chats. */
   topTemplate: { id: string; runs: number } | null;
-  /** Sum of usage.costUsd across every _stats.json found. */
+  /** Sum of usage.costUsd across every _stats.json found.
+   *  Includes BOTH actual out-of-pocket (openrouter) AND shadow / list-
+   *  price-equivalent (claude/codex/gemini/opencode subscription tiers).
+   *  Kept for back-compat; new UI should prefer actualCostUsd. */
   totalCostUsd: number;
-  /** Sum of cost over chats created today. */
+  /** Sum of cost over chats created today. Same caveat as totalCostUsd. */
   costTodayUsd: number;
+  /** Real out-of-pocket spend (HTTP-shim providers — currently openrouter
+   *  only). This is what the user is actually being charged. */
+  actualCostUsd: number;
+  /** Real out-of-pocket today. */
+  actualCostTodayUsd: number;
+  /** List-price equivalent for subscription-CLI calls
+   *  (claude-code, codex-cli, gemini-cli, opencode-cli, kimi-cli). User
+   *  doesn't pay this — it's what each call would cost on the underlying
+   *  vendor's API at list price. Surfaced as "plan equivalent" so users
+   *  can see what their subscription is saving them. */
+  shadowCostUsd: number;
+  /** Plan-equivalent for chats created today. */
+  shadowCostTodayUsd: number;
   /** Sum of usage.inputTokens / outputTokens across every _stats.json. */
   totalTokensIn: number;
   totalTokensOut: number;
@@ -76,8 +92,34 @@ function readStatsFile(filePath: string): StatsFile | null {
 
 interface ChatStats {
   costUsd: number;
+  /** Out-of-pocket portion of costUsd (openrouter etc). */
+  actualCostUsd: number;
+  /** Subscription/list-price portion of costUsd
+   *  (claude-code/codex/gemini/opencode/kimi). */
+  shadowCostUsd: number;
   tokensIn: number;
   tokensOut: number;
+}
+
+/**
+ * Returns true if a participant directory name belongs to a shim that
+ * charges the user out-of-pocket for each call (HTTP-dispatched API
+ * shims). Kept as a pattern match on the shim's `name` (which forms the
+ * middle slug of `reviewer-<name>-<idx>` / `doer-<name>`) so adding a new
+ * paid shim is a one-line change here. Anything not matching is
+ * considered "shadow" — subscription-tier CLI where the cost is sunk.
+ */
+const PAID_SHIMS = new Set(['openrouter']);
+function isPaidParticipant(participantDirName: string): boolean {
+  // Strip the role prefix and trailing -<idx> for reviewers.
+  // Doer dir: `doer-<shim>` → shim
+  // Reviewer dir: `reviewer-<shim>-<idx>` → shim
+  let core = participantDirName;
+  if (core.startsWith('reviewer-')) core = core.slice('reviewer-'.length);
+  else if (core.startsWith('doer-')) core = core.slice('doer-'.length);
+  // Drop a trailing -<digit+>
+  core = core.replace(/-\d+$/, '');
+  return PAID_SHIMS.has(core);
 }
 
 /**
@@ -86,7 +128,13 @@ interface ChatStats {
  * sidecars yet.
  */
 function aggregateChatStats(chatDir: string): ChatStats {
-  const out: ChatStats = { costUsd: 0, tokensIn: 0, tokensOut: 0 };
+  const out: ChatStats = {
+    costUsd: 0,
+    actualCostUsd: 0,
+    shadowCostUsd: 0,
+    tokensIn: 0,
+    tokensOut: 0,
+  };
   if (!fs.existsSync(chatDir)) return out;
   let rounds: string[];
   try {
@@ -107,7 +155,13 @@ function aggregateChatStats(chatDir: string): ChatStats {
       if (!fs.existsSync(statsPath)) continue;
       const s = readStatsFile(statsPath);
       if (!s?.usage) continue;
-      out.costUsd += s.usage.costUsd ?? 0;
+      const cost = s.usage.costUsd ?? 0;
+      out.costUsd += cost;
+      if (isPaidParticipant(pd)) {
+        out.actualCostUsd += cost;
+      } else {
+        out.shadowCostUsd += cost;
+      }
       out.tokensIn += s.usage.inputTokens ?? 0;
       out.tokensOut += s.usage.outputTokens ?? 0;
     }
@@ -155,15 +209,25 @@ export function registerStatsRoutes(fastify: FastifyInstance): void {
       const chatsRoot = path.join(os.homedir(), '.chorus', 'chats');
       let totalCostUsd = 0;
       let costTodayUsd = 0;
+      let actualCostUsd = 0;
+      let actualCostTodayUsd = 0;
+      let shadowCostUsd = 0;
+      let shadowCostTodayUsd = 0;
       let totalTokensIn = 0;
       let totalTokensOut = 0;
       for (const c of allChats) {
         const dir = path.join(chatsRoot, c.id);
         const s = aggregateChatStats(dir);
         totalCostUsd += s.costUsd;
+        actualCostUsd += s.actualCostUsd;
+        shadowCostUsd += s.shadowCostUsd;
         totalTokensIn += s.tokensIn;
         totalTokensOut += s.tokensOut;
-        if (c.created_at >= todayStart) costTodayUsd += s.costUsd;
+        if (c.created_at >= todayStart) {
+          costTodayUsd += s.costUsd;
+          actualCostTodayUsd += s.actualCostUsd;
+          shadowCostTodayUsd += s.shadowCostUsd;
+        }
       }
 
       const lineages = new Set<string>();
@@ -179,6 +243,10 @@ export function registerStatsRoutes(fastify: FastifyInstance): void {
         topTemplate,
         totalCostUsd,
         costTodayUsd,
+        actualCostUsd,
+        actualCostTodayUsd,
+        shadowCostUsd,
+        shadowCostTodayUsd,
         totalTokensIn,
         totalTokensOut,
         enabledVoices: allVoices.length,

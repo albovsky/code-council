@@ -1,9 +1,4 @@
 // Tmux session manager interface. Implementation in src/daemon/tmux.ts.
-//
-// Spec foundations:
-//   /home/ubuntu/.claude/projects/-home-ubuntu/memory/chorus_tmux_session_lifecycle.md
-//   /home/ubuntu/.claude/projects/-home-ubuntu/memory/feedback_shell_injection_via_tmux.md
-//   /home/ubuntu/.claude/projects/-home-ubuntu/memory/feedback_codex_home_per_account.md
 
 import type { AgentSpawnOptions, AgentShim } from './agents/types.js';
 

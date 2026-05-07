@@ -27,6 +27,7 @@ import {
   recordHealth,
   type CliLineage,
 } from '../../lib/cli-health.js';
+import { synthesizeCostUsd } from '../../lib/model-pricing.js';
 import { StreamFileWriter } from './stream-file-writer.js';
 import type { RunnerEvent } from './types.js';
 
@@ -187,13 +188,36 @@ export async function runDoerHeadless(args: {
         // Persist runtime stats next to answer.md — see reviewer.ts for
         // rationale. Use path.dirname + path.join (clearer than the
         // anchored regex; flagged in retroactive PR #16 review).
+        //
+        // Cost synthesis: see same block in reviewer.ts. Doer's model is
+        // `modelOverride ?? phase.doer.models?.[0]` which we already
+        // resolved at top of function and passed into shim.runHeadless;
+        // re-resolve the same string here for the lookup.
+        let usageForStats = capturedUsage;
+        const doerModel = modelOverride ?? phase.doer.models?.[0];
+        if (
+          usageForStats &&
+          usageForStats.costUsd === undefined &&
+          (usageForStats.inputTokens ||
+            usageForStats.outputTokens ||
+            usageForStats.cachedInputTokens)
+        ) {
+          try {
+            const synth = await synthesizeCostUsd(doerModel, usageForStats);
+            if (synth !== undefined) {
+              usageForStats = { ...usageForStats, costUsd: synth };
+            }
+          } catch {
+            /* synthesis is informational — leave costUsd unset on failure */
+          }
+        }
         try {
           const statsPath = path.join(path.dirname(answerFile), '_stats.json');
           fs.writeFileSync(
             statsPath,
             JSON.stringify({
               durationMs: Date.now() - startedAt,
-              ...(capturedUsage ? { usage: capturedUsage } : {}),
+              ...(usageForStats ? { usage: usageForStats } : {}),
             }),
             'utf-8',
           );

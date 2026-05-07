@@ -23,19 +23,28 @@ export const COCKPIT_TO_DAEMON: Record<ReviewerLineage, string> = {
 
 // `xai` is a legacy alias from older templates that grouped under cockpit
 // "opencode".
+//
+// `openrouter` round-trip is critical: emit.ts writes `lineage: openrouter`
+// to YAML when the user picks an OpenRouter voice, and parse.ts must map
+// it back. Pre-fix this entry was missing — parse silently dropped every
+// openrouter candidate (`DAEMON_TO_COCKPIT.openrouter === undefined` →
+// `if (!cockpitLineage) continue` → row gone), and on reopen the form
+// rendered zero reviewers. Save then failed validation ("phase needs at
+// least one reviewer") and the user couldn't recover without YAML mode.
 export const DAEMON_TO_COCKPIT: Record<string, ReviewerLineage> = {
   anthropic: "claude",
   openai: "codex",
   google: "gemini",
   opencode: "opencode",
   moonshot: "kimi",
+  openrouter: "openrouter",
   xai: "opencode",
 };
 
 export const DAEMON_DEFAULT_MODEL: Record<ReviewerLineage, string> = {
   claude: "claude-opus-4-7",
   codex: "gpt-5.5",
-  gemini: "gemini-3.1-pro-preview",
+  gemini: "gemini-2.5-pro",
   opencode: "kimi-k2.6",
   kimi: "kimi-k2.6",
   openrouter: "",

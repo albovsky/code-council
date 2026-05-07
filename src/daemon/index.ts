@@ -209,7 +209,7 @@ async function main(): Promise<void> {
     registerPersonaRoutes(api);
     registerSettingsRoutes(api);
     registerSecretRoutes(api);
-    registerSystemRoutes(api, { chorusBinPath: CHORUS_BIN_PATH });
+    registerSystemRoutes(api, { chorusBinPath: CHORUS_BIN_PATH, version: VERSION });
     registerVoiceRoutes(api);
     registerOpenRouterRoutes(api);
     registerStatsRoutes(api);

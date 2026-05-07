@@ -6,6 +6,8 @@ import { precheckLineage } from '../../lib/cli-precheck.js';
 import { personas } from '../../lib/db/index.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
 import { getTransport } from '../../lib/settings/transport.js';
+import { CLI_LINEAGES, type CliLineageKey } from '../../lib/settings/concurrency.js';
+import { acquire as acquireCliSlot } from '../cli-semaphore.js';
 import { isHttpDispatchedShim, pickShimForVoice } from '../agents/index.js';
 import type { ErrorDetector } from '../error-detector.js';
 import { waitForAnswer } from '../output-watcher.js';
@@ -39,13 +41,14 @@ export async function runDoer(
   const doerModel = phase.doer.models?.[0];
   const shim = pickShimForVoice(phase.doer.lineage, doerModel);
   const agentName = shim.name;
+  const isHttp = isHttpDispatchedShim(shim);
 
   // Pre-spawn precheck: short-circuit doomed runs without paying the spawn
   // tax. Two cheap layers: (1) recent quota_exhausted with future resetAt,
   // (2) credential file missing → user not logged in. HTTP-dispatched shims
   // (openrouter) skip this — their auth is the secrets table, checked
   // inside the shim itself.
-  if (!isHttpDispatchedShim(shim)) {
+  if (!isHttp) {
     const preDoer = await precheckLineage(phase.doer.lineage as CliLineage);
     if (!preDoer.ok) {
       onEvent({
@@ -68,6 +71,24 @@ export async function runDoer(
     }
   }
 
+  // Acquire daemon-wide CLI slot (global cap + per-lineage cap). Local
+  // CLI only — HTTP-dispatched shims (openrouter) bypass. The slot is
+  // held until the doer returns; cross-lineage fallback within the slot
+  // doesn't refresh the slot (conservative — see reviewer-driver for
+  // the same trade-off). The abortSignal lets a cancelled chat unwind
+  // a queued doer without blocking the semaphore head forever.
+  // The outer try/finally below guarantees release on every exit path.
+  let releaseSlot: (() => void) | null = null;
+  if (!isHttp && (CLI_LINEAGES as readonly string[]).includes(agentName)) {
+    try {
+      releaseSlot = await acquireCliSlot(agentName as CliLineageKey, abortSignal);
+    } catch {
+      // Aborted while queued — bail without spawning. Phase loop
+      // already treats null doer return as "doer failed".
+      return null;
+    }
+  }
+
   const roundDir = path.join(chatDir, `round-${round}`);
   const doerDir = path.join(roundDir, `doer-${agentName}`);
 
@@ -78,6 +99,10 @@ export async function runDoer(
   const askFile = path.join(doerDir, 'ask.md');
   const answerFile = path.join(doerDir, 'answer.md');
 
+  // Outer try/finally guarantees the cli-semaphore slot is released on
+  // every exit path (return null, throw, headless return, tmux return).
+  // releaseSlot is null for HTTP shims; the optional-call is the guard.
+  try {
   // Resolve doer persona. Falls back to no-persona prompt when the id can't
   // be resolved — emits cli_warning so the cockpit can surface the
   // misconfiguration. Without the warning, retroactive PR #17 review
@@ -351,5 +376,8 @@ export async function runDoer(
     return null;
   } finally {
     clearInterval(pollHandle);
+  }
+  } finally {
+    releaseSlot?.();
   }
 }

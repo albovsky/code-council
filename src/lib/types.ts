@@ -89,6 +89,13 @@ export interface Chat {
   artifact?: string;
   /** Final reviewer verdict from chat_done. Undefined until terminal. */
   verdict?: string;
+  /**
+   * Frozen template captured the first time the runner fired for this chat.
+   * Present on chats run after the snapshot column shipped; absent on legacy
+   * rows. Run-page renderers prefer this over a live `getTemplate(templateId)`
+   * lookup so old runs don't shape-shift when the user edits the template.
+   */
+  templateSnapshot?: Template;
   createdAt: number;
   updatedAt: number;
   finishedAt?: number;

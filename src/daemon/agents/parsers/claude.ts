@@ -23,12 +23,52 @@ export function parseClaude(line: string): AgentEvent[] {
 
   const t = obj.type;
 
-  // Final result line — emit message_done with the assembled text.
+  // Final result line — emit message_done with the assembled text +
+  // usage. Claude Code reports `total_cost_usd` (list-price equivalent
+  // even on a Pro/Max plan) and a `usage` block with input/output token
+  // counts. Without lifting these, every Claude reviewer landed in
+  // _stats.json with usage:undefined and the home page's plan-equivalent
+  // spend silently lost the largest contributor (Claude is most users'
+  // primary voice). The user pays $0 for these on subscription, but the
+  // shadow column is the whole point of "plan equiv" — show what the
+  // sub is saving them.
   if (t === 'result') {
     const subtype = obj.subtype as string | undefined;
     const isError = obj.is_error as boolean | undefined;
     if (subtype === 'success' && !isError) {
-      return [{ type: 'message_done', finalText: String(obj.result ?? '') }];
+      const usageBlock = obj.usage as Record<string, unknown> | undefined;
+      const costUsd =
+        typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : undefined;
+      const inputTokens =
+        usageBlock && typeof usageBlock.input_tokens === 'number'
+          ? usageBlock.input_tokens
+          : undefined;
+      const outputTokens =
+        usageBlock && typeof usageBlock.output_tokens === 'number'
+          ? usageBlock.output_tokens
+          : undefined;
+      const cachedInputTokens =
+        usageBlock && typeof usageBlock.cache_read_input_tokens === 'number'
+          ? usageBlock.cache_read_input_tokens
+          : undefined;
+      const usage =
+        costUsd !== undefined ||
+        inputTokens !== undefined ||
+        outputTokens !== undefined
+          ? {
+              ...(inputTokens !== undefined ? { inputTokens } : {}),
+              ...(outputTokens !== undefined ? { outputTokens } : {}),
+              ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+              ...(costUsd !== undefined ? { costUsd } : {}),
+            }
+          : undefined;
+      return [
+        {
+          type: 'message_done',
+          finalText: String(obj.result ?? ''),
+          ...(usage ? { usage } : {}),
+        },
+      ];
     }
     return [
       {

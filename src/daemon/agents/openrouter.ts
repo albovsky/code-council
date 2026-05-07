@@ -158,14 +158,23 @@ async function* runOpenRouterStream(
       // Try to lift a structured error from the body before falling back to
       // the raw status code. Body is small for error responses.
       let errMessage = `OpenRouter returned ${res.status}`;
+      let rawBody = '';
       try {
-        const text = await res.text();
-        const parsed = JSON.parse(text) as { error?: { message?: string } };
+        rawBody = await res.text();
+        const parsed = JSON.parse(rawBody) as { error?: { message?: string } };
         if (parsed.error?.message) errMessage = parsed.error.message;
-        else if (text.length > 0 && text.length < 500) errMessage = text;
+        else if (rawBody.length > 0 && rawBody.length < 500) errMessage = rawBody;
       } catch {
         /* keep status-code message */
       }
+      // Structured daemon-log line — grep-friendly so users can post-mortem
+      // an openrouter failure (404 model id, 402 credits, 429 rate-limit)
+      // without inspecting per-chat _attempts.jsonl files.
+      console.warn(
+        `[openrouter] dispatch failed model=${model} status=${res.status} ` +
+          `kind=openrouter_${res.status} message=${JSON.stringify(errMessage).slice(0, 300)} ` +
+          `body_head=${JSON.stringify(rawBody.slice(0, 200))}`,
+      );
       yield {
         type: 'error',
         kind: `openrouter_${res.status}`,
@@ -239,12 +248,19 @@ async function* runOpenRouterStream(
     const aborted = composed.aborted;
     const reason = composed.aborted ? composed.reason : undefined;
     if (aborted && reason === 'timeout') {
+      console.warn(
+        `[openrouter] dispatch timed out model=${model} timeout_ms=${timeoutMs}`,
+      );
       yield {
         type: 'error',
         kind: 'timeout',
         message: `OpenRouter dispatch exceeded ${Math.round(timeoutMs / 1000)}s.`,
       };
     } else if (aborted) {
+      // Cancellation is a user/runner action, not a bug — log at debug
+      // level only (still in daemon log via console.log) so a busy
+      // daemon's log stays scannable for real failures.
+      console.log(`[openrouter] dispatch aborted model=${model}`);
       yield {
         type: 'error',
         kind: 'aborted',
@@ -252,6 +268,9 @@ async function* runOpenRouterStream(
       };
     } else {
       const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[openrouter] dispatch network error model=${model} message=${JSON.stringify(message).slice(0, 300)}`,
+      );
       yield {
         type: 'error',
         kind: 'openrouter_fetch_failed',

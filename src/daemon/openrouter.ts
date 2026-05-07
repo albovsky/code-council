@@ -24,6 +24,7 @@
  */
 
 import { secrets, voices } from '../lib/db/index.js';
+import { recordHealth } from '../lib/cli-health.js';
 import { classifyOpencodeModel } from '../lib/voices.js';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
@@ -163,11 +164,21 @@ export async function listModels(apiKey?: string): Promise<OpenRouterModel[]> {
 /**
  * Validate, then persist the key under provider='openrouter' in secrets.
  * Returns the validation result; on failure the key is NOT saved.
+ *
+ * On successful save, immediately flip cli-health to healthy. Without
+ * this the home card stays "Auth broken — User not found" until the
+ * next successful chat call records health on its own — confusing UX
+ * because validateKey already confirmed the new key works against
+ * OpenRouter's /models endpoint just now.
  */
 export async function saveKey(apiKey: string): Promise<ValidateResult> {
   const result = await validateKey(apiKey);
   if (!result.valid) return result;
   await secrets.set('openrouter', 'api_key', apiKey);
+  // Best-effort: a recordHealth failure shouldn't block the save.
+  recordHealth({ lineage: 'openrouter', status: 'healthy' }).catch((err: unknown) => {
+    console.error('[chorus] recordHealth failed for openrouter on saveKey:', err);
+  });
   return result;
 }
 

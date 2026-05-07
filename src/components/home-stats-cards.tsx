@@ -39,8 +39,22 @@ export function HomeStatsCards({ stats }: Props) {
       <StatCard
         icon={<Coins className="h-3.5 w-3.5" />}
         label="Spend today"
-        value={formatUsd(stats.costTodayUsd)}
-        sub={`${formatUsd(stats.totalCostUsd)} all-time · ${formatTokens(stats.totalTokensIn + stats.totalTokensOut)} tok`}
+        value={formatUsd(stats.actualCostTodayUsd)}
+        sub={
+          <>
+            <div>
+              {formatUsd(stats.actualCostUsd)} actual all-time ·{" "}
+              {formatTokens(stats.totalTokensIn + stats.totalTokensOut)} tok
+            </div>
+            <div
+              className="text-muted-foreground/70"
+              title="What these calls would have cost on each provider's API at list price. You don't pay this — your subscriptions cover it."
+            >
+              plan equiv: {formatUsd(stats.shadowCostTodayUsd)} today ·{" "}
+              {formatUsd(stats.shadowCostUsd)} all-time
+            </div>
+          </>
+        }
       />
       <StatCard
         icon={<Clock className="h-3.5 w-3.5" />}
@@ -73,7 +87,7 @@ interface StatCardProps {
   icon: React.ReactNode;
   label: string;
   value: string;
-  sub: string;
+  sub: React.ReactNode;
   mono?: boolean;
 }
 

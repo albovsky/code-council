@@ -44,7 +44,48 @@ export function parseGemini(line: string): AgentEvent[] {
   if (t === 'result') {
     const status = obj.status as string | undefined;
     if (status === 'success') {
-      return [{ type: 'message_done', finalText: '' }];
+      // Lift token counts from gemini-cli's `stats` block so the run-page
+      // card can render "8.2k tok" alongside duration. Gemini-cli's
+      // headless stream uses { stats: { total_tokens, ... } } at top
+      // level on the success result line. Best-effort: a missing or
+      // malformed stats block falls through to no usage attached.
+      const stats = (obj as Record<string, unknown>).stats;
+      let usage:
+        | { inputTokens?: number; outputTokens?: number }
+        | undefined;
+      if (stats && typeof stats === 'object') {
+        const s = stats as Record<string, unknown>;
+        const total = typeof s.total_tokens === 'number' ? s.total_tokens : undefined;
+        const input =
+          typeof s.input_tokens === 'number'
+            ? s.input_tokens
+            : typeof s.prompt_tokens === 'number'
+              ? s.prompt_tokens
+              : undefined;
+        const output =
+          typeof s.output_tokens === 'number'
+            ? s.output_tokens
+            : typeof s.completion_tokens === 'number'
+              ? s.completion_tokens
+              : undefined;
+        if (input !== undefined || output !== undefined) {
+          usage = {
+            ...(input !== undefined ? { inputTokens: input } : {}),
+            ...(output !== undefined ? { outputTokens: output } : {}),
+          };
+        } else if (typeof total === 'number') {
+          // No split available — surface total as outputTokens so it
+          // still shows up as "Nk tok" on the card.
+          usage = { outputTokens: total };
+        }
+      }
+      return [
+        {
+          type: 'message_done',
+          finalText: '',
+          ...(usage ? { usage } : {}),
+        },
+      ];
     }
     const message = extractGeminiErrorMessage(obj, status);
     // Quota exhaustion is the single most common gemini failure on a
@@ -150,27 +191,34 @@ export function parseGeminiExit(
 ): AgentEvent[] {
   if (!fullStderr) return [];
 
-  // Auth-not-configured: gemini-cli prints
-  //   "GEMINI_API_KEY environment variable not found. Add that to your
-  //    environment and try again..."
-  // and exits 1. Without this branch the runner emits the generic
-  // cli_failed with a noisy stderr tail and the user has no clear CTA.
-  // Also covers GOOGLE_API_KEY and the legacy "GOOGLE_GENAI_API_KEY"
-  // for completeness — gemini-cli has accepted all three over its
-  // version history.
-  const apiKeyMissing =
-    /(GEMINI|GOOGLE(?:_GENAI)?)_API_KEY\s+(?:environment variable\s+)?not\s+(?:found|set)/i.exec(
+  // Auth-not-configured. Gemini CLI surfaces this in two formats we've
+  // observed:
+  //   1. older: "GEMINI_API_KEY environment variable not found. Add that
+  //      to your environment and try again..."
+  //   2. newer (gemini-cli 0.40.x): "Please set an Auth method in your
+  //      ~/.gemini/settings.json or specify one of the following
+  //      environment variables before running: GEMINI_API_KEY,
+  //      GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA"
+  // Without a clear branch the runner emits the generic cli_failed with a
+  // noisy stderr tail and the user has no idea the fix is "set an env var
+  // or run `gemini` for OAuth".
+  const apiKeyNotSet =
+    /(GEMINI|GOOGLE(?:_GENAI)?)_API_KEY\s+(?:environment variable\s+)?not\s+(?:found|set)/i.test(
       fullStderr,
     );
-  if (apiKeyMissing) {
-    const envName = apiKeyMissing[0].split(/\s+/)[0];
+  const authMethodMissing =
+    /set an Auth method|specify one of the following environment variables/i.test(
+      fullStderr,
+    );
+  if (apiKeyNotSet || authMethodMissing) {
     return [
       {
         type: 'error',
         kind: 'auth_error',
         message:
-          `Gemini CLI not authenticated — ${envName} is not set. ` +
-          `Get a key at aistudio.google.com/apikey, or run \`gemini\` for the OAuth flow.`,
+          `Gemini CLI not authenticated — set GEMINI_API_KEY (or run ` +
+          `\`gemini\` for the OAuth flow). Get a key at ` +
+          `aistudio.google.com/apikey.`,
       },
     ];
   }

@@ -131,6 +131,55 @@ export function registerSettingsRoutes(fastify: FastifyInstance): void {
     }
   });
 
+  // ─── Concurrency (daemon-wide CLI subprocess caps) ────────────────────
+  fastify.get<{ Reply: ApiResponse<object> }>(
+    '/settings/concurrency',
+    async () => {
+      try {
+        const { getConcurrency, CLI_LINEAGES, _defaults } = await import(
+          '../../lib/settings/concurrency.js'
+        );
+        return successResponse({
+          ...(await getConcurrency()),
+          // Surface the canonical CLI list + defaults so the cockpit
+          // doesn't have to mirror them. Cockpit renders one input per
+          // lineage; missing perCli keys fall through to defaults.
+          cliLineages: CLI_LINEAGES,
+          defaults: _defaults,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return errorResponse('internal', message);
+      }
+    },
+  );
+
+  fastify.put<{
+    Body: { maxParallelCli?: number; perCli?: Record<string, number> };
+    Reply: ApiResponse<object>;
+  }>('/settings/concurrency', async (request) => {
+    try {
+      const { getConcurrency, setConcurrency, ConcurrencySchema } = await import(
+        '../../lib/settings/concurrency.js'
+      );
+      const current = await getConcurrency();
+      const body = request.body ?? {};
+      // Merge incoming patch with current state — partial PUTs are
+      // friendlier to the cockpit (it can save just the changed input
+      // without having to round-trip the whole object).
+      const merged = {
+        maxParallelCli: body.maxParallelCli ?? current.maxParallelCli,
+        perCli: { ...current.perCli, ...(body.perCli ?? {}) },
+      };
+      const validated = ConcurrencySchema.parse(merged);
+      await setConcurrency(validated);
+      return successResponse(validated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('validation', message);
+    }
+  });
+
   // ─── Telemetry (anonymous heartbeat opt-out) ─────────────────────────
   fastify.get<{ Reply: ApiResponse<object> }>(
     '/settings/telemetry',

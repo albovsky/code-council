@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Activity,
   AlertTriangle,
   Check,
   Cloud,
@@ -66,39 +65,6 @@ export function PreviewSections(p: PreviewSectionsProps) {
       className="mt-2 select-none opacity-60 [&_*]:pointer-events-none"
       aria-disabled="true"
     >
-      <Section
-        icon={<Activity className="h-4 w-4" />}
-        title="Concurrency"
-        subtitle="How many chats Chorus runs in parallel. Overflow waits in a queue."
-      >
-        <div className="flex items-center gap-6">
-          <div className="flex-1">
-            <input
-              type="range"
-              min={1}
-              max={10}
-              step={1}
-              value={p.maxConcurrent}
-              onChange={(e) => p.setMaxConcurrent(parseInt(e.target.value, 10))}
-              disabled
-              className="w-full accent-primary"
-            />
-            <div className="mt-1.5 flex justify-between text-[10px] font-mono text-muted-foreground">
-              <span>1</span>
-              <span>5</span>
-              <span>10</span>
-            </div>
-          </div>
-          <div className="rounded-md border border-border bg-card px-4 py-2 font-mono text-sm">
-            {p.maxConcurrent} concurrent
-          </div>
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Each chat reserves one tmux session + {p.maxConcurrent * 3} reviewer
-          panes. Above this limit new chats land in a FIFO queue.
-        </p>
-      </Section>
-
       <Section
         icon={<FolderLock className="h-4 w-4" />}
         title="Per-tool auto-approve"

@@ -4,10 +4,6 @@
  * Pattern-matches tmux pane snapshots to detect known failure modes from
  * codex/claude/gemini/opencode CLIs. Returns structured CliError events
  * the runner emits as `cli_error` SSE messages.
- *
- * Observed patterns documented in:
- * /home/ubuntu/.claude/projects/-home-ubuntu/memory/chorus_cli_failure_modes.md
- * /home/ubuntu/.claude/projects/-home-ubuntu/memory/feedback_opencode_session_db_corruption.md
  */
 
 export type CliErrorKind =

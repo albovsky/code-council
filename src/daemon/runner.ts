@@ -13,6 +13,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { atomicWriteJsonSync } from '../lib/atomic-write.js';
+import { chats } from '../lib/db/index.js';
+import { logger } from '../lib/logger.js';
 import { isReviewOnlyPhase, type StandardPhase, type Template } from '../lib/template-schema.js';
 import type { ErrorDetector } from './error-detector.js';
 import { runDoer } from './runner/doer-driver.js';
@@ -79,6 +81,26 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
 
   if (!fs.existsSync(chatDir)) {
     fs.mkdirSync(chatDir, { recursive: true });
+  }
+
+  // Freeze the template onto the chat row BEFORE any other durable run
+  // artifact. Ordering matters: if we wrote meta.json first and crashed
+  // before the snapshot, a daemon-restart-resume would re-enter runChat
+  // with whatever template the runner re-resolved at restart time — which
+  // could be a user-edited version, not the one this chat actually
+  // intended to run against. Writing the snapshot first means resume's
+  // IS-NULL guard finds it already there and the original is preserved.
+  // Write-once: a second call after a daemon-restart-resume is a no-op
+  // (helper guards on `template_snapshot IS NULL`). Failures are
+  // non-fatal — the cockpit falls back to the live template by id, same
+  // as legacy behaviour.
+  try {
+    await chats.setTemplateSnapshot(chatId, JSON.stringify(template));
+  } catch (err) {
+    logger.warn(
+      { chatId, err: err instanceof Error ? err.message : String(err) },
+      'failed to persist template snapshot — cockpit will use live template fallback',
+    );
   }
 
   // Atomic temp+rename so a partial write (daemon crash, FS ENOSPC

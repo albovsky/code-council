@@ -61,6 +61,34 @@ describe('parseClaude — real fixture (Claude Code 2.1.123, captured 2026-04-30
     expect(parseClaude('')).toHaveLength(0);
     expect(parseClaude('{"type":"system","subtype":"hook_started"}')).toHaveLength(0);
   });
+
+  // Plan-equivalent spend on the home page silently undercounted by the
+  // largest contributor (Claude is most users' primary voice) because
+  // the result-line `total_cost_usd` + `usage` block weren't extracted.
+  // Lock in the lift so a future refactor can't drop it again.
+  it('lifts total_cost_usd + usage into the message_done event', () => {
+    const events = parseClaude(
+      '{"type":"result","subtype":"success","is_error":false,"result":"hi",' +
+        '"total_cost_usd":0.42,' +
+        '"usage":{"input_tokens":1500,"output_tokens":300,"cache_read_input_tokens":12000}}',
+    );
+    expect(events).toHaveLength(1);
+    const ev = events[0] as {
+      type: string;
+      finalText: string;
+      usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cachedInputTokens?: number;
+        costUsd?: number;
+      };
+    };
+    expect(ev.type).toBe('message_done');
+    expect(ev.usage?.costUsd).toBe(0.42);
+    expect(ev.usage?.inputTokens).toBe(1500);
+    expect(ev.usage?.outputTokens).toBe(300);
+    expect(ev.usage?.cachedInputTokens).toBe(12000);
+  });
 });
 
 describe('parseGemini — real fixture (gemini-cli, captured 2026-04-30)', () => {
@@ -153,6 +181,22 @@ describe('parseGeminiExit — stderr-driven quota detection', () => {
     const events = parseGeminiExit('', stderr, 1);
     expect(events).toHaveLength(1);
     expect((events[0] as { kind: string }).kind).toBe('auth_error');
+  });
+
+  // gemini-cli 0.40.x changed the auth error wording — the prior regex
+  // matched only "_API_KEY ... not found/set" which slipped past this
+  // newer format. User dogfood (chorus-codes 2026-05-06) caught it: a
+  // gemini reviewer fell through to lineage_fallback with no clear CTA.
+  it('catches gemini-cli 0.40.x "set an Auth method" wording', async () => {
+    const { parseGeminiExit } = await import('@/daemon/agents/parsers/gemini');
+    const stderr =
+      'Please set an Auth method in your /root/.gemini/settings.json or ' +
+      'specify one of the following environment variables before running: ' +
+      'GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA';
+    const events = parseGeminiExit('', stderr, 41);
+    expect(events).toHaveLength(1);
+    expect((events[0] as { kind: string }).kind).toBe('auth_error');
+    expect((events[0] as { message: string }).message).toMatch(/GEMINI_API_KEY/);
   });
 });
 

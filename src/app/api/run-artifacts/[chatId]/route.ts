@@ -40,6 +40,8 @@ interface SwapEntry {
   toModel: string;
   fallbackIdx: number;
   ts: number;
+  fromErrorKind?: string;
+  fromErrorMessage?: string;
 }
 
 const AGENT_TO_LINEAGE: Record<string, string> = {
@@ -76,6 +78,47 @@ function isValidSwapEntry(entry: unknown): SwapEntry | null {
 }
 
 /**
+ * Reads `_attempts.jsonl` from a participant dir and indexes the rows by
+ * model id. Used to enrich swap entries with the underlying error of the
+ * failed attempt — the JSONL is append-only, so multi-step fallback chains
+ * leave one row per attempt (oldest first). On a model collision we keep
+ * the latest entry, which matches "the most recent failure for this
+ * model" when the swap UI is interpreting a single chain.
+ */
+function readAttemptsByModel(
+  partDir: string,
+): Map<string, { errorKind: string; errorMessage: string }> {
+  const map = new Map<string, { errorKind: string; errorMessage: string }>();
+  const attemptsPath = path.join(partDir, "_attempts.jsonl");
+  if (!fs.existsSync(attemptsPath)) return map;
+  try {
+    const lines = fs
+      .readFileSync(attemptsPath, "utf-8")
+      .split("\n")
+      .filter((l) => l.trim().length > 0);
+    for (const line of lines) {
+      try {
+        const e = JSON.parse(line) as Record<string, unknown>;
+        const model =
+          typeof e.model === "string" ? e.model : "(default)";
+        const errorKind =
+          typeof e.errorKind === "string" ? e.errorKind : "unknown";
+        const errorMessage =
+          typeof e.errorMessage === "string"
+            ? e.errorMessage.slice(0, 200)
+            : "";
+        map.set(model, { errorKind, errorMessage });
+      } catch {
+        /* skip malformed line */
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  return map;
+}
+
+/**
  * Walks every participant dir under a chat and aggregates the
  * `_swaps.json` sidecars into a flat array. Mirrors how _stats.json
  * is consumed: the run page renders one swap card per entry. Empty
@@ -91,14 +134,26 @@ function readChatSwaps(chatId: string): SwapEntry[] {
     const roundDir = path.join(chatDir, round.name);
     for (const part of fs.readdirSync(roundDir, { withFileTypes: true })) {
       if (!part.isDirectory()) continue;
-      const swapPath = path.join(roundDir, part.name, "_swaps.json");
+      const partDir = path.join(roundDir, part.name);
+      const swapPath = path.join(partDir, "_swaps.json");
       if (!fs.existsSync(swapPath)) continue;
       try {
         const parsed = JSON.parse(fs.readFileSync(swapPath, "utf-8"));
         if (Array.isArray(parsed)) {
+          // Pre-load _attempts.jsonl once per participant dir — each swap
+          // entry's "from" side maps to the JSONL row whose model matches
+          // the swap's fromModel. Lets the UI render "kimi-k2.6 failed:
+          // cli_failed — model not found" instead of a bare arrow.
+          const attemptsByModel = readAttemptsByModel(partDir);
           for (const entry of parsed) {
             const valid = isValidSwapEntry(entry);
-            if (valid) out.push(valid);
+            if (!valid) continue;
+            const att = attemptsByModel.get(valid.fromModel);
+            if (att) {
+              valid.fromErrorKind = att.errorKind;
+              valid.fromErrorMessage = att.errorMessage;
+            }
+            out.push(valid);
           }
         }
       } catch {

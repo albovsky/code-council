@@ -24,14 +24,23 @@ async function getRunData(runId: string) {
   } catch (err) {
     throw err instanceof DaemonError ? err : new Error("Failed to load chat");
   }
-  let template = null;
-  try {
-    template = await getTemplate(chat.templateId);
-  } catch {
-    // Template was deleted — chat still renders, just without template-
-    // derived UI (placeholder reviewer cards from candidate definitions,
-    // phase names, etc.). Recorded participants still come from disk via
-    // /api/run-artifacts.
+  // Prefer the frozen snapshot captured at run-fire — this is what the
+  // chat actually executed against. Without this, editing the template
+  // later (adding/removing/renaming reviewers) retroactively reshapes
+  // every old run page: phantom QUEUED cards for new candidates, lost
+  // model labels on participants whose slot no longer exists. Fall back
+  // to the live template only for chats that pre-date the snapshot
+  // column (or chats deleted after run completion).
+  let template = chat.templateSnapshot ?? null;
+  if (!template) {
+    try {
+      template = await getTemplate(chat.templateId);
+    } catch {
+      // Template was deleted AND no snapshot exists — chat still renders,
+      // just without template-derived UI (placeholder reviewer cards from
+      // candidate definitions, phase names, etc.). Recorded participants
+      // still come from disk via /api/run-artifacts.
+    }
   }
   return { chat, template };
 }

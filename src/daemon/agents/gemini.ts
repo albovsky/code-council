@@ -38,8 +38,10 @@ export const geminiShim: AgentShim = {
     if (opts.model) {
       cmd += ` -m ${quoteValue(opts.model)}`;
     } else {
-      // Default to gemini-3.1-pro-preview (gemini-pro is not valid on current plan)
-      cmd += ` -m gemini-3.1-pro-preview`;
+      // Default to gemini-2.5-pro — universally available across gemini-cli
+      // accounts (gemini-3.1-pro-preview is gated behind preview access and
+      // 404s on most accounts, see catalog comment in lineage-maps.ts).
+      cmd += ` -m gemini-2.5-pro`;
     }
 
     return cmd;
@@ -92,8 +94,8 @@ export const geminiShim: AgentShim = {
     }
 
     // Model — Gemini CLI requires an explicit model on current API; default
-    // to gemini-3.1-pro-preview (the verified-working model).
-    args.push('-m', opts.model || 'gemini-3.1-pro-preview');
+    // to gemini-2.5-pro (universally available; 3.1-pro-preview is gated).
+    args.push('-m', opts.model || 'gemini-2.5-pro');
 
     const run = spawnHeadless({
       command: 'gemini',

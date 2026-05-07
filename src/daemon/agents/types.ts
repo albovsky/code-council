@@ -1,6 +1,5 @@
 // Agent shim interface — every CLI lineage implements this.
-// Pattern ported from openbridge's lib/agents/<name>.sh; see
-// /home/ubuntu/.claude/projects/-home-ubuntu/memory/openbridge_architecture.md
+// Pattern ported from openbridge's lib/agents/<name>.sh.
 
 /**
  * Lineage tags a model family / vendor.

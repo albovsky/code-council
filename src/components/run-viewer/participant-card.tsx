@@ -1,10 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, ArrowRight, Shuffle, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Maximize2, Shuffle, X } from "lucide-react";
 import { uiLineageDot, uiLineageLabel } from "@/lib/lineage-maps";
 import { LINEAGE_GRADIENT } from "./lineage-gradient";
 import { StateBadge } from "./state-badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { FallbackSwap, ParticipantSnapshot, ParticipantState } from "./types";
 import type { ReviewerLineage } from "@/lib/types";
 
@@ -66,6 +72,7 @@ export function ParticipantCard({
   swaps?: FallbackSwap[];
 }) {
   const [cancelling, setCancelling] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   // State precedence: pending (synthesised slot) → done (answer on disk) →
   // errored (chat terminal but no answer) → working (the implicit
@@ -236,6 +243,18 @@ export function ParticipantCard({
                         </span>
                       )}
                     </div>
+                    {s.fromErrorKind && (
+                      <div className="text-[10px] text-amber-200/75">
+                        <span className="font-mono uppercase tracking-wider text-amber-300/90">
+                          {s.fromErrorKind}
+                        </span>
+                        {s.fromErrorMessage && (
+                          <span className="ml-1.5 text-amber-100/80">
+                            — {s.fromErrorMessage}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -324,13 +343,20 @@ export function ParticipantCard({
         ) : state === "done" && participant.answer ? (
           // DONE state — render the answer inline, top-anchored, with
           // overflow scrolled internally so the card stays at fixed
-          // height. A click on the footer-line affordance toggles a
-          // full-screen expand for long answers.
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          // height. Click anywhere on the answer body to expand into a
+          // full-screen modal showing the complete output (per user
+          // feedback: truncated text on the card means there was no way
+          // to read past the fold).
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="group min-h-0 flex-1 cursor-zoom-in overflow-y-auto rounded text-left transition-colors hover:bg-foreground/5 focus:outline-none focus:ring-2 focus:ring-primary/40"
+            title="Click to view the full answer"
+          >
             <pre className="whitespace-pre-wrap break-words text-foreground/85">
               {participant.answer}
             </pre>
-          </div>
+          </button>
         ) : (
           <div className="text-muted-foreground/70">No output yet.</div>
         )}
@@ -359,8 +385,49 @@ export function ParticipantCard({
               ? `${(participant.answer?.length ?? 0).toLocaleString()} B`
               : "—"}
           </span>
+          {state === "done" && participant.answer && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground/80 transition-colors hover:bg-foreground/10 hover:text-foreground"
+              title="View full answer"
+            >
+              <Maximize2 className="h-3 w-3" />
+              <span className="hidden sm:inline">expand</span>
+            </button>
+          )}
         </span>
       </div>
+
+      <Dialog open={expanded} onOpenChange={setExpanded}>
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${uiLineageDot(ui)}`}
+              />
+              <span className="font-medium capitalize">{participant.role}</span>
+              <span className="text-muted-foreground">·</span>
+              <span className="uppercase tracking-wider text-muted-foreground">
+                {uiLineageLabel(ui)}
+              </span>
+              {(participant.modelUsed ?? participant.model) && (
+                <>
+                  <span className="text-muted-foreground/60">·</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {participant.modelUsed ?? participant.model}
+                  </span>
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-y-auto rounded border border-border bg-card/40 p-4">
+            <pre className="whitespace-pre-wrap break-words text-sm text-foreground/90">
+              {participant.answer ?? ""}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

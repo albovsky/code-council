@@ -26,6 +26,12 @@ CREATE TABLE IF NOT EXISTS chats (
   -- said. Cockpit + CLI list views colour by verdict; status is the
   -- system-level outcome.
   verdict TEXT,
+  -- Frozen template JSON captured the first time the runner fires for this
+  -- chat. Subsequent edits to the live template row never touch this column,
+  -- so old runs render with the candidate set + models that actually ran.
+  -- NULL for chats created before this column existed, or for chats that
+  -- never reached the runner — readers fall back to the live template by id.
+  template_snapshot TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   finished_at INTEGER

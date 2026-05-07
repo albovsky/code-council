@@ -104,6 +104,13 @@ export interface FallbackSwap {
   fallbackIdx: number;
   /** Wall-clock when the swap was received. */
   ts: number;
+  /** Why the FROM lineage/model failed (kind taxonomy from cli-health, or
+   *  "no_output" / "stream_failure" / etc). Surfaced from the failing
+   *  attempt's _attempts.jsonl entry so the UI can show "kimi-k2.6
+   *  failed: cli_failed — model not found" instead of just an arrow. */
+  fromErrorKind?: string;
+  /** One-line message from the failing attempt; trimmed to ~200 chars. */
+  fromErrorMessage?: string;
 }
 
 export interface RoundSnapshot {

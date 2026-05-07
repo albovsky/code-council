@@ -107,7 +107,7 @@ export function uiLineageDot(lineage: string | undefined): string {
 export const UI_LINEAGE_DEFAULT_MODEL: Record<UILineage, string> = {
   claude: "claude-opus-4-7",
   codex: "gpt-5.5",
-  gemini: "gemini-3.1-pro-preview",
+  gemini: "gemini-2.5-pro",
   opencode: "kimi-k2.6",
   kimi: "kimi-k2.6",
   // No sensible default for openrouter — user explicitly selects a model.
@@ -150,11 +150,14 @@ export const UI_LINEAGE_AVAILABLE_MODELS: Partial<Record<UILineage, string[]>> =
     "gpt-5.2",
   ],
   // Gemini list verified 2026-05-04 by `gemini -p "ok" --model <X>`.
-  // gemini-3-flash returned ModelNotFoundError; only the names below
-  // are accepted by the current Gemini CLI version.
+  // gemini-2.5-pro is the universally-available default — gemini-3.1-pro-preview
+  // is gated behind a preview-access tier and 404s on most accounts (the
+  // failure mode that surfaced as "Reviewer · GEMINI failed → cross-lineage
+  // fallback" in dogfood). 2.5-pro works on every gemini-cli account we've
+  // tested. Users with preview access can switch via the model dropdown.
   gemini: [
-    "gemini-3.1-pro-preview",
     "gemini-2.5-pro",
+    "gemini-3.1-pro-preview",
     "gemini-2.5-flash",
   ],
   // Kimi list cross-checked against the official kimi-cli docs +

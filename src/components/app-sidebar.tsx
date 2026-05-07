@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Users,
+  ArrowUpCircle,
 } from "lucide-react";
 import { TriadLogo } from "@/components/triad-logo";
 import { listChats, DaemonError } from "@/lib/api";
@@ -77,6 +78,13 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
   // because the literal in this file was never updated. /health is cached
   // for the session — single fetch on mount.
   const [daemonVersion, setDaemonVersion] = useState<string | null>(null);
+  // Update-available banner. Daemon caches the npm dist-tag for 4h so a
+  // single fetch on mount is enough — cockpit reloads pick up the latest
+  // value within one TTL of an upstream release.
+  const [updateInfo, setUpdateInfo] = useState<{
+    latest: string;
+    current: string;
+  } | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/daemon/api/v1/health")
@@ -88,6 +96,18 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
       })
       .catch(() => {
         /* offline daemon — fall back to the placeholder */
+      });
+    fetch("/api/daemon/api/v1/update-check")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled || !j?.data?.updateAvailable) return;
+        const { current, latest } = j.data;
+        if (typeof current === "string" && typeof latest === "string") {
+          setUpdateInfo({ current, latest });
+        }
+      })
+      .catch(() => {
+        /* offline / npm unreachable — silent */
       });
     return () => {
       cancelled = true;
@@ -356,6 +376,29 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
       </div>
       )}
 
+      {/* Update-available banner — pinned to the bottom of the sidebar.
+          Only shown when daemon's /update-check returned updateAvailable=true.
+          Hidden in collapsed mode (the up-arrow icon would lose its label
+          and most users use collapsed mode for keyboard-first navigation
+          where they wouldn't click a banner anyway). */}
+      {!collapsed && updateInfo && (
+        <div className="shrink-0 border-t border-border bg-primary/5 px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <ArrowUpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-medium text-foreground">
+                Update available
+              </div>
+              <div className="font-mono text-[10px] text-muted-foreground">
+                v{updateInfo.current.replace(/^v/, "")} → v{updateInfo.latest.replace(/^v/, "")}
+              </div>
+              <div className="mt-1 font-mono text-[10px] text-muted-foreground/80">
+                Run <code className="rounded bg-muted/40 px-1 text-foreground/80">chorus update</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

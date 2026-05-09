@@ -471,7 +471,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 - 🗺️ Roadmap: [./ROADMAP.md](./ROADMAP.md)
 - 🐛 Issues: <https://github.com/chorus-codes/chorus/issues>
 - 💬 Discussions: <https://github.com/chorus-codes/chorus/discussions>
-- 🐦 Twitter / X: [@chorus_codes](https://twitter.com/chorus_codes)
+- 🐦 X: [@ChorusCodes](https://x.com/ChorusCodes)
 
 ---
 

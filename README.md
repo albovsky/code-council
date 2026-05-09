@@ -11,7 +11,7 @@
 [![CI](https://github.com/chorus-codes/chorus/actions/workflows/ci.yml/badge.svg)](https://github.com/chorus-codes/chorus/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/chorus-codes?color=22c55e)](https://www.npmjs.com/package/chorus-codes)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](./LICENSE)
-[![Status](https://img.shields.io/badge/status-v0.7-brightgreen)]()
+[![Status](https://img.shields.io/badge/status-v0.8.29-brightgreen)]()
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933)]()
 
 [Website](https://chorus.codes) · [Roadmap](./ROADMAP.md) · [Issues](https://github.com/chorus-codes/chorus/issues)
@@ -388,9 +388,10 @@ The install ID lives at `~/.chorus/install-id` — `rm` it for a fresh one.
 - [x] **v0.5** — Daemon + cockpit + 4 AI vendors
 - [x] **v0.6** — MCP server, persona system
 - [x] **v0.7** — OpenRouter integration, voices table, real-time sidebar
-- [ ] **v0.8** — Multi-stage review (write → review → fix → re-review)
-- [ ] **v0.9** — Per-voice persona overrides
-- [ ] **v1.0** — Hosted GitHub App + cloud fan-out
+- [x] **v0.8** — Public launch + reliability hardening (diagnose, crash hook, fallback dedup)
+- [ ] **v0.9** — Multi-stage review (write → review → fix → re-review)
+- [ ] **v0.10** — Per-voice persona overrides + auto-disable on persistent voice failure
+- [ ] **v1.0** — Local-LLM adapter (Ollama / LM Studio / vLLM via OpenAI-compatible base URL)
 
 Full picture in [ROADMAP.md](./ROADMAP.md).
 

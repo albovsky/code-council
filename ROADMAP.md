@@ -66,12 +66,25 @@ A **template** is a chosen path through this 3D space — N phases, each with a 
 | Home dashboard (CLI status, usage, reset windows, cost) | 0.8 | 📐 PLANNED | |
 | Multi-account per CLI (add N codex / claude / gemini accounts of same vendor) | 0.8 | 📐 PLANNED | first-class UX for what `CHORUS_CODEX_HOME` env hack achieves today; auto-rotate to a non-rate-limited account when one hits quota_exhausted; surfaces in home dashboard alongside reset-window per-account |
 | Run history + cost aggregates | 0.8 | 📐 PLANNED | |
-| Local LLM voices (Ollama, llama.cpp) | 1.0+ | 💭 IDEA | |
-| CI integration (`chorus review --pr 1234`) | 1.0+ | 💭 IDEA | |
+| Public launch on npm + chorus-codes/chorus repo | 0.8 | ✅ DONE | shipped 2026-05-04 as `chorus-codes` v0.8.x; landing page live at chorus.codes |
+| `chorus diagnose` command + crash hook for bug reports | 0.8 | ✅ DONE | merged 2026-05-08 (PR #1); copy-pasteable markdown bundle, version-mismatch flag, install-mode classifier, latest crash preview, 50-line log tails, SSE noise filter, realpath bin path |
+| QUEUED placeholder cards for not-yet-spawned reviewers | 0.8 | ✅ DONE | merged 2026-05-08 (PR #2); 8-reviewer template now shows 8 cards from t=0 instead of revealing them as the daemon-wide CLI semaphore drains |
+| Cross-slot fallback collision dedup | 0.8 | ✅ DONE | merged 2026-05-08 (PR #3); per-(chatId,round) in-flight registry stops two slots from independently falling back to the same model in parallel |
+| Run-page reviewer card model name regression fix | 0.8 | ✅ DONE | merged 2026-05-08 (PR #6); chats.fromRow now derives `candidatesWithModels` from snapshot's `candidates` so card titles show the model name |
+| Node 22 ERR_REQUIRE_ESM crash on `chorus init` | 0.8.29 | ✅ DONE | merged 2026-05-09 (PR #14, community contribution by Julien-Deudon); `open` and `chokidar` (both pure ESM packages) switched to dynamic `await import()` |
+| macOS Keychain fallback for Claude Code v2 OAuth creds | 0.8.29 | ✅ DONE | merged 2026-05-09 (PR #8, community contribution by yuga-92); cli-precheck now probes `security find-generic-password -s "Claude Code-credentials"` before falsely reporting `auth_missing` |
+| Codex headless isolation (`--ignore-user-config`) | 0.8.29 | ✅ DONE | shipped 2026-05-09; user MCP/plugin/hook configs were causing codex to hang or cancel mid-call when chorus spawned it as a reviewer (#10) AND when codex called chorus as MCP client (#16). Closes both. |
+| Template `require ≤ candidates` validation | 0.8.29 | ✅ DONE | shipped 2026-05-09 (#15); zod `superRefine` rejects impossible quorum configs at template-save time instead of failing silently at run-start |
+| `lsof` port-probe timeout during `chorus start` | 0.8.30 | ⏳ IN FLIGHT | community PR #13 (austinmao) in draft — 1s timeout on the synchronous lsof probe so a hung lsof can't block daemon startup |
+| Auto-disable voice on persistent quota_exhausted | 0.8.30 | 📐 PLANNED | needs schema migration (`disabled_reason='auto_quota'`) + per-voice failure tracking. Pain: a Pro Gemini model on a Flash-only account fails forever; auto-disable stops repeated attempts (#11) |
+| Local-LLM adapter (Ollama / LM Studio / vLLM via OpenAI-compatible base URL) | 0.9 | 📐 PLANNED | one shim covers every OpenAI-compatible local stack; reuses the OpenRouter HTTP shim's request/response handling |
+| Multi-stage review (write → review → fix → re-review) | 0.9 | 📐 PLANNED | doer + reviewer + fix-doer + re-reviewer in a single template, iterating until quorum agrees or maxRounds hits |
+| Per-voice persona overrides | 0.10 | 📐 PLANNED | tighter scope than the v0.7 per-slot persona binding — lets a saved voice carry a default persona that templates inherit unless overridden |
+| CI integration (`chorus review --pr 1234`) | 1.0+ | 💭 IDEA | local-only review of an open GitHub PR diff |
 
 Legend: ✅ done · ⏳ in flight · 🔥 high-priority next · 🟡 partial · 📐 designed · 💭 idea
 
-> **Where we are (2026-05-03):** v0.7 substrate is essentially complete — voices, personas, review-only, token capture, cost surfacing, per-slot persona binding, runner-on-POST, SSE robustness all shipped. Last v0.7 mile: OpenRouter inline (in flight), then squash + publish as `chorus-codes` on npm (unscoped, `chorus.codes` domain match). **Going live ~2026-05-04.**
+> **Where we are (2026-05-09):** publicly launched on npm + chorus-codes/chorus 2026-05-04; ~120 unique installs by day 3 with ~30% activation. v0.8.x has been a reliability sprint driven by real user reports — diagnose tool, crash capture, queued cards, fallback dedup, node 22 ESM, Keychain creds, codex isolation, template validation. Three community PRs merged. v0.9 starts on multi-stage review + the local-LLM adapter.
 
 ---
 

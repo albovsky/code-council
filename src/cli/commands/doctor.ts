@@ -57,7 +57,7 @@ function printReport(r: DoctorReport): void {
   const labelMap: Record<string, string> = {
     'claude-code': 'claude',
     'codex-cli': 'codex',
-    'gemini-cli': 'gemini',
+    'gemini-cli': 'agy/gemini',
     'opencode-cli': 'opencode',
     'kimi-cli': 'kimi',
     'grok-cli': 'grok',

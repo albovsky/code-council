@@ -28,7 +28,7 @@ beforeAll(() => {
 afterAll(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
-function stageBinary(name: string): string {
+function stageBinary(name: string, versionOutput = 'claude 0.0.0-test'): string {
   // Unique-suffix the directory so the same basename can be staged
   // multiple times across tests without colliding (e.g., claude + claude.cmd).
   // The stub must echo a string matching CLI_SIGNATURES[cli] — for
@@ -38,7 +38,7 @@ function stageBinary(name: string): string {
   const dir = path.join(tmpDir, randomUUID());
   fs.mkdirSync(dir, { recursive: true });
   const full = path.join(dir, name);
-  fs.writeFileSync(full, '#!/bin/sh\necho "claude 0.0.0-test"\n', { mode: 0o755 });
+  fs.writeFileSync(full, `#!/bin/sh\necho "${versionOutput}"\n`, { mode: 0o755 });
   return full;
 }
 
@@ -155,5 +155,21 @@ describe('validateCliPath — basename gate', () => {
     const result = validateCliPath('claude-code', path.join(tmpDir, 'missing', 'claude'));
     expect(result.found).toBe(false);
     expect(result.reason).toContain('no file at');
+  });
+
+  it('accepts agy as the Google-lineage CLI binary during the Gemini CLI transition', () => {
+    const staged = stageBinary('agy', '1.0.0');
+    const result = validateCliPath('gemini-cli', staged);
+    expect(result.found).toBe(true);
+    expect(result.path).toBe(staged);
+    expect(result.source).toBe('manual');
+  });
+
+  it('still accepts the legacy gemini binary for the Google-lineage CLI', () => {
+    const staged = stageBinary('gemini', '0.42.0');
+    const result = validateCliPath('gemini-cli', staged);
+    expect(result.found).toBe(true);
+    expect(result.path).toBe(staged);
+    expect(result.source).toBe('manual');
   });
 });

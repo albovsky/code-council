@@ -27,8 +27,8 @@ export const CLIS: CliRow[] = [
   {
     id: "gemini-cli",
     provider: "google",
-    label: "Gemini CLI",
-    hint: "Google — uses your gcloud auth",
+    label: "Antigravity CLI",
+    hint: "Google — uses AGY, or legacy Gemini CLI when installed",
   },
   {
     id: "opencode-cli",
@@ -97,7 +97,7 @@ export function manualBinaryName(cliId: string): string {
     case "codex-cli":
       return "codex";
     case "gemini-cli":
-      return "gemini";
+      return "agy";
     case "opencode-cli":
       return "opencode";
     case "kimi-cli":

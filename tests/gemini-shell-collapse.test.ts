@@ -25,6 +25,13 @@ interface CapturedSpawn {
   args: readonly string[];
   stdinPayload?: string;
   cwd: string;
+  onExit?: (fullStdout: string, fullStderr: string, code: number | null) => unknown[];
+}
+
+async function drain(stream: AsyncIterable<unknown>): Promise<void> {
+  for await (const event of stream) {
+    void event;
+  }
 }
 
 /**
@@ -32,12 +39,13 @@ interface CapturedSpawn {
  * benign run handle (empty event stream, immediate exit). Returns the
  * captured-call accumulator and the dynamically-imported geminiShim.
  */
-async function setupShimWithSpy(): Promise<{
+async function setupShimWithSpy(opts: { googleCliPath?: string } = {}): Promise<{
   captured: CapturedSpawn[];
   geminiShim: typeof import('../src/daemon/agents/gemini').geminiShim;
 }> {
   vi.resetModules();
   const captured: CapturedSpawn[] = [];
+  const googleCliPath = opts.googleCliPath ?? '/usr/local/bin/gemini';
 
   vi.doMock('../src/daemon/headless', () => ({
     spawnHeadless: (opts: {
@@ -45,12 +53,14 @@ async function setupShimWithSpy(): Promise<{
       args: readonly string[];
       cwd: string;
       stdinPayload?: string;
+      onExit?: (fullStdout: string, fullStderr: string, code: number | null) => unknown[];
     }) => {
       captured.push({
         command: opts.command,
         args: [...opts.args],
         stdinPayload: opts.stdinPayload,
         cwd: opts.cwd,
+        onExit: opts.onExit,
       });
       return {
         pid: 12345,
@@ -60,6 +70,12 @@ async function setupShimWithSpy(): Promise<{
         done: Promise.resolve({ code: 0, killed: false }),
       };
     },
+  }));
+
+  vi.doMock('../src/lib/cli-detect', () => ({
+    detectAllClis: () => [
+      { id: 'gemini-cli', found: true, path: googleCliPath, source: 'path' },
+    ],
   }));
 
   const { geminiShim } = await import('../src/daemon/agents/gemini');
@@ -76,8 +92,7 @@ describe('geminiShim.runHeadless — argv shape', () => {
       model: 'gemini-2.5-pro',
       sandbox: 'workspace',
     });
-    // Drain the (empty) iterator so the call is observed.
-    for await (const _ of stream) { /* ignore */ }
+    await drain(stream);
 
     expect(captured).toHaveLength(1);
     const args = captured[0]!.args;
@@ -96,7 +111,7 @@ describe('geminiShim.runHeadless — argv shape', () => {
       model: 'gemini-2.5-pro',
       sandbox: 'workspace',
     });
-    for await (const _ of stream) { /* drain */ }
+    await drain(stream);
 
     const args = [...captured[0]!.args];
     // Paranoid simulation of what cmd.exe does with shell:true: argv joined
@@ -121,7 +136,7 @@ describe('geminiShim.runHeadless — argv shape', () => {
       model: 'gemini-2.5-pro',
       sandbox: 'workspace',
     });
-    for await (const _ of stream) { /* drain */ }
+    await drain(stream);
 
     const args = captured[0]!.args;
     const formatIdx = args.indexOf('--output-format');
@@ -148,7 +163,7 @@ describe('geminiShim.runHeadless — argv shape', () => {
       model: 'gemini-2.5-pro',
       sandbox: 'strict',
     });
-    for await (const _ of stream) { /* drain */ }
+    await drain(stream);
 
     const args = captured[0]!.args;
     expect(args[0]).toBe('-p');
@@ -165,10 +180,68 @@ describe('geminiShim.runHeadless — argv shape', () => {
       promptText: 'review',
       sandbox: 'workspace',
     });
-    for await (const _ of stream) { /* drain */ }
+    await drain(stream);
 
     const args = captured[0]!.args;
     const modelIdx = args.indexOf('-m');
     expect(args[modelIdx + 1]).toBe('gemini-2.5-pro');
+  });
+
+  it('uses AGY print mode when the detected Google CLI binary is agy', async () => {
+    const { captured, geminiShim } = await setupShimWithSpy({
+      googleCliPath: '/Users/me/.local/bin/agy',
+    });
+
+    const stream = geminiShim.runHeadless!({
+      cwd: process.cwd(),
+      promptText: 'review this PR',
+      model: 'gemini-3.1-pro-preview',
+      sandbox: 'workspace',
+    });
+    await drain(stream);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.command).toBe('/Users/me/.local/bin/agy');
+    expect(captured[0]!.args).toEqual([
+      '--print',
+      '--dangerously-skip-permissions',
+    ]);
+    expect(captured[0]!.stdinPayload).toBe('review this PR');
+  });
+
+  it('keeps AGY strict runs inside the terminal sandbox while remaining non-interactive', async () => {
+    const { captured, geminiShim } = await setupShimWithSpy({
+      googleCliPath: '/Users/me/.local/bin/agy',
+    });
+
+    const stream = geminiShim.runHeadless!({
+      cwd: process.cwd(),
+      promptText: 'review',
+      sandbox: 'strict',
+    });
+    await drain(stream);
+
+    expect(captured[0]!.args).toEqual([
+      '--print',
+      '--sandbox',
+      '--dangerously-skip-permissions',
+    ]);
+  });
+
+  it('emits AGY print output as the final message on successful exit', async () => {
+    const { captured, geminiShim } = await setupShimWithSpy({
+      googleCliPath: '/Users/me/.local/bin/agy',
+    });
+
+    const stream = geminiShim.runHeadless!({
+      cwd: process.cwd(),
+      promptText: 'review',
+      sandbox: 'workspace',
+    });
+    await drain(stream);
+
+    expect(captured[0]!.onExit?.('final answer\n', '', 0)).toEqual([
+      { type: 'message_done', finalText: 'final answer' },
+    ]);
   });
 });

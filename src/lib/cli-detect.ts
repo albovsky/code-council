@@ -26,14 +26,25 @@ export type DetectableCli =
   | 'kimi-cli'
   | 'grok-cli';
 
-const BINARY_NAME: Record<DetectableCli, string> = {
-  'claude-code': 'claude',
-  'codex-cli': 'codex',
-  'gemini-cli': 'gemini',
-  'opencode-cli': 'opencode',
-  'kimi-cli': 'kimi',
-  'grok-cli': 'grok',
+const BINARY_NAMES: Record<DetectableCli, readonly string[]> = {
+  'claude-code': ['claude'],
+  'codex-cli': ['codex'],
+  // Google is transitioning Gemini CLI users to Antigravity CLI (`agy`).
+  // Keep the internal id stable for voices/templates, but prefer AGY when
+  // both CLIs are installed.
+  'gemini-cli': ['agy', 'gemini'],
+  'opencode-cli': ['opencode'],
+  'kimi-cli': ['kimi'],
+  'grok-cli': ['grok'],
 };
+
+function primaryBinaryName(cli: DetectableCli): string {
+  return BINARY_NAMES[cli][0]!;
+}
+
+function expectedBinaryNames(cli: DetectableCli): string {
+  return BINARY_NAMES[cli].map((name) => `"${name}"`).join(' or ');
+}
 
 const isWindows = platform() === 'win32';
 const HOME = homedir();
@@ -94,7 +105,6 @@ function discoverNpmPrefixes(): string[] {
  * scan, so cheap/common locations come first to keep the probe fast.
  */
 function fallbackPaths(cli: DetectableCli): string[] {
-  const bin = BINARY_NAME[cli];
   const exts = isWindows ? ['.cmd', '.exe', ''] : [''];
   const dirs: string[] = [];
 
@@ -164,11 +174,13 @@ function fallbackPaths(cli: DetectableCli): string[] {
   // shouldn't pay for two probes of the same dir.
   const seen = new Set<string>();
   for (const dir of dirs) {
-    for (const ext of exts) {
-      const full = path.join(dir, `${bin}${ext}`);
-      if (seen.has(full)) continue;
-      seen.add(full);
-      candidates.push(full);
+    for (const bin of BINARY_NAMES[cli]) {
+      for (const ext of exts) {
+        const full = path.join(dir, `${bin}${ext}`);
+        if (seen.has(full)) continue;
+        seen.add(full);
+        candidates.push(full);
+      }
     }
   }
   return candidates;
@@ -197,7 +209,7 @@ function pathLookup(name: string): string | null {
 /**
  * Per-CLI version-output signatures. The shape varies wildly between
  * CLIs — claude prints "2.1.126 (Claude Code)", codex prints
- * "codex-cli 0.128.0", but gemini / opencode print just a bare
+ * "codex-cli 0.128.0", but agy / gemini / opencode print just a bare
  * version like "0.40.1" with NO CLI name. So each CLI gets its own
  * matcher rather than a uniform name-substring regex.
  *
@@ -250,11 +262,10 @@ interface VerifyResult {
  *   python 3.12  → no (starts with "Python ")
  */
 function basenameMatches(cli: DetectableCli, binPath: string): boolean {
-  const expected = BINARY_NAME[cli].toLowerCase();
   const base = path.basename(binPath).toLowerCase();
   // Strip Windows extensions so claude.exe / claude.cmd both match "claude".
   const stripped = base.replace(/\.(exe|cmd|bat|ps1)$/i, '');
-  return stripped === expected;
+  return BINARY_NAMES[cli].some((expected) => stripped === expected.toLowerCase());
 }
 
 /**
@@ -331,7 +342,7 @@ function verifyRunnable(
   if (!basenameMatches(cli, binPath)) {
     return {
       ok: false,
-      reason: `expected a binary named "${BINARY_NAME[cli]}" — got "${path.basename(binPath)}"`,
+      reason: `expected a binary named ${expectedBinaryNames(cli)} — got "${path.basename(binPath)}"`,
     };
   }
   let result;
@@ -359,7 +370,7 @@ function verifyRunnable(
     return {
       ok: false,
       reason:
-        `that binary ran, but its --version output doesn't look like the ${BINARY_NAME[cli]} CLI`,
+        `that binary ran, but its --version output doesn't look like the ${primaryBinaryName(cli)} CLI`,
     };
   }
   return { ok: true };
@@ -378,9 +389,11 @@ function detectOne(cli: DetectableCli): CliDetection {
   }
 
   // 1. PATH lookup
-  const onPath = pathLookup(BINARY_NAME[cli]);
-  if (onPath && verifyRunnable(cli, onPath).ok) {
-    return { id: cli, found: true, path: onPath, source: 'path' };
+  for (const bin of BINARY_NAMES[cli]) {
+    const onPath = pathLookup(bin);
+    if (onPath && verifyRunnable(cli, onPath).ok) {
+      return { id: cli, found: true, path: onPath, source: 'path' };
+    }
   }
 
   // 2. Fallback known dirs
@@ -412,7 +425,7 @@ export function detectAllClis(force = false): CliDetection[] {
   if (!force && detectCache && detectCache.expiresAt > now) {
     return detectCache.results;
   }
-  const results = (Object.keys(BINARY_NAME) as DetectableCli[]).map(detectOne);
+  const results = (Object.keys(BINARY_NAMES) as DetectableCli[]).map(detectOne);
   detectCache = { results, expiresAt: now + DETECT_CACHE_TTL_MS };
   return results;
 }
@@ -432,7 +445,7 @@ export function clearDetectionCache(): void {
  *   1. Basename matches the expected binary name. Catches the common
  *      paste-the-wrong-tool mistake — e.g. `/usr/bin/npm` for gemini-cli
  *      passes the bare-version regex but its basename is `npm`, not
- *      `gemini`. Both round-1 reviewers (claude + gemini) flagged this
+ *      `agy` or `gemini`. Both round-1 reviewers (claude + gemini) flagged this
  *      gap when smoke-testing the previous version.
  *   2. File exists.
  *   3. `--version` exits 0 with output that matches the CLI's signature.
@@ -448,15 +461,14 @@ export function validateCliPath(
   if (!trimmed) return { id: cli, found: false, reason: 'path is empty' };
   // Basename gate — strip extension on Windows so claude.cmd / claude.exe
   // both match `claude`.
-  const expectedBin = BINARY_NAME[cli];
   const actualBase = isWindows
     ? path.basename(trimmed).replace(/\.(cmd|exe)$/i, '')
     : path.basename(trimmed);
-  if (actualBase.toLowerCase() !== expectedBin.toLowerCase()) {
+  if (!BINARY_NAMES[cli].some((bin) => actualBase.toLowerCase() === bin.toLowerCase())) {
     return {
       id: cli,
       found: false,
-      reason: `that file is named "${actualBase}", but the ${cli} binary should be "${expectedBin}". Pasted the wrong path?`,
+      reason: `that file is named "${actualBase}", but the ${cli} binary should be ${expectedBinaryNames(cli)}. Pasted the wrong path?`,
     };
   }
   // Symlink-aware validation:

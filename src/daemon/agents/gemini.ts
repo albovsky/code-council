@@ -1,10 +1,13 @@
 /**
  * Gemini CLI agent shim.
+ * Also supports Google Antigravity CLI (`agy`) while keeping the historical
+ * `gemini-cli` provider id for database/template compatibility.
  * Single-line prompts only (see feedback_gemini_multiline_prompts.md).
  * Uses --approval-mode auto_edit (never yolo, see feedback_gemini_yolo_dangerous.md).
  * File references via @/abs/path inline syntax.
  */
 
+import nodePath from 'node:path';
 import type {
   AgentShim,
   AgentSpawnOptions,
@@ -15,6 +18,32 @@ import type {
 import { quoteValue, quotePath, validateValue } from './quote.js';
 import { spawnHeadless } from '../headless.js';
 import { parseGemini, parseGeminiExit } from './parsers/index.js';
+import { detectAllClis } from '../../lib/cli-detect.js';
+
+type GoogleCliKind = 'agy' | 'gemini';
+
+interface GoogleCliSelection {
+  command: string;
+  kind: GoogleCliKind;
+}
+
+function normalizeBinaryName(command: string): string {
+  return nodePath.basename(command).toLowerCase().replace(/\.(cmd|exe|bat|ps1|js)$/i, '');
+}
+
+function selectGoogleCli(): GoogleCliSelection {
+  const detected = detectAllClis().find((cli) => cli.id === 'gemini-cli');
+  const command = detected?.found && detected.path ? detected.path : 'agy';
+  return {
+    command,
+    kind: normalizeBinaryName(command) === 'gemini' ? 'gemini' : 'agy',
+  };
+}
+
+function agyExitEvents(fullStdout: string, _fullStderr: string, code: number | null): AgentEvent[] {
+  if (code !== 0) return [];
+  return [{ type: 'message_done', finalText: fullStdout.trim() }];
+}
 
 export const geminiShim: AgentShim = {
   lineage: 'google',
@@ -24,6 +53,14 @@ export const geminiShim: AgentShim = {
     validateValue('model', opts.model);
 
     const cwd = quotePath(opts.cwd);
+    const selected = selectGoogleCli();
+
+    if (selected.kind === 'agy') {
+      const args = ['--prompt-interactive'];
+      if (opts.sandbox === 'strict') args.push('--sandbox');
+      else args.push('--dangerously-skip-permissions');
+      return `cd ${cwd} && ${quotePath(selected.command)} ${args.join(' ')}`;
+    }
 
     // Map sandbox profile to gemini's approval-mode. Never use yolo —
     // see feedback_gemini_yolo_dangerous.md (auto_edit is safe-by-default).
@@ -33,7 +70,7 @@ export const geminiShim: AgentShim = {
     // auto_edit (i.e. yolo) is intentionally NOT supported here — the user
     // who wants gemini fully unsandboxed can run gemini outside chorus.
 
-    let cmd = `cd ${cwd} && gemini --approval-mode ${approvalMode}`;
+    let cmd = `cd ${cwd} && ${quotePath(selected.command)} --approval-mode ${approvalMode}`;
 
     if (opts.model) {
       cmd += ` -m ${quoteValue(opts.model)}`;
@@ -74,6 +111,29 @@ export const geminiShim: AgentShim = {
    * Format verified 2026-04-30; see parseGemini for shape.
    */
   runHeadless(opts: HeadlessSpawnOptions): AsyncIterable<AgentEvent> {
+    const selected = selectGoogleCli();
+
+    if (selected.kind === 'agy') {
+      const args = ['--print'];
+      if (opts.sandbox === 'strict') args.push('--sandbox');
+      args.push('--dangerously-skip-permissions');
+
+      const run = spawnHeadless({
+        command: selected.command,
+        args,
+        cwd: opts.cwd,
+        stdinPayload: opts.promptText,
+        parseLine: () => [],
+        onExit: agyExitEvents,
+        cli: 'agy',
+        timeoutMs: opts.timeoutMs,
+        abortSignal: opts.abortSignal,
+        heartbeat: true,
+      });
+
+      return run.events;
+    }
+
     // -p needs a non-empty value to flip gemini into non-interactive mode.
     // Windows note: when daemon spawns with shell:true (required for .cmd
     // shims, see headless.ts), Node concatenates argv with spaces and the
@@ -103,7 +163,7 @@ export const geminiShim: AgentShim = {
     args.push('-m', opts.model || 'gemini-2.5-pro');
 
     const run = spawnHeadless({
-      command: 'gemini',
+      command: selected.command,
       args,
       cwd: opts.cwd,
       stdinPayload: opts.promptText,

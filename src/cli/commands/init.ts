@@ -19,7 +19,7 @@ interface ReviewerDetect {
 }
 
 /**
- * Detect which reviewer CLIs (claude/codex/gemini/opencode/kimi) are
+ * Detect which reviewer CLIs (claude/codex/agy or gemini/opencode/kimi) are
  * usable on the host. Returns the list of human-friendly names that
  * passed the full detect-and-verify probe. Used by `chorus init` to
  * warn when zero are installed — the cockpit would otherwise look
@@ -32,7 +32,7 @@ async function detectReviewerClis(): Promise<ReviewerDetect> {
     const labelMap: Record<string, string> = {
       'claude-code': 'claude',
       'codex-cli': 'codex',
-      'gemini-cli': 'gemini',
+      'gemini-cli': 'agy/gemini',
       'opencode-cli': 'opencode',
       'kimi-cli': 'kimi',
       'grok-cli': 'grok',
@@ -51,7 +51,7 @@ async function detectReviewerClis(): Promise<ReviewerDetect> {
 }
 
 /**
- * Detect Claude Code / Codex / Gemini / OpenCode and wire each one.
+ * Detect Claude Code / Codex / Google CLI / OpenCode and wire each one.
  * If the user passed `--connect <list>` we only touch those.
  */
 async function runOrchestratorAutoConnect(connectFlag?: string): Promise<void> {
@@ -245,7 +245,8 @@ export function registerInitCommand(program: Command): void {
           );
           console.log(c.dim('      claude     — https://docs.anthropic.com/en/docs/claude-code'));
           console.log(c.dim('      codex      — https://github.com/openai/codex'));
-          console.log(c.dim('      gemini     — https://github.com/google-gemini/gemini-cli'));
+          console.log(c.dim('      agy        — https://antigravity.google'));
+          console.log(c.dim('      gemini     — legacy fallback: https://github.com/google-gemini/gemini-cli'));
           console.log(c.dim('      opencode   — https://opencode.ai'));
           console.log(c.dim('      kimi       — https://github.com/MoonshotAI/kimi-cli'));
           console.log(c.dim('      grok       — https://x.ai/cli'));

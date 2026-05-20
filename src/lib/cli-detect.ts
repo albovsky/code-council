@@ -228,7 +228,7 @@ const CLI_SIGNATURES: Record<DetectableCli, RegExp> = {
   'codex-cli': /\bcodex\b/i,
   // Bare version output — "0.40.1" — no CLI name to grep for.
   'antigravity-cli': STARTS_WITH_VERSION,
-  // Bare version output — "1.14.30" — same as gemini.
+  // Bare version output — "1.14.30" — same as antigravity-cli.
   'opencode-cli': STARTS_WITH_VERSION,
   'kimi-cli': /\bkimi\b/i,
   // xAI's grok CLI — actual --version output unverified at time of
@@ -442,7 +442,7 @@ export function clearDetectionCache(): void {
  *   1. Basename matches the expected binary name. Catches the common
  *      paste-the-wrong-tool mistake — e.g. `/usr/bin/npm` for antigravity-cli
  *      passes the bare-version regex but its basename is `npm`, not
- *      `agy` or `antigravity`. Both round-1 reviewers (claude + antigravity) flagged this
+ *      `agy` or `gemini`. Both round-1 reviewers (claude + antigravity) flagged this
  *      gap when smoke-testing the previous version.
  *   2. File exists.
  *   3. `--version` exits 0 with output that matches the CLI's signature.

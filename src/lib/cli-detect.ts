@@ -21,7 +21,7 @@ import { cliPaths } from './cli-paths.js';
 export type DetectableCli =
   | 'claude-code'
   | 'codex-cli'
-  | 'gemini-cli'
+  | 'antigravity-cli'
   | 'opencode-cli'
   | 'kimi-cli'
   | 'grok-cli';
@@ -29,10 +29,7 @@ export type DetectableCli =
 const BINARY_NAMES: Record<DetectableCli, readonly string[]> = {
   'claude-code': ['claude'],
   'codex-cli': ['codex'],
-  // Google is transitioning Gemini CLI users to Antigravity CLI (`agy`).
-  // Keep the internal id stable for voices/templates, but prefer AGY when
-  // both CLIs are installed.
-  'gemini-cli': ['agy', 'gemini'],
+  'antigravity-cli': ['agy', 'gemini'],
   'opencode-cli': ['opencode'],
   'kimi-cli': ['kimi'],
   'grok-cli': ['grok'],
@@ -230,7 +227,7 @@ const CLI_SIGNATURES: Record<DetectableCli, RegExp> = {
   'claude-code': /\bclaude\b/i,
   'codex-cli': /\bcodex\b/i,
   // Bare version output — "0.40.1" — no CLI name to grep for.
-  'gemini-cli': STARTS_WITH_VERSION,
+  'antigravity-cli': STARTS_WITH_VERSION,
   // Bare version output — "1.14.30" — same as gemini.
   'opencode-cli': STARTS_WITH_VERSION,
   'kimi-cli': /\bkimi\b/i,
@@ -443,9 +440,9 @@ export function clearDetectionCache(): void {
  *
  * Layered checks (any failure returns found=false + a reason):
  *   1. Basename matches the expected binary name. Catches the common
- *      paste-the-wrong-tool mistake — e.g. `/usr/bin/npm` for gemini-cli
+ *      paste-the-wrong-tool mistake — e.g. `/usr/bin/npm` for antigravity-cli
  *      passes the bare-version regex but its basename is `npm`, not
- *      `agy` or `gemini`. Both round-1 reviewers (claude + gemini) flagged this
+ *      `agy` or `antigravity`. Both round-1 reviewers (claude + antigravity) flagged this
  *      gap when smoke-testing the previous version.
  *   2. File exists.
  *   3. `--version` exits 0 with output that matches the CLI's signature.

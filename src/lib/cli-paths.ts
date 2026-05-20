@@ -26,7 +26,7 @@ import { settings } from './db/settings.js';
 export type CliId =
   | 'claude-code'
   | 'codex-cli'
-  | 'gemini-cli'
+  | 'antigravity-cli'
   | 'opencode-cli'
   | 'kimi-cli'
   | 'grok-cli';
@@ -34,7 +34,7 @@ export type CliId =
 const ALL_CLI_IDS: readonly CliId[] = [
   'claude-code',
   'codex-cli',
-  'gemini-cli',
+  'antigravity-cli',
   'opencode-cli',
   'kimi-cli',
   'grok-cli',

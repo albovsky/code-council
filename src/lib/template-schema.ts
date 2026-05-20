@@ -194,6 +194,14 @@ const ReviewOnlyPhaseSchema = z.object({
     maxBytes: 1024 * 1024,
   }),
 
+  synthesizer: z
+    .object({
+      lineage: reviewerLineageEnum,
+      models: z.array(z.string()).min(1).optional(),
+      format: z.literal('gh-review-triage').default('gh-review-triage'),
+    })
+    .optional(),
+
   inputs: InputsSchema,
 
   /** Same per-phase override as standard phases; applies to all reviewers. */

@@ -4,6 +4,7 @@ import type { ReviewOnlyPhase, StandardPhase } from '../../lib/template-schema.j
 import type { ErrorDetector } from '../error-detector.js';
 import type { TmuxManager } from '../tmux-types.js';
 import { runReviewers } from './reviewer-driver.js';
+import { runTriageSynthesis } from './triage-synthesis.js';
 import type { RunnerEvent } from './types.js';
 
 /**
@@ -37,6 +38,8 @@ export async function runReviewOnlyPhase(args: {
   agreed: boolean;
   /** Human-readable summary line ('2/3 reviewers agreed' etc.). */
   summary: string;
+  /** Final synthesized triage verdict when the phase declares a synthesizer. */
+  triageVerdict?: 'approved' | 'request_changes' | 'failed';
 }> {
   const {
     chatDir,
@@ -144,10 +147,27 @@ export async function runReviewOnlyPhase(args: {
     args.templateFallbackReviewer,
   );
 
+  let triageVerdict: 'approved' | 'request_changes' | 'failed' | undefined;
+  if (!abortSignal.aborted && !consensus.allFailed && phase.synthesizer) {
+    const triage = await runTriageSynthesis({
+      chatDir,
+      chatId,
+      phase,
+      phaseIdx,
+      round,
+      artifact,
+      work,
+      onEvent,
+      abortSignal,
+    });
+    triageVerdict = triage.verdict;
+  }
+
   return {
     completed: !abortSignal.aborted,
     allReviewersFailed: consensus.allFailed,
     agreed: consensus.agreed,
     summary: consensus.summary,
+    triageVerdict,
   };
 }

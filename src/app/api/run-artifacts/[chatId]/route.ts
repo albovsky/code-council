@@ -28,6 +28,11 @@ interface RoundSnapshot {
   participants: ParticipantSnapshot[];
 }
 
+interface TriageSnapshot {
+  hasAnswer: boolean;
+  answer?: string;
+}
+
 interface SwapEntry {
   round: number;
   phaseId: string;
@@ -180,7 +185,7 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
     const roundDir = path.join(chatDir, entry.name);
     const participants: ParticipantSnapshot[] = fs
       .readdirSync(roundDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
+      .filter((d) => d.isDirectory() && d.name !== "triage")
       .map((d) => {
         const role: "doer" | "reviewer" = d.name.startsWith("doer-")
           ? "doer"
@@ -299,6 +304,28 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
   return rounds.sort((a, b) => a.round - b.round);
 }
 
+function readTriage(chatId: string): TriageSnapshot | null {
+  const answerPath = path.join(
+    os.homedir(),
+    ".chorus",
+    "chats",
+    chatId,
+    "round-1",
+    "triage",
+    "answer.md",
+  );
+  if (!fs.existsSync(answerPath)) return null;
+  try {
+    const answer = fs.readFileSync(answerPath, "utf-8");
+    return {
+      hasAnswer: /\n##\s*DONE\s*\n?$/i.test(answer.trimEnd()),
+      answer,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ chatId: string }> },
@@ -311,5 +338,6 @@ export async function GET(
   }
   const rounds = readChatRounds(chatId);
   const swaps = readChatSwaps(chatId);
-  return Response.json({ rounds, swaps });
+  const triage = readTriage(chatId);
+  return Response.json({ rounds, swaps, triage });
 }

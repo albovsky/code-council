@@ -25,6 +25,7 @@ import type {
   ParticipantSnapshot,
   ParticipantWarning,
   RoundSnapshot,
+  TriageSnapshot,
 } from "../run-viewer/types";
 import { enrichRounds } from "./enrich-rounds";
 import { HeaderActions } from "./header-actions";
@@ -133,6 +134,7 @@ export function LiveRunReal({
   //   - _swaps.json sidecars from /api/run-artifacts (post-reload, when
   //     the SSE is closed because the chat went terminal)
   const [fallbackSwaps, setFallbackSwaps] = useState<FallbackSwap[]>([]);
+  const [triage, setTriage] = useState<TriageSnapshot | null>(null);
   // Dedup key includes phaseId + role + agent so a future multi-phase
   // template can't collapse two distinct swaps that happen to share the
   // (round, agent, fromLineage, fromModel) tuple. Today's review-only
@@ -176,8 +178,10 @@ export function LiveRunReal({
         const data = (await res.json()) as {
           rounds: RoundSnapshot[];
           swaps?: FallbackSwap[];
+          triage?: TriageSnapshot | null;
         };
         setRounds(data.rounds);
+        setTriage(data.triage ?? null);
         if (Array.isArray(data.swaps) && data.swaps.length > 0) {
           mergeSwapsFromArtifacts(data.swaps);
         }
@@ -331,6 +335,7 @@ export function LiveRunReal({
               .then((data) => {
                 if (!data) return;
                 setRounds(data.rounds);
+                setTriage(data.triage ?? null);
                 if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
               })
               .catch(() => {});
@@ -374,6 +379,7 @@ export function LiveRunReal({
               .then((data) => {
                 if (!data) return;
                 setRounds(data.rounds);
+                setTriage(data.triage ?? null);
                 if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
               })
               .catch(() => {});
@@ -398,6 +404,7 @@ export function LiveRunReal({
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return;
+        setTriage(data.triage ?? null);
         if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
       })
       .catch(() => {
@@ -548,6 +555,17 @@ export function LiveRunReal({
             <div className="rounded-lg border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
               Waiting for first phase to start…
             </div>
+          )}
+
+          {triage?.hasAnswer && triage.answer && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Consolidated Triage
+              </div>
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                {triage.answer.replace(/\n##\s*DONE\s*$/i, "").trim()}
+              </pre>
+            </section>
           )}
 
           {latestRound && (

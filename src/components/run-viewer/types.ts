@@ -118,4 +118,9 @@ export interface RoundSnapshot {
   participants: ParticipantSnapshot[];
 }
 
+export interface TriageSnapshot {
+  hasAnswer: boolean;
+  answer?: string;
+}
+
 export type ParticipantState = "pending" | "working" | "done" | "errored" | "idle";

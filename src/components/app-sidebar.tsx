@@ -8,12 +8,12 @@ import {
   Layers,
   Plug,
   Settings,
-  Plus,
   ListChecks,
   PanelLeftClose,
   PanelLeftOpen,
   Users,
   ArrowUpCircle,
+  GitPullRequestArrow,
 } from "lucide-react";
 import { TriadLogo } from "@/components/triad-logo";
 import { listChats, DaemonError } from "@/lib/api";
@@ -298,13 +298,13 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
             exist. Lands in v0.8 with a Cmd+K modal. */}
         <div className="flex shrink-0 flex-col gap-2 bg-card/40 px-3 py-3">
           <Link
-            href="/new"
+            href="/"
             onClick={onNavigate}
-            aria-label="New chat"
+            aria-label="Code Review"
             className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90"
           >
-            <Plus className="h-3.5 w-3.5" />
-            <span>New chat</span>
+            <GitPullRequestArrow className="h-3.5 w-3.5" />
+            <span>Code Review</span>
           </Link>
           <div className="mt-1 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
             Recent
@@ -327,11 +327,11 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
             <div className="px-2 py-4 text-xs text-muted-foreground">
               No chats yet.{" "}
               <Link
-                href="/new"
+                href="/"
                 onClick={onNavigate}
                 className="text-primary transition hover:underline"
               >
-                Start one →
+                Run Code Review →
               </Link>
             </div>
           ) : (

@@ -3,7 +3,7 @@ import { TemplateSchema } from "@/lib/template-schema";
 import type { Chat, ListEnvelope, Template } from "@/lib/types";
 import { fetchFromDaemon } from "./client";
 
-interface RawChatRow {
+export interface RawChatRow {
   id: string;
   /** URL-friendly slug — present on chats created after the slug
    *  migration, null on legacy rows the daemon couldn't backfill. */
@@ -40,10 +40,10 @@ interface RawChatRow {
  * @internal
  */
 export const _testing = {
-  fromRow: (row: RawChatRow): Chat => fromRow(row),
+  fromRow: (row: RawChatRow): Chat => chatFromRow(row),
 };
 
-function fromRow(row: RawChatRow): Chat {
+export function chatFromRow(row: RawChatRow): Chat {
   let attached: string[] | undefined;
   if (row.attached_files) {
     try {
@@ -147,12 +147,12 @@ export async function listChats(options?: {
   const env = await fetchFromDaemon<ListEnvelope<RawChatRow>>(
     `/chats${query ? `?${query}` : ""}`,
   );
-  return env.items.map(fromRow);
+  return env.items.map(chatFromRow);
 }
 
 export async function getChat(id: string): Promise<Chat> {
   const row = await fetchFromDaemon<RawChatRow>(`/chats/${id}`);
-  return fromRow(row);
+  return chatFromRow(row);
 }
 
 export async function createChat(options: {
@@ -174,6 +174,5 @@ export async function createChat(options: {
     method: "POST",
     body: JSON.stringify(options),
   });
-  return fromRow(row);
+  return chatFromRow(row);
 }
-

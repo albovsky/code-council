@@ -78,6 +78,22 @@ describe('PhaseSchema', () => {
     }
   });
 
+  it('accepts a review_only phase with a gh-review-triage synthesizer', () => {
+    const result = PhaseSchema.safeParse({
+      ...REVIEW_ONLY_PHASE,
+      synthesizer: {
+        lineage: 'openai',
+        models: ['gpt-5.5'],
+        format: 'gh-review-triage',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success && result.data.kind === 'review_only') {
+      expect(result.data.synthesizer?.format).toBe('gh-review-triage');
+    }
+  });
+
   it('rejects review_only with no reviewer', () => {
     const phase = { ...REVIEW_ONLY_PHASE };
     delete (phase as Partial<typeof phase>).reviewer;

@@ -17,6 +17,7 @@ import { startReaper } from './reaper.js';
 import { activeRunsCount, activeRunsSnapshot } from './runner-multiplex.js';
 import { registerChatRoutes } from './routes/chats.js';
 import { registerChatEventsRoute } from './routes/chats-events.js';
+import { registerCodeReviewRoutes } from './routes/code-review.js';
 import { registerOpenRouterRoutes } from './routes/openrouter.js';
 import {
   registerPersonaRoutes,
@@ -204,6 +205,7 @@ async function main(): Promise<void> {
     });
 
     registerChatRoutes(api, { tmuxMgr: tmuxMgr!, errorDetector });
+    registerCodeReviewRoutes(api, { tmuxMgr: tmuxMgr!, errorDetector });
     registerChatEventsRoute(api);
     registerTemplateRoutes(api);
     registerPersonaRoutes(api);

@@ -150,7 +150,10 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
   // to override the default 'approved' verdict in chat_done — review-only
   // chats surface what the reviewers actually said rather than auto-
   // approving. null when no review-only phase ran (standard templates).
-  let reviewOnlyConsensus: { agreed: boolean; summary: string } | null = null;
+  let reviewOnlyConsensus:
+    | { verdict: 'approved' | 'request_changes'; summary: string }
+    | null = null;
+  let reviewOnlySynthesisFailed = false;
 
   try {
     for (let phaseIdx = 0; phaseIdx < template.phases.length; phaseIdx++) {
@@ -190,10 +193,14 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
         }
         // Reviewers actually finished a pass. Capture so chat_done can
         // surface the real verdict instead of always reporting 'approved'.
-        reviewOnlyConsensus = {
-          agreed: outcome.agreed,
-          summary: outcome.summary,
-        };
+        if (outcome.triageVerdict === 'failed') {
+          reviewOnlySynthesisFailed = true;
+        } else {
+          reviewOnlyConsensus = {
+            verdict: outcome.triageVerdict ?? (outcome.agreed ? 'approved' : 'request_changes'),
+            summary: outcome.summary,
+          };
+        }
         onEvent({
           chatId,
           type: 'phase_done',
@@ -524,6 +531,12 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
       } else {
         emitChatDone({ status: 'failed', verdict: 'failed', error: 'doer_failed_all_rounds' });
       }
+    } else if (reviewOnlySynthesisFailed) {
+      emitChatDone({
+        status: 'failed',
+        verdict: 'failed',
+        error: 'triage_synthesis_failed',
+      });
     } else if (anyPhaseAllReviewersFailed) {
       emitChatDone({ status: 'no_review', verdict: 'no_review' });
     } else if (shipOutcome.kind === 'merged') {
@@ -542,7 +555,7 @@ export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
       // meaningful "agreed / requested changes" state.
       emitChatDone({
         status: 'completed',
-        verdict: reviewOnlyConsensus.agreed ? 'approved' : 'request_changes',
+        verdict: reviewOnlyConsensus.verdict,
         reviewerSummary: reviewOnlyConsensus.summary,
       });
     } else {

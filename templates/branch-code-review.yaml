@@ -1,0 +1,55 @@
+id: branch-code-review
+name: Code Review
+description: Review current git changes, then synthesize all reviewer feedback into Valid / Non-blocking / Noise / Owner Decision triage.
+author: chorus
+agreementThreshold: 0.66
+onThresholdMet: ask
+maxRounds: 1
+yoloDefault: false
+estimatedBaselineTokens: 700
+ship:
+  enabled: false
+phases:
+  - id: review
+    kind: review_only
+    title: Branch Code Review
+    description: Reviewers critique the generated git diff independently; one synthesizer consolidates the feedback.
+    reviewer:
+      require: 2
+      crossLineage: false
+      candidates:
+        - lineage: openai
+          models:
+            - gpt-5.5
+        - lineage: google
+          models:
+            - gemini-3.5-flash
+        - lineage: anthropic
+          models:
+            - claude-opus-4-7
+        - lineage: opencode
+          models:
+            - opencode-go/kimi-k2.6
+        - lineage: opencode
+          models:
+            - opencode-go/deepseek-v4-flash
+        - lineage: opencode
+          models:
+            - opencode-go/qwen3.6-plus
+    synthesizer:
+      lineage: openai
+      models:
+        - gpt-5.5
+      format: gh-review-triage
+    artifact:
+      label: Git diff
+      hint: Generated automatically from the current worktree or current branch against main.
+      maxBytes: 1048576
+    inputs:
+      include: []
+      exclude: []
+fallback:
+  reviewer:
+    - lineage: anthropic
+      models:
+        - claude-sonnet-4-6

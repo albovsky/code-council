@@ -197,6 +197,32 @@ phases:
     expect(new Set(tuples).size).toBe(3);
   });
 
+  it('adapts review-only synthesizer voices using the same available fleet', () => {
+    const voices = [
+      v('anthropic', 'claude-sonnet-4-6'),
+      v('google', 'gemini-3.1-pro-preview'),
+    ];
+    const tpl = `id: branch-code-review
+phases:
+  - id: review
+    kind: review_only
+    reviewer:
+      require: 1
+      crossLineage: false
+      candidates:
+        - lineage: google
+          models: [gemini-3.5-flash]
+    synthesizer:
+      lineage: openai
+      models: [gpt-5.5]
+      format: gh-review-triage
+`;
+    const result = adaptTemplate(tpl, voices);
+    const parsed = yaml.parse(result.yaml);
+    expect(parsed.phases[0].synthesizer.lineage).toBe('anthropic');
+    expect(parsed.phases[0].synthesizer.models).toEqual(['claude-sonnet-4-6']);
+  });
+
   it('ranks gemini by major.minor + pro/flash modifier', () => {
     const voices = [
       v('google', 'gemini-2.5-flash'),

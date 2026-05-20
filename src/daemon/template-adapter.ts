@@ -58,6 +58,7 @@ interface PhaseSpec {
     require?: number;
     crossLineage?: boolean;
   };
+  synthesizer?: SlotSpec | null;
 }
 
 interface TemplateRoot {
@@ -155,6 +156,20 @@ export function adaptTemplate(
           slot.models = [];
           isComplete = false;
         }
+      }
+    }
+
+    if (phase.synthesizer) {
+      const assigned = assignSlot(
+        phase.synthesizer,
+        byLineage,
+        byFamily,
+        usedLineages,
+        usedTuples,
+      );
+      if (!assigned) {
+        phase.synthesizer.models = [];
+        isComplete = false;
       }
     }
   }
@@ -331,4 +346,3 @@ export function capabilityScore(v: Voice): number {
 
   return score;
 }
-

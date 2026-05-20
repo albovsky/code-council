@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus, Sparkles, Users } from "lucide-react";
+import { GitPullRequestArrow, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { CliStatusPanel } from "@/components/cli-status-panel";
 import { HomeStatsCards } from "@/components/home-stats-cards";
 import { PageHeader } from "@/components/page-header";
+import { CodeReviewLauncher } from "@/app/code-review/code-review-launcher";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,7 @@ export default async function HomePage() {
           <section className="mt-12">
             <div className="mb-3 flex items-baseline justify-between">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Start from a template
+                Advanced templates
               </h2>
               <Link
                 href="/templates"
@@ -116,23 +117,18 @@ function EmptyHero() {
   return (
     <section className="rounded-xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-6 sm:p-10">
       <div className="grid h-12 w-12 place-items-center rounded-lg bg-primary/15 text-primary">
-        <Users className="h-6 w-6" />
+        <GitPullRequestArrow className="h-6 w-6" />
       </div>
       <h1 className="mt-5 text-2xl font-semibold tracking-tight">
-        Many voices, one chorus.
+        Code Review
       </h1>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-        Paste a task, pick a template, and watch 2–4 LLMs of different lineages
-        peer-review the work before you ship.
+        Review the current worktree, or compare the current branch against main.
       </p>
-      <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-        <Link
-          href="/new"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          Start your first run
-        </Link>
+      <div className="mt-6 max-w-3xl">
+        <CodeReviewLauncher />
+      </div>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <Link
           href="/templates"
           className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-medium transition hover:border-muted-foreground/30"
@@ -156,14 +152,17 @@ function ActiveHome({ stats }: ActiveHomeProps) {
         title="Overview"
         action={
           <Link
-            href="/new"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
+            href="/templates"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-medium transition hover:border-muted-foreground/30"
           >
-            <Plus className="h-4 w-4" />
-            New chat
+            Browse templates
           </Link>
         }
       />
+
+      <section className="mb-8">
+        <CodeReviewLauncher />
+      </section>
 
       <section>
         <HomeStatsCards stats={stats} />
@@ -171,4 +170,3 @@ function ActiveHome({ stats }: ActiveHomeProps) {
     </>
   );
 }
-

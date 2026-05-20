@@ -55,6 +55,11 @@ const CRED_PATHS: Record<CliLineage, () => string[]> = {
     path.join(os.homedir(), '.codex', 'auth.json'),
   ],
   google: () => [
+    // AGY stores user auth in the Antigravity/keyring stack rather than
+    // the legacy Gemini CLI OAuth JSON. A non-empty installation id means
+    // Antigravity CLI has completed its local setup; let the CLI surface
+    // any account issue itself instead of false-blocking before spawn.
+    path.join(os.homedir(), '.gemini', 'antigravity-cli', 'installation_id'),
     path.join(os.homedir(), '.gemini', 'oauth_creds.json'),
     path.join(os.homedir(), '.config', 'gemini', 'oauth_creds.json'),
   ],
@@ -89,7 +94,7 @@ const CRED_PATHS: Record<CliLineage, () => string[]> = {
 const LOGIN_HINT: Record<CliLineage, string> = {
   anthropic: 'Run `claude login` in a terminal.',
   openai: 'Run `codex login` in a terminal.',
-  google: 'Run `gemini` once interactively to complete OAuth.',
+  google: 'Run `agy` once interactively to complete Antigravity sign-in, or run legacy `gemini` if you still use Gemini CLI.',
   opencode: 'Run `opencode auth login` in a terminal.',
   moonshot: 'Run `kimi` once interactively, or set up opencode if you use the kimi-via-opencode transport.',
   openrouter: 'Save an OpenRouter API key on the Connect page.',

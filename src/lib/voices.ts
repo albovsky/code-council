@@ -16,9 +16,14 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import path from 'node:path';
 import { detectAllClis, type DetectableCli } from './cli-detect.js';
 import { settings, voices, type VoiceUpsertInput } from './db/index.js';
-import { UI_LINEAGE_AVAILABLE_MODELS } from './lineage-maps.js';
+import {
+  GOOGLE_AGY_MODELS,
+  GOOGLE_LEGACY_GEMINI_MODELS,
+  UI_LINEAGE_AVAILABLE_MODELS,
+} from './lineage-maps.js';
 
 const run = promisify(execFile);
 
@@ -56,6 +61,17 @@ const SINGLE_MODEL_CLIS: ReadonlyArray<{
   // promote to a multi-model live-probe like opencode/codex.
   { cli: 'grok-cli', provider: 'grok-cli', lineage: 'grok' },
 ];
+
+function normalizedBinaryName(command: string | null | undefined): string {
+  if (!command) return '';
+  return path.basename(command).toLowerCase().replace(/\.(cmd|exe|bat|ps1|js)$/i, '');
+}
+
+function googleModelCatalogForCommand(command: string | null | undefined): string[] {
+  return normalizedBinaryName(command) === 'gemini'
+    ? [...GOOGLE_LEGACY_GEMINI_MODELS]
+    : [...GOOGLE_AGY_MODELS];
+}
 
 /**
  * OpenCode gateway model name → (lineage, vendor_family). The model name
@@ -209,7 +225,9 @@ export async function seedCliVoices(): Promise<{
     // Prefer live probe over static catalog; fall back to static when the
     // CLI doesn't expose model listing or the probe failed.
     const liveModels = cli === 'codex-cli' ? codexLive : null;
-    const staticModels = UI_LINEAGE_AVAILABLE_MODELS[uiLineage] ?? [];
+    const staticModels = cli === 'gemini-cli'
+      ? googleModelCatalogForCommand(detected?.path)
+      : (UI_LINEAGE_AVAILABLE_MODELS[uiLineage] ?? []);
     const models = liveModels ?? staticModels;
     const latestModel = models[0] ?? `${cli}-default`;
     const label = `${humanLineageLabel(lineage)} (${latestModel})`;
@@ -576,6 +594,7 @@ function humanLineageLabel(l: DaemonLineage): string {
 /** @internal — exported for unit tests. */
 export const _internals = {
   classifyOpencodeModel,
+  googleModelCatalogForCommand,
   migrationFor,
   LINEAGE_TO_UI,
   SINGLE_MODEL_CLIS,

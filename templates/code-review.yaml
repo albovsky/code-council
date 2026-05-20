@@ -1,6 +1,6 @@
 id: code-review
 name: Code Review
-description: Single-phase review template. Claude Opus 4.7 produces; Codex (gpt-5.5) and Gemini 3.1 Pro Preview review independently. Both reviewers must agree.
+description: Single-phase review template. Claude Opus 4.7 produces; Codex (gpt-5.5) and Gemini 3.5 Flash review independently. Both reviewers must agree.
 author: chorus
 agreementThreshold: 0.66
 onThresholdMet: ask
@@ -23,7 +23,7 @@ phases:
   - id: review
     kind: review
     title: Code Review
-    description: Claude Opus 4.7 produces the implementation; Codex (gpt-5.5) and Gemini 3.1 Pro Preview critique it independently. Quorum is 2 of 2.
+    description: Claude Opus 4.7 produces the implementation; Codex (gpt-5.5) and Gemini 3.5 Flash critique it independently. Quorum is 2 of 2.
     doer:
       lineage: anthropic
       models:
@@ -37,7 +37,7 @@ phases:
             - gpt-5.5
         - lineage: google
           models:
-            - gemini-3.1-pro-preview
+            - gemini-3.5-flash
     inputs:
       include: []
       exclude: []

@@ -51,7 +51,7 @@ export const DAEMON_TO_COCKPIT: Record<string, ReviewerLineage> = {
 export const DAEMON_DEFAULT_MODEL: Record<ReviewerLineage, string> = {
   claude: "claude-opus-4-7",
   codex: "gpt-5.5",
-  gemini: "gemini-2.5-pro",
+  gemini: "gemini-3.5-flash",
   opencode: "kimi-k2.6",
   kimi: "kimi-k2.6",
   openrouter: "",

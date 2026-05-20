@@ -130,7 +130,7 @@ export function uiLineageDot(lineage: string | undefined): string {
 export const UI_LINEAGE_DEFAULT_MODEL: Record<UILineage, string> = {
   claude: "claude-opus-4-7",
   codex: "gpt-5.5",
-  gemini: "gemini-2.5-pro",
+  gemini: "gemini-3.5-flash",
   opencode: "kimi-k2.6",
   kimi: "kimi-k2.6",
   // No sensible default for openrouter — user explicitly selects a model.
@@ -146,7 +146,7 @@ export const UI_LINEAGE_DEFAULT_MODEL: Record<UILineage, string> = {
 
 /**
  * Curated model lists per CLI. Used as a fallback when the CLI doesn't
- * expose a live model-listing command (claude / gemini / kimi today). For
+ * expose a live model-listing command (claude / google / kimi today). For
  * codex we run `codex debug models` at seed time and prefer the live
  * catalog; the list below is the safety net if that probe fails.
  *
@@ -156,12 +156,26 @@ export const UI_LINEAGE_DEFAULT_MODEL: Record<UILineage, string> = {
  * a wrong entry here is what makes the home page look unprofessional.
  *
  * Order = recommended first; the first entry is the canonical default
- * and matches UI_LINEAGE_DEFAULT_MODEL.
+ * and matches UI_LINEAGE_DEFAULT_MODEL when the catalog is not
+ * binary-specific.
  *
  * OpenCode is omitted because it's always discovered live via
  * `opencode models` (gateway-aware). Cursor/Windsurf are IDE
  * orchestrators with no model selection of their own.
  */
+export const GOOGLE_AGY_MODELS = [
+  "gemini-3.5-flash",
+  "gemini-3.1-pro-high",
+  "gemini-3.1-pro-low",
+  "gemini-3-flash",
+] as const;
+
+export const GOOGLE_LEGACY_GEMINI_MODELS = [
+  "gemini-2.5-pro",
+  "gemini-3.1-pro-preview",
+  "gemini-2.5-flash",
+] as const;
+
 export const UI_LINEAGE_AVAILABLE_MODELS: Partial<Record<UILineage, string[]>> = {
   claude: [
     "claude-opus-4-7",
@@ -177,17 +191,11 @@ export const UI_LINEAGE_AVAILABLE_MODELS: Partial<Record<UILineage, string[]>> =
     "gpt-5.3-codex",
     "gpt-5.2",
   ],
-  // Gemini list verified 2026-05-04 by `gemini -p "ok" --model <X>`.
-  // gemini-2.5-pro is the universally-available default — gemini-3.1-pro-preview
-  // is gated behind a preview-access tier and 404s on most accounts (the
-  // failure mode that surfaced as "Reviewer · GEMINI failed → cross-lineage
-  // fallback" in dogfood). 2.5-pro works on every gemini-cli account we've
-  // tested. Users with preview access can switch via the model dropdown.
-  gemini: [
-    "gemini-2.5-pro",
-    "gemini-3.1-pro-preview",
-    "gemini-2.5-flash",
-  ],
+  // Antigravity CLI (`agy`) reasoning models from Google's Antigravity
+  // docs (2026-05-19). Legacy Gemini CLI keeps its separate compatibility
+  // catalog in GOOGLE_LEGACY_GEMINI_MODELS; seedCliVoices picks the right
+  // list from the detected binary name.
+  gemini: [...GOOGLE_AGY_MODELS],
   // Kimi list cross-checked against the official kimi-cli docs +
   // source (2026-05-04):
   //   - CHANGELOG.md: kimi-k2.6, kimi-k2-thinking
@@ -278,4 +286,3 @@ export const UI_LINEAGE_BRAND: Record<UILineage, LineageBrand> = {
     gradient: "bg-gradient-to-b from-slate-500/15 to-card",
   },
 };
-

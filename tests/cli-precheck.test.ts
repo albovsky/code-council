@@ -150,6 +150,14 @@ describe('precheckLineage', () => {
       expect(result.ok).toBe(true);
     });
 
+    it('passes for AGY installs that use Antigravity keyring auth instead of legacy Gemini OAuth files', async () => {
+      writeFakeCred('.gemini/antigravity-cli/installation_id', 'agy-install-id');
+
+      const result = await precheckLineage('google');
+
+      expect(result.ok).toBe(true);
+    });
+
     it('per-lineage CTA mentions the right login command', async () => {
       const cases: Array<{ lineage: 'anthropic' | 'openai' | 'google' | 'opencode' | 'moonshot'; needle: RegExp }> = [
         { lineage: 'anthropic', needle: /claude login/i },

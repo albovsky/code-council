@@ -319,3 +319,24 @@ describe('seedCliVoices', () => {
     expect(claudeCodeCount).toBe(1);
   });
 });
+
+describe('Google CLI catalog selection', () => {
+  const { googleModelCatalogForCommand } = _internals;
+
+  it('selects the Antigravity catalog for agy binaries', () => {
+    expect(googleModelCatalogForCommand('/Users/me/.local/bin/agy')).toEqual([
+      'gemini-3.5-flash',
+      'gemini-3.1-pro-high',
+      'gemini-3.1-pro-low',
+      'gemini-3-flash',
+    ]);
+  });
+
+  it('selects the legacy Gemini catalog for gemini binaries', () => {
+    expect(googleModelCatalogForCommand('/opt/homebrew/bin/gemini')).toEqual([
+      'gemini-2.5-pro',
+      'gemini-3.1-pro-preview',
+      'gemini-2.5-flash',
+    ]);
+  });
+});

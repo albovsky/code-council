@@ -104,7 +104,7 @@ expects regardless of how you installed.
 
 ### Or drive it from any AI CLI you already use
 
-`chorus init` registers Chorus as an MCP server with every CLI / IDE it detects (Claude Code, Codex, Gemini CLI, Cursor, Windsurf, Kimi, OpenCode). After that, just ask the assistant in plain English:
+`chorus init` registers Chorus as an MCP server with every CLI / IDE it detects (Claude Code, Codex, Antigravity CLI, Cursor, Windsurf, Kimi, OpenCode). After that, just ask the assistant in plain English:
 
 ```
 > Use chorus to review the staged diff against main
@@ -143,7 +143,7 @@ Stream results back into your editor, or open the URL to watch live.
 
 **Requires** Node 20+ and at least *one* of these (you probably already have one):
 
-- Claude Code, Codex CLI, Gemini CLI, OpenCode, or Kimi CLI — uses your existing subscription, no extra cost
+- Claude Code, Codex CLI, Antigravity CLI, OpenCode, or Kimi CLI — uses your existing subscription, no extra cost
 - *or* an OpenRouter API key (one key, 200+ models, pay-per-use)
 
 <details>
@@ -152,7 +152,7 @@ Stream results back into your editor, or open the URL to watch live.
 ```bash
 npm i -g @anthropic-ai/claude-code   # Anthropic — uses Claude Pro sub
 npm i -g @openai/codex                # OpenAI — uses ChatGPT Plus sub
-npm i -g @google/gemini-cli           # Google — uses Gemini Advanced sub
+curl -fsSL https://antigravity.google/cli/install.sh | bash  # Google Antigravity / AGY
 ```
 
 Pick whichever vendor you already pay for. Or skip CLIs entirely and add an OpenRouter key in Settings after `chorus init`.
@@ -242,7 +242,7 @@ slots:
     model: claude-sonnet-4-6
   reviewers:
     - { lineage: openai,   model: codex,                 persona: sentinel }
-    - { lineage: google,   model: gemini-2.5-pro,        persona: sentinel }
+    - { lineage: google,   model: gemini-3.5-flash,      persona: sentinel }
     - { lineage: opencode, model: opencode-go/kimi-k2.6, persona: sentinel }
 quorum:
   type: unanimous

@@ -32,7 +32,7 @@ phases:
             - gpt-5.5
         - lineage: google
           models:
-            - gemini-3.1-pro-preview
+            - gemini-3.5-flash
         - lineage: anthropic
           models:
             - claude-opus-4-7

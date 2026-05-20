@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { lineageLabel, lineageDot } from '@/lib/lineage-maps';
+import {
+  GOOGLE_AGY_MODELS,
+  GOOGLE_LEGACY_GEMINI_MODELS,
+  lineageLabel,
+  lineageDot,
+} from '@/lib/lineage-maps';
 
 describe('lineage-maps', () => {
   describe('lineageLabel', () => {
@@ -68,5 +73,24 @@ describe('lineage-maps', () => {
     it('returns bg-muted for null', () => {
       expect(lineageDot(null as unknown as undefined)).toBe('bg-muted');
     });
+  });
+});
+
+describe('Google model catalogs', () => {
+  it('uses the Antigravity reasoning-model catalog for AGY', () => {
+    expect(GOOGLE_AGY_MODELS).toEqual([
+      'gemini-3.5-flash',
+      'gemini-3.1-pro-high',
+      'gemini-3.1-pro-low',
+      'gemini-3-flash',
+    ]);
+  });
+
+  it('keeps the legacy Gemini CLI catalog separate', () => {
+    expect(GOOGLE_LEGACY_GEMINI_MODELS).toEqual([
+      'gemini-2.5-pro',
+      'gemini-3.1-pro-preview',
+      'gemini-2.5-flash',
+    ]);
   });
 });

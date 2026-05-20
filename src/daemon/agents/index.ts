@@ -7,7 +7,7 @@
 import type { AgentRegistry, AgentShim, Lineage } from './types.js';
 import { claudeShim } from './claude.js';
 import { codexShim } from './codex.js';
-import { geminiShim } from './gemini.js';
+import { agyShim } from './agy.js';
 import { grokShim } from './grok.js';
 import { opencodeShim } from './opencode.js';
 import { kimiShim } from './kimi.js';
@@ -17,7 +17,7 @@ import { localShim } from './local.js';
 const SHIMS: Record<Lineage, AgentShim> = {
   anthropic: claudeShim,
   openai: codexShim,
-  google: geminiShim,
+  google: agyShim,
   opencode: opencodeShim,
   moonshot: kimiShim,
   openrouter: openrouterShim,
@@ -58,4 +58,4 @@ export function isHttpDispatchedShim(shim: AgentShim): boolean {
 }
 
 // Re-export shims for direct access if needed
-export { claudeShim, codexShim, geminiShim, grokShim, opencodeShim, kimiShim, openrouterShim, localShim };
+export { claudeShim, codexShim, agyShim, grokShim, opencodeShim, kimiShim, openrouterShim, localShim };

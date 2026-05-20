@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { registerAgyMcpPlugin } from '@/daemon/orchestrators/gemini';
+import { registerAgyMcpPlugin } from '@/daemon/orchestrators/agy';
 
 let fakeHome: string;
 

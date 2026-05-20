@@ -52,11 +52,11 @@ function shouldUseAgy(): boolean {
   );
 }
 
-function getGeminiStatus(): OrchestratorStatus {
+function getAgyStatus(): OrchestratorStatus {
   if (shouldUseAgy()) {
     const connected = hasAgyMcpServer();
     return {
-      name: 'gemini',
+      name: 'antigravity',
       label: 'Antigravity CLI',
       connected,
       approvedTools: connected ? 1 : 0,
@@ -70,7 +70,7 @@ function getGeminiStatus(): OrchestratorStatus {
   const detected = fs.existsSync(LEGACY_GEMINI_SETTINGS_PATH);
   const connected = detected && hasGeminiMcpServer();
   return {
-    name: 'gemini',
+    name: 'antigravity',
     label: 'Gemini CLI (legacy)',
     connected,
     approvedTools: connected ? 1 : 0,
@@ -222,10 +222,10 @@ async function connectGemini(
   };
 }
 
-export const geminiOrchestrator: OrchestratorDefinition = {
-  name: 'gemini',
+export const agyOrchestrator: OrchestratorDefinition = {
+  name: 'antigravity',
   label: 'Antigravity CLI',
-  getStatus: getGeminiStatus,
+  getStatus: getAgyStatus,
   detect: () => shouldUseAgy() || fs.existsSync(LEGACY_GEMINI_SETTINGS_PATH),
   connect: async (opts: ConnectOpts) => {
     if (shouldUseAgy()) {

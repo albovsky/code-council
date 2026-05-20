@@ -32,7 +32,7 @@ function normalizeBinaryName(command: string): string {
 }
 
 function selectGoogleCli(): GoogleCliSelection {
-  const detected = detectAllClis().find((cli) => cli.id === 'gemini-cli');
+  const detected = detectAllClis().find((cli) => cli.id === 'antigravity-cli');
   const command = detected?.found && detected.path ? detected.path : 'agy';
   return {
     command,
@@ -45,9 +45,9 @@ function agyExitEvents(fullStdout: string, _fullStderr: string, code: number | n
   return [{ type: 'message_done', finalText: fullStdout.trim() }];
 }
 
-export const geminiShim: AgentShim = {
+export const agyShim: AgentShim = {
   lineage: 'google',
-  name: 'gemini-cli',
+  name: 'antigravity-cli',
 
   buildLaunchCommand(opts: AgentSpawnOptions): string {
     validateValue('model', opts.model);

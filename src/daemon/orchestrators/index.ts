@@ -11,7 +11,7 @@ import {
   cursorOrchestrator,
   windsurfOrchestrator,
 } from './cursor-windsurf.js';
-import { geminiOrchestrator } from './gemini.js';
+import { agyOrchestrator } from './agy.js';
 import { grokOrchestrator } from './grok.js';
 import { kimiOrchestrator } from './kimi.js';
 import { opencodeOrchestrator } from './opencode.js';
@@ -36,7 +36,7 @@ export {
 const ORCHESTRATORS: OrchestratorDefinition[] = [
   claudeOrchestrator,
   codexOrchestrator,
-  geminiOrchestrator,
+  agyOrchestrator,
   opencodeOrchestrator,
   kimiOrchestrator,
   grokOrchestrator,

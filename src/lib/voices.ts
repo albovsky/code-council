@@ -28,7 +28,7 @@ import {
 const run = promisify(execFile);
 
 type DaemonLineage = 'anthropic' | 'openai' | 'google' | 'opencode' | 'moonshot' | 'grok';
-type UiLineage = 'claude' | 'codex' | 'gemini' | 'opencode' | 'kimi' | 'grok';
+type UiLineage = 'claude' | 'codex' | 'antigravity' | 'opencode' | 'kimi' | 'grok';
 
 /**
  * Daemon-side lineage → UI-side lineage (for UI_LINEAGE_AVAILABLE_MODELS
@@ -37,7 +37,7 @@ type UiLineage = 'claude' | 'codex' | 'gemini' | 'opencode' | 'kimi' | 'grok';
 const LINEAGE_TO_UI: Record<DaemonLineage, UiLineage> = {
   anthropic: 'claude',
   openai: 'codex',
-  google: 'gemini',
+  google: 'antigravity',
   opencode: 'opencode',
   moonshot: 'kimi',
   grok: 'grok',
@@ -54,7 +54,7 @@ const SINGLE_MODEL_CLIS: ReadonlyArray<{
 }> = [
   { cli: 'claude-code', provider: 'claude-code', lineage: 'anthropic' },
   { cli: 'codex-cli', provider: 'codex-cli', lineage: 'openai' },
-  { cli: 'gemini-cli', provider: 'gemini-cli', lineage: 'google' },
+  { cli: 'antigravity-cli', provider: 'antigravity-cli', lineage: 'google' },
   { cli: 'kimi-cli', provider: 'kimi-cli', lineage: 'moonshot' },
   // Grok Build is single-model (grok-build) on first launch. xAI may
   // ship more model IDs in future; if/when `grok models` exposes them,
@@ -225,7 +225,7 @@ export async function seedCliVoices(): Promise<{
     // Prefer live probe over static catalog; fall back to static when the
     // CLI doesn't expose model listing or the probe failed.
     const liveModels = cli === 'codex-cli' ? codexLive : null;
-    const staticModels = cli === 'gemini-cli'
+    const staticModels = cli === 'antigravity-cli'
       ? googleModelCatalogForCommand(detected?.path)
       : (UI_LINEAGE_AVAILABLE_MODELS[uiLineage] ?? []);
     const models = liveModels ?? staticModels;
@@ -522,7 +522,7 @@ interface MigrationData {
 async function readMigrationSettings(): Promise<MigrationData | null> {
   const byUiLineage = new Map<UiLineage, string[] | undefined>();
   let anySet = false;
-  const lineages: UiLineage[] = ['claude', 'codex', 'gemini', 'kimi', 'opencode'];
+  const lineages: UiLineage[] = ['claude', 'codex', 'antigravity', 'kimi', 'opencode'];
   for (const ui of lineages) {
     const raw = await settings.get(`${ui}.enabled_models`);
     if (raw === null || raw === undefined) {
@@ -532,6 +532,14 @@ async function readMigrationSettings(): Promise<MigrationData | null> {
       anySet = true;
     } else {
       byUiLineage.set(ui, undefined);
+    }
+  }
+  // Settings key migration: copy legacy gemini.enabled_models to antigravity.enabled_models.
+  const legacyModels = await settings.get('gemini.enabled_models');
+  if (legacyModels !== null && legacyModels !== undefined) {
+    const currentModels = await settings.get('antigravity.enabled_models');
+    if (currentModels === null || currentModels === undefined) {
+      await settings.set('antigravity.enabled_models', legacyModels);
     }
   }
   // Returning null when zero settings exist is what makes the "fresh install

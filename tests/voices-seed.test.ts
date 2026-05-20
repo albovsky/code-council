@@ -131,7 +131,7 @@ describe('classifyOpencodeModel', () => {
 describe('migrationFor', () => {
   const { migrationFor } = _internals;
 
-  type UiLineage = 'claude' | 'codex' | 'gemini' | 'opencode' | 'kimi';
+  type UiLineage = 'claude' | 'codex' | 'antigravity' | 'opencode' | 'kimi';
   type MigrationData = { byUiLineage: Map<UiLineage, string[] | undefined> };
 
   it('absent → default model only is enabled', () => {
@@ -321,7 +321,7 @@ describe('seedCliVoices', () => {
 });
 
 describe('Google CLI catalog selection', () => {
-  const { googleModelCatalogForCommand } = _internals;
+  const { googleModelCatalogForCommand, SINGLE_MODEL_CLIS } = _internals;
 
   it('selects the Antigravity catalog for agy binaries', () => {
     expect(googleModelCatalogForCommand('/Users/me/.local/bin/agy')).toEqual([
@@ -338,5 +338,12 @@ describe('Google CLI catalog selection', () => {
       'gemini-3.1-pro-preview',
       'gemini-2.5-flash',
     ]);
+  });
+
+  it('seedCliVoices uses antigravity-cli as provider for Google lineage', async () => {
+    const googleEntry = SINGLE_MODEL_CLIS.find((c) => c.lineage === 'google');
+    expect(googleEntry).toBeDefined();
+    expect(googleEntry?.cli).toBe('antigravity-cli');
+    expect(googleEntry?.provider).toBe('antigravity-cli');
   });
 });

@@ -14,7 +14,7 @@
 [![Status](https://img.shields.io/badge/status-v0.8.29-brightgreen)]()
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933)]()
 
-[Website](https://chorus.codes) · [Roadmap](./ROADMAP.md) · [Issues](https://github.com/code-council/council/issues)
+[Website](https://github.com/code-council/code-council) · [Roadmap](./ROADMAP.md) · [Issues](https://github.com/code-council/council/issues)
 
 </div>
 
@@ -470,7 +470,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 
 ## Links
 
-- 🌐 Website: <https://chorus.codes>
+- 🌐 Website: <https://github.com/code-council/code-council>
 - 🗺️ Roadmap: [./ROADMAP.md](./ROADMAP.md)
 - 🐛 Issues: <https://github.com/code-council/council/issues>
 - 💬 Discussions: <https://github.com/code-council/council/discussions>

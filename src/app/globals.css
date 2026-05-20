@@ -3,7 +3,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Chorus — dark-only palette. Linear/Raycast-inspired.
+/* Code Council — dark-only palette. Linear/Raycast-inspired.
    Calm blacks, near-white text, single muted accent (violet). */
 :root {
   --background: 0 0% 5%;          /* #0d0d0d */

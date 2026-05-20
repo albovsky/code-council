@@ -52,13 +52,13 @@ export const CLIS: CliRow[] = [
     id: "cursor",
     provider: "cursor",
     label: "Cursor",
-    hint: "Cursor IDE — invoke chorus from inside it",
+    hint: "Cursor IDE — invoke Code Council from inside it",
   },
   {
     id: "windsurf",
     provider: "windsurf",
     label: "Windsurf",
-    hint: "Windsurf IDE — invoke chorus from inside it",
+    hint: "Windsurf IDE — invoke Code Council from inside it",
   },
 ];
 

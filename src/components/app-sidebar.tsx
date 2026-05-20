@@ -230,7 +230,7 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
         </div>
         {!collapsed && (
           <>
-            <span className="text-sm font-semibold tracking-tight">Chorus</span>
+            <span className="text-sm font-semibold tracking-tight">Code Council</span>
             <span className="ml-auto rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
               {daemonVersion ? `v${daemonVersion.replace(/^v/, "").replace(/-dev\.\d+$/, "")}` : "—"}
             </span>
@@ -318,9 +318,9 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
             </div>
           ) : chatsState === "error" ? (
             <div className="px-2 py-4 text-xs text-muted-foreground">
-              Can&apos;t reach Chorus. Try restarting it from your terminal:{" "}
+              Can&apos;t reach Code Council. Try restarting it from your terminal:{" "}
               <code className="rounded bg-muted/40 px-1 font-mono text-[10px] text-foreground/80">
-                chorus start
+                council start
               </code>
             </div>
           ) : chats.length === 0 ? (
@@ -393,7 +393,7 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
                 v{updateInfo.current.replace(/^v/, "")} → v{updateInfo.latest.replace(/^v/, "")}
               </div>
               <div className="mt-1 font-mono text-[10px] text-muted-foreground/80">
-                Run <code className="rounded bg-muted/40 px-1 text-foreground/80">chorus update</code>
+                Run <code className="rounded bg-muted/40 px-1 text-foreground/80">council update</code>
               </div>
             </div>
           </div>

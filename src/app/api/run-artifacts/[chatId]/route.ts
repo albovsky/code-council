@@ -1,6 +1,6 @@
 /**
  * Filesystem-backed artifacts endpoint for the run page.
- * Returns the structure of ~/.chorus/chats/<id>/round-N/<participant>/answer.md
+ * Returns the structure of ~/.code-council/chats/<id>/round-N/<participant>/answer.md
  * as a JSON tree the LiveRunReal client component can consume.
  *
  * Reads from disk, no DB. Cheap enough to poll every 4s. Daemon and Next.js
@@ -130,7 +130,7 @@ function readAttemptsByModel(
  * array when no swaps fired.
  */
 function readChatSwaps(chatId: string): SwapEntry[] {
-  const chatDir = path.join(os.homedir(), ".chorus", "chats", chatId);
+  const chatDir = path.join(os.homedir(), ".code-council", "chats", chatId);
   if (!fs.existsSync(chatDir)) return [];
   const out: SwapEntry[] = [];
   for (const round of fs
@@ -170,7 +170,7 @@ function readChatSwaps(chatId: string): SwapEntry[] {
 }
 
 function readChatRounds(chatId: string): RoundSnapshot[] {
-  const chatDir = path.join(os.homedir(), ".chorus", "chats", chatId);
+  const chatDir = path.join(os.homedir(), ".code-council", "chats", chatId);
   if (!fs.existsSync(chatDir)) return [];
 
   const entries = fs
@@ -307,7 +307,7 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
 function readTriage(chatId: string): TriageSnapshot | null {
   const answerPath = path.join(
     os.homedir(),
-    ".chorus",
+    ".code-council",
     "chats",
     chatId,
     "round-1",

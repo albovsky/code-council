@@ -53,7 +53,7 @@ export function TelemetrySection() {
     <Section
       icon={<Eye className="h-4 w-4" />}
       title="Anonymous telemetry"
-      subtitle="A small heartbeat sent to chorus.codes once per boot + every 24h. Helps us see what versions / OSes are in the wild. No code, no prompts, no chat content."
+      subtitle="A small heartbeat sent to telemetry endpoint once per boot + every 24h. Helps us see what versions / OSes are in the wild. No code, no prompts, no chat content."
     >
       {error && (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
@@ -80,7 +80,7 @@ export function TelemetrySection() {
               )}
             </span>
             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-              Sends: install UUID, chorus version, OS, arch, node major,
+              Sends: install UUID, Code Council version, OS, arch, node major,
               daemon uptime, count of chats in the last 24h. That&apos;s it.
             </span>
           </span>
@@ -91,11 +91,11 @@ export function TelemetrySection() {
         <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
           Telemetry is currently disabled by{" "}
           {status?.envOverride && (
-            <code className="rounded bg-muted px-1">CHORUS_TELEMETRY</code>
+            <code className="rounded bg-muted px-1">COUNCIL_TELEMETRY</code>
           )}
           {status?.envOverride && status?.fileOverride && " and "}
           {status?.fileOverride && (
-            <code className="rounded bg-muted px-1">~/.chorus/no-telemetry</code>
+            <code className="rounded bg-muted px-1">~/.code-council/no-telemetry</code>
           )}
           . The toggle above won&apos;t take effect until you remove the override.
         </div>
@@ -107,17 +107,17 @@ export function TelemetrySection() {
         </summary>
         <ul className="mt-2 list-inside list-disc space-y-1 leading-relaxed">
           <li>
-            Set <code className="rounded bg-muted px-1">CHORUS_TELEMETRY=0</code>{" "}
+            Set <code className="rounded bg-muted px-1">COUNCIL_TELEMETRY=0</code>{" "}
             in your shell — also accepts <code>false</code>, <code>no</code>,{" "}
             <code>off</code>.
           </li>
           <li>
-            <code className="rounded bg-muted px-1">touch ~/.chorus/no-telemetry</code>{" "}
+            <code className="rounded bg-muted px-1">touch ~/.code-council/no-telemetry</code>{" "}
             (cargo / brew convention).
           </li>
           <li>
             Reset your install ID:{" "}
-            <code className="rounded bg-muted px-1">rm ~/.chorus/install-id</code>
+            <code className="rounded bg-muted px-1">rm ~/.code-council/install-id</code>
             {" "}— a fresh UUID is minted on the next heartbeat.
           </li>
         </ul>

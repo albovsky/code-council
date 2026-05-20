@@ -53,7 +53,7 @@ export default function OnboardingPage() {
 
   // OpenCode model picker: lazily fetched the first time the user ticks
   // OpenCode AND the binary is installed. The user picks which
-  // subscription models chorus should expose as voices; persisted in
+  // subscription models Code Council should expose as voices; persisted in
   // submit.ts.
   const [opencodeModels, setOpencodeModels] = useState<OpencodeModelsResult | null>(
     null,
@@ -295,7 +295,7 @@ export default function OnboardingPage() {
           </div>
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              Welcome to Chorus
+              Welcome to Code Council
             </p>
             <h1 className="text-2xl font-semibold tracking-tight">
               Connect at least one model to begin
@@ -304,7 +304,7 @@ export default function OnboardingPage() {
         </div>
 
         <p className="mb-8 text-sm leading-relaxed text-muted-foreground">
-          Chorus runs your prompt past 2–4 LLMs of different lineages and
+          Code Council runs your prompt past 2–4 LLMs of different lineages and
           synthesises consensus. Pick the CLI subscriptions you already have,
           or paste API keys. You can change these later in Settings.
         </p>

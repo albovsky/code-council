@@ -61,7 +61,7 @@ export function TransportSection() {
       id="transport"
       icon={<Terminal className="h-4 w-4" />}
       title="Run mode (headless / tmux)"
-      subtitle="How chorus runs each CLI. Default is headless (faster, lower RAM). Switch to tmux if you want to attach to a live voice and take over mid-run (debug + handoff)."
+      subtitle="How Code Council runs each CLI. Default is headless (faster, lower RAM). Switch to tmux if you want to attach to a live voice and take over mid-run (debug + handoff)."
     >
       {error && (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
@@ -123,7 +123,7 @@ export function TransportSection() {
         })}
       </div>
       <p className="mt-3 text-[11px] text-muted-foreground">
-        Tip: set <code className="rounded bg-muted px-1">CHORUS_TRANSPORT=tmux</code> in
+        Tip: set <code className="rounded bg-muted px-1">COUNCIL_TRANSPORT=tmux</code> in
         your environment to override per-shell without changing this setting.
       </p>
     </Section>

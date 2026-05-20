@@ -82,7 +82,7 @@ interface CliSectionProps {
 }
 
 // Onboarding only lists actual CLI subscriptions. IDEs (Cursor/Windsurf)
-// belong on /connect — they invoke chorus but don't act as voices.
+// belong on /connect — they invoke Code Council but don't act as voices.
 const ONBOARDING_CLIS = CLIS.filter(
   (c) => c.id !== "cursor" && c.id !== "windsurf",
 );
@@ -238,7 +238,7 @@ export function CliSection(props: CliSectionProps) {
         })}
       </div>
       <p className="mt-3 text-[11px] text-muted-foreground">
-        Cursor and Windsurf are IDEs that invoke chorus, not voices —
+        Cursor and Windsurf are IDEs that invoke Code Council, not voices —
         wire them up on the Connect page after onboarding.
       </p>
     </section>

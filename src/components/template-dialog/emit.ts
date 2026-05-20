@@ -51,7 +51,7 @@ function formToDaemonShape(f: FormState): DaemonTemplateYaml {
     id,
     name: f.name || "Untitled template",
     description: f.description || "Describe what this template is for.",
-    author: f.author || "chorus",
+    author: f.author || "council",
     agreementThreshold:
       f.customThreshold !== undefined
         ? f.customThreshold

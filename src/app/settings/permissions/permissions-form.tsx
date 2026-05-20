@@ -119,7 +119,7 @@ export function PermissionsForm({ initial }: Props) {
               Skip permission prompts inside the spawned CLI
             </div>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              When on, chorus passes <code className="rounded bg-muted px-1">--afk</code> to
+              When on, Code Council passes <code className="rounded bg-muted px-1">--afk</code> to
               kimi, <code className="rounded bg-muted px-1">--approval-mode auto_edit</code> to
               gemini, and equivalent flags to other CLIs so reviewers don&apos;t hang on per-tool
               permission prompts. Turn off if you want every action to require an explicit

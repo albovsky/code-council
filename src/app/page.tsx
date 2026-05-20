@@ -40,7 +40,7 @@ async function getHomePageData(): Promise<HomeData> {
     const error =
       err instanceof DaemonError
         ? err.message
-        : "Failed to reach the Chorus daemon.";
+        : "Failed to reach the Code Council daemon.";
     return { stats: null, templates: [], secrets: [], settings: null, error };
   }
 }
@@ -67,7 +67,7 @@ export default async function HomePage() {
               Daemon unreachable
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {error} Start it with <code>chorus start</code>.
+              {error} Start it with <code>council start</code>.
             </p>
           </div>
         )}

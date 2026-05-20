@@ -26,7 +26,7 @@ export function buildYaml(s: YamlInputs): string {
     (t) => `    ${t.id.replace("-", "_")}: ${s.reviewerPolicies[t.id]}`,
   ).join("\n");
 
-  return `# Chorus workspace settings
+  return `# Code Council workspace settings
 # Edit here, or via the Form tab, or via mm.update_settings from any MCP client.
 
 concurrency:
@@ -66,7 +66,7 @@ export function YamlEditor({ yaml }: { yaml: string }) {
             variant="outline"
             className="border-border font-mono text-[10px]"
           >
-            ~/.chorus/settings.yaml
+            ~/.code-council/settings.yaml
           </Badge>
         </div>
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">

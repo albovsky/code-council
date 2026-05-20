@@ -110,5 +110,5 @@ async function persistOpencodePicks(args: OnboardingSubmitArgs): Promise<void> {
 export function describeError(err: unknown): string {
   return err instanceof DaemonError
     ? err.message
-    : "Could not save. Is the Chorus daemon running?";
+    : "Could not save. Is the Code Council daemon running?";
 }

@@ -81,7 +81,7 @@ export default async function ConnectPage() {
         <PageHeader
           eyebrow="Connect"
           title="CLIs & voices"
-          subtitle="Connect chorus to each editor (one-click MCP wiring) and pick which models from each CLI may run as voices. Toggles save automatically."
+          subtitle="Connect Code Council to each editor (one-click MCP wiring) and pick which models from each CLI may run as voices. Toggles save automatically."
         />
 
         <section>

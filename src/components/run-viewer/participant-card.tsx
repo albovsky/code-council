@@ -550,12 +550,12 @@ function ctaForKind(kind: string, message?: string): string | undefined {
   ) {
     return (
       "Claude CLI refuses --dangerously-skip-permissions as root. " +
-      "Run chorus as a non-root user, or disable Claude voices in /connect."
+      "Run Code Council as a non-root user, or disable Claude voices in /connect."
     );
   }
   switch (kind) {
     case "quota_exhausted":
-      return "Check your subscription dashboard or swap the account in CHORUS_CODEX_HOME / chorus settings.";
+      return "Check your subscription dashboard or swap the account in COUNCIL_CODEX_HOME / Code Council settings.";
     case "stream_failure":
       return "Subprocess died mid-stream — check disk space and CLI version.";
     case "cli_failed":

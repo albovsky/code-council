@@ -14,7 +14,7 @@ export function FormView(props: PreviewSectionsProps) {
       <Section
         icon={<Shield className="h-4 w-4" />}
         title="Sandbox & first-call permissions"
-        subtitle="What can chorus-spawned reviewers do on this machine? Pick a profile, toggle prompt auto-approval, choose whether to allow outbound network."
+        subtitle="What can Code Council-spawned reviewers do on this machine? Pick a profile, toggle prompt auto-approval, choose whether to allow outbound network."
       >
         <a
           href="/settings/permissions"

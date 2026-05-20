@@ -82,7 +82,7 @@ interface RoundSnapshot {
 }
 
 function readChatRounds(chatId: string): RoundSnapshot[] {
-  const chatDir = path.join(os.homedir(), ".chorus", "chats", chatId);
+  const chatDir = path.join(os.homedir(), ".code-council", "chats", chatId);
   if (!fs.existsSync(chatDir)) return [];
 
   const entries = fs

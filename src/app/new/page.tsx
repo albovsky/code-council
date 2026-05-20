@@ -181,8 +181,8 @@ function NewChatPageInner() {
           }
           subtitle={
             reviewOnly
-              ? "Chorus skips the doer and runs your text past three reviewers. Single pass — revise yourself and resubmit for another round."
-              : "Chorus runs it past your reviewers and reports consensus."
+              ? "Code Council skips the doer and runs your text past three reviewers. Single pass — revise yourself and resubmit for another round."
+              : "Code Council runs it past your reviewers and reports consensus."
           }
         />
 
@@ -320,7 +320,7 @@ function NewChatPageInner() {
               : (
                 <>
                   When set: doer makes real edits in this repo. After reviewers
-                  agree, chorus opens a PR via{" "}
+                  agree, Code Council opens a PR via{" "}
                   <code className="rounded bg-muted px-1">gh pr create</code> (no
                   auto-merge — you review + click Merge in GitHub). Leave blank
                   to skip the Ship phase.

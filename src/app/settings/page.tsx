@@ -26,7 +26,7 @@ export default function SettingsPage() {
   const [allowedDirs, setAllowedDirs] = useState<string[]>([
     "~/dev",
     "~/work",
-    "/tmp/chorus-sandbox",
+    "/tmp/code-council-sandbox",
   ]);
   const [newDir, setNewDir] = useState("");
   const [defaultDriver, setDefaultDriver] = useState("claude-code");
@@ -101,7 +101,7 @@ export default function SettingsPage() {
         <PageHeader
           eyebrow="Settings"
           title="Workspace"
-          subtitle="Defaults applied to every chat. Templates can override these per-run. The MCP server can read & patch this config — your main Claude can configure Chorus for you."
+          subtitle="Defaults applied to every chat. Templates can override these per-run. The MCP server can read & patch this config — your main Claude can configure Code Council for you."
           action={
             <div className="flex rounded-md border border-border bg-card p-0.5">
               <button

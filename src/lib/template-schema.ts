@@ -242,7 +242,7 @@ export const TemplateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().min(1),
-  author: z.string().default('chorus'),
+  author: z.string().default('council'),
 
   // Agreement policy
   agreementThreshold: z.number().min(0).max(1).default(0.66),

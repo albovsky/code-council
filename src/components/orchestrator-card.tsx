@@ -192,7 +192,7 @@ export function OrchestratorCard({ initial, voices: initialVoices }: Props) {
 
         {isConnected && status.firstCallBehavior === "prompts_once" && (
           <p className="text-[11px] text-amber-300/90">
-            ⚠ First chorus.* call will show a one-time prompt — click &quot;Always allow&quot;.
+            ⚠ First council.* call will show a one-time prompt — click &quot;Always allow&quot;.
           </p>
         )}
 

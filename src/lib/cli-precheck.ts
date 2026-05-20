@@ -59,7 +59,7 @@ const CRED_PATHS: Record<CliLineage, () => string[]> = {
     // the legacy Gemini CLI OAuth JSON. A non-empty installation id means
     // Antigravity CLI has completed its local setup; let the CLI surface
     // any account issue itself instead of false-blocking before spawn.
-    path.join(os.homedir(), '.gemini', 'antigravity-cli', 'installation_id'),
+    path.join(os.homedir(), '.gemini', 'antigravity', 'installation_id'),
     path.join(os.homedir(), '.gemini', 'oauth_creds.json'),
     path.join(os.homedir(), '.config', 'gemini', 'oauth_creds.json'),
   ],

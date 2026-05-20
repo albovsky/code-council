@@ -25,7 +25,7 @@ function agyPaths(homeDir = os.homedir()): {
   pluginJsonPath: string;
   mcpConfigPath: string;
 } {
-  const root = path.join(homeDir, '.gemini', 'antigravity-cli');
+  const root = path.join(homeDir, '.gemini', 'antigravity');
   const pluginDir = path.join(root, 'plugins', 'council');
   return {
     root,
@@ -61,7 +61,7 @@ function getAgyStatus(): OrchestratorStatus {
       connected,
       approvedTools: connected ? 1 : 0,
       totalTools: 1,
-      note: 'Registers Code Council as an Antigravity plugin under ~/.gemini/antigravity-cli/plugins/council/mcp_config.json.',
+      note: 'Registers Code Council as an Antigravity plugin under ~/.gemini/antigravity/plugins/council/mcp_config.json.',
       supported: true,
       firstCallBehavior: 'prompts_once',
     };

@@ -246,7 +246,7 @@ export function registerInitCommand(program: Command): void {
           console.log(c.dim('      claude     — https://docs.anthropic.com/en/docs/claude-code'));
           console.log(c.dim('      codex      — https://github.com/openai/codex'));
           console.log(c.dim('      agy        — https://antigravity.google'));
-          console.log(c.dim('      gemini     — legacy fallback: https://github.com/google/antigravity-cli'));
+          console.log(c.dim('      gemini     — legacy fallback: https://github.com/google-gemini/gemini-cli'));
           console.log(c.dim('      opencode   — https://opencode.ai'));
           console.log(c.dim('      kimi       — https://github.com/MoonshotAI/kimi-cli'));
           console.log(c.dim('      grok       — https://x.ai/cli'));

@@ -33,7 +33,7 @@ describe('registerAgyMcpPlugin', () => {
       daemonUrl: 'http://127.0.0.1:7707',
     });
 
-    const pluginDir = path.join(fakeHome, '.gemini', 'antigravity-cli', 'plugins', 'council');
+    const pluginDir = path.join(fakeHome, '.gemini', 'antigravity', 'plugins', 'council');
     expect(result.added).toEqual(['plugins/council/mcp_config.json']);
     expect(result.configPath).toBe(path.join(pluginDir, 'mcp_config.json'));
 

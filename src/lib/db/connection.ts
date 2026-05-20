@@ -237,7 +237,17 @@ async function initDb(): Promise<Client> {
 
   // Boot migration: rename legacy gemini-cli provider entries to antigravity-cli.
   // Idempotent: WHERE clause ensures it only runs when old rows exist.
+  // Two-step: delete any pre-existing antigravity-cli rows first to prevent
+  // UNIQUE constraint collision on the id rename.
   // Run after voices table is created/verified so schema is always ready.
+  await db.execute(`
+    DELETE FROM voices
+    WHERE id IN (
+      SELECT REPLACE(g.id, 'gemini-cli', 'antigravity-cli')
+      FROM voices g
+      WHERE g.provider = 'gemini-cli'
+    )
+  `);
   await db.execute(`
     UPDATE voices
     SET id = REPLACE(id, 'gemini-cli', 'antigravity-cli'),

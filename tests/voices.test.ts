@@ -378,4 +378,27 @@ describe('boot migration: gemini-cli -> antigravity-cli', () => {
     const legacy = await voices.getById('gemini-cli');
     expect(legacy).toBeNull();
   });
+
+  it('handles pre-existing antigravity-cli row without crashing (no PK collision)', async () => {
+    const db = await getDb();
+    // Insert both a legacy gemini-cli row AND a pre-existing antigravity-cli row
+    await db.execute({
+      sql: `INSERT INTO voices (id, label, source, provider, model_id, lineage, created_at, updated_at)
+            VALUES ('gemini-cli', 'Gemini (gemini-2.5-pro)', 'cli', 'gemini-cli', 'gemini-2.5-pro', 'google', 123, 123)`,
+    });
+    await db.execute({
+      sql: `INSERT INTO voices (id, label, source, provider, model_id, lineage, created_at, updated_at)
+            VALUES ('antigravity-cli', 'Antigravity (gemini-3.5-flash)', 'cli', 'antigravity-cli', 'gemini-3.5-flash', 'google', 456, 456)`,
+    });
+    // Re-init should not crash despite PK collision risk
+    await _resetDbForTests();
+    await getDb();
+
+    // The old antigravity row is replaced by the migrated one
+    const migrated = await voices.getById('antigravity-cli');
+    expect(migrated).not.toBeNull();
+    // No gemini-cli row should remain
+    const legacy = await voices.getById('gemini-cli');
+    expect(legacy).toBeNull();
+  });
 });

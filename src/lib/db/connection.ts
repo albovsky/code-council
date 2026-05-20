@@ -235,6 +235,16 @@ async function initDb(): Promise<Client> {
     await db.execute('ALTER TABLE voices ADD COLUMN disabled_reason TEXT');
   }
 
+  // Boot migration: rename legacy gemini-cli provider entries to antigravity-cli.
+  // Idempotent: WHERE clause ensures it only runs when old rows exist.
+  // Run after voices table is created/verified so schema is always ready.
+  await db.execute(`
+    UPDATE voices
+    SET id = REPLACE(id, 'gemini-cli', 'antigravity-cli'),
+        provider = 'antigravity-cli'
+    WHERE provider = 'gemini-cli'
+  `);
+
   // is_complete on templates — added in v0.8.3 to gate "Use template"
   // when the seed adapter couldn't fill every slot from the user's
   // installed voices. Default 1 keeps existing rows usable.

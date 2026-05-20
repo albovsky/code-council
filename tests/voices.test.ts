@@ -358,3 +358,24 @@ describe('voices.delete', () => {
     await expect(voices.delete('nope')).resolves.toBeUndefined();
   });
 });
+
+describe('boot migration: gemini-cli -> antigravity-cli', () => {
+  it('automatically migrates gemini-cli provider rows to antigravity-cli on DB init', async () => {
+    const db = await getDb();
+    // seed legacy row directly into DB
+    await db.execute({
+      sql: `INSERT INTO voices (id, label, source, provider, model_id, lineage, created_at, updated_at)
+            VALUES ('gemini-cli', 'Gemini (gemini-2.5-pro)', 'cli', 'gemini-cli', 'gemini-2.5-pro', 'google', 123, 123)`,
+    });
+    // trigger re-init (migration runs in initDb)
+    await _resetDbForTests();
+    await getDb();
+
+    const migrated = await voices.getById('antigravity-cli');
+    expect(migrated).not.toBeNull();
+    expect(migrated?.provider).toBe('antigravity-cli');
+
+    const legacy = await voices.getById('gemini-cli');
+    expect(legacy).toBeNull();
+  });
+});

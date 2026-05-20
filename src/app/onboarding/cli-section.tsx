@@ -32,7 +32,7 @@ import { CLIS, manualBinaryName } from "./helpers";
 const CLI_TO_UI_LINEAGE: Record<string, UILineage> = {
   "claude-code": "claude",
   "codex-cli": "codex",
-  "gemini-cli": "gemini",
+  "gemini-cli": "antigravity",
   "opencode-cli": "opencode",
   "kimi-cli": "kimi",
 };

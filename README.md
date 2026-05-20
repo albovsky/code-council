@@ -454,10 +454,10 @@ PRs welcome.
 
 ```bash
 git clone https://github.com/code-council/council.git
-cd council && pnpm install
-pnpm dev:daemon   # daemon on :7707
-pnpm dev          # cockpit on :5050
-pnpm test         # full suite
+cd council && npm install
+npm run dev:daemon   # daemon on :7707
+npm run dev          # cockpit on :5050
+npm run test         # full suite
 ```
 
 Read [`AGENTS.md`](./AGENTS.md) first — Next.js 16 has breaking changes from older versions. Coverage target on new code: 80%+.

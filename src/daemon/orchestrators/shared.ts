@@ -23,7 +23,7 @@ export const COUNCIL_TOOLS = [
 export type OrchestratorName =
   | 'claude'
   | 'codex'
-  | 'gemini'
+  | 'antigravity'
   | 'opencode'
   | 'kimi'
   | 'grok'

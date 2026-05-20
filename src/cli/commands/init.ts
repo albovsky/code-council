@@ -63,7 +63,7 @@ async function runOrchestratorAutoConnect(connectFlag?: string): Promise<void> {
   type Name =
     | 'claude'
     | 'codex'
-    | 'gemini'
+    | 'antigravity'
     | 'opencode'
     | 'kimi'
     | 'cursor'
@@ -71,7 +71,7 @@ async function runOrchestratorAutoConnect(connectFlag?: string): Promise<void> {
   const ALL_NAMES = [
     'claude',
     'codex',
-    'gemini',
+    'antigravity',
     'opencode',
     'kimi',
     'cursor',
@@ -141,7 +141,7 @@ export function registerInitCommand(program: Command): void {
     .option('--no-register', 'Skip auto-detecting orchestrators')
     .option(
       '--connect <list>',
-      'Comma-separated list of CLIs to connect (claude,codex,gemini,opencode,kimi,cursor,windsurf). Default: all detected.',
+      'Comma-separated list of CLIs to connect (claude,codex,antigravity,opencode,kimi,cursor,windsurf). Default: all detected.',
     )
     .action(async (opts: { register?: boolean; connect?: string }) => {
       try {
@@ -246,7 +246,7 @@ export function registerInitCommand(program: Command): void {
           console.log(c.dim('      claude     — https://docs.anthropic.com/en/docs/claude-code'));
           console.log(c.dim('      codex      — https://github.com/openai/codex'));
           console.log(c.dim('      agy        — https://antigravity.google'));
-          console.log(c.dim('      gemini     — legacy fallback: https://github.com/google-gemini/gemini-cli'));
+          console.log(c.dim('      gemini     — legacy fallback: https://github.com/google/antigravity-cli'));
           console.log(c.dim('      opencode   — https://opencode.ai'));
           console.log(c.dim('      kimi       — https://github.com/MoonshotAI/kimi-cli'));
           console.log(c.dim('      grok       — https://x.ai/cli'));

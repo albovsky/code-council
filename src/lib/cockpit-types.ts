@@ -16,7 +16,7 @@
 
 export type ReviewerLineage =
   | "codex"
-  | "gemini"
+  | "antigravity"
   | "opencode"
   | "claude"
   | "kimi"

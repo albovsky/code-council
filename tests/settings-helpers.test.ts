@@ -24,6 +24,7 @@ vi.mock('child_process', async (importOriginal) => {
   const mod = await importOriginal<typeof import('child_process')>();
   return {
     ...mod,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     spawnSync: (cmd: string, args: string[], opts: any) => {
       if (cmd === 'tmux') {
         return { status: 0 };

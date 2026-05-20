@@ -11,7 +11,7 @@ import type { FormState } from "./types";
 export const COCKPIT_TO_DAEMON: Record<ReviewerLineage, string> = {
   claude: "anthropic",
   codex: "openai",
-  gemini: "google",
+  antigravity: "google",
   opencode: "opencode",
   kimi: "moonshot",
   // openrouter voices carry an explicit `openrouter:<model>` id; the
@@ -36,7 +36,7 @@ export const COCKPIT_TO_DAEMON: Record<ReviewerLineage, string> = {
 export const DAEMON_TO_COCKPIT: Record<string, ReviewerLineage> = {
   anthropic: "claude",
   openai: "codex",
-  google: "gemini",
+  google: "antigravity",
   opencode: "opencode",
   moonshot: "kimi",
   openrouter: "openrouter",
@@ -51,7 +51,7 @@ export const DAEMON_TO_COCKPIT: Record<string, ReviewerLineage> = {
 export const DAEMON_DEFAULT_MODEL: Record<ReviewerLineage, string> = {
   claude: "claude-opus-4-7",
   codex: "gpt-5.5",
-  gemini: "gemini-3.5-flash",
+  antigravity: "gemini-3.5-flash",
   opencode: "kimi-k2.6",
   kimi: "kimi-k2.6",
   openrouter: "",
@@ -69,7 +69,7 @@ const DEFAULT_PHASE: TemplatePhase = {
   reviewer: {
     require: 3,
     crossLineage: true,
-    candidates: ["codex", "gemini", "opencode"],
+    candidates: ["codex", "antigravity", "opencode"],
   },
   inputs: { include: [], exclude: [] },
   iterate: { max: 3, onMax: "ask-user" },
@@ -143,7 +143,7 @@ export const WIZARD_STEPS: StepDef[] = [
 export const FALLBACK_LINEAGES = [
   "claude",
   "codex",
-  "gemini",
+  "antigravity",
   "opencode",
   "kimi",
   "openrouter",

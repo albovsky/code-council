@@ -366,6 +366,7 @@ describe('boot migration: gemini-cli -> antigravity-cli', () => {
     await db.execute({
       sql: `INSERT INTO voices (id, label, source, provider, model_id, lineage, created_at, updated_at)
             VALUES ('gemini-cli', 'Gemini (gemini-2.5-pro)', 'cli', 'gemini-cli', 'gemini-2.5-pro', 'google', 123, 123)`,
+      args: [],
     });
     // trigger re-init (migration runs in initDb)
     await _resetDbForTests();
@@ -385,10 +386,12 @@ describe('boot migration: gemini-cli -> antigravity-cli', () => {
     await db.execute({
       sql: `INSERT INTO voices (id, label, source, provider, model_id, lineage, created_at, updated_at)
             VALUES ('gemini-cli', 'Gemini (gemini-2.5-pro)', 'cli', 'gemini-cli', 'gemini-2.5-pro', 'google', 123, 123)`,
+      args: [],
     });
     await db.execute({
       sql: `INSERT INTO voices (id, label, source, provider, model_id, lineage, created_at, updated_at)
             VALUES ('antigravity-cli', 'Antigravity (gemini-3.5-flash)', 'cli', 'antigravity-cli', 'gemini-3.5-flash', 'google', 456, 456)`,
+      args: [],
     });
     // Re-init should not crash despite PK collision risk
     await _resetDbForTests();

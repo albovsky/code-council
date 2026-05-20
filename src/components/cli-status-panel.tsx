@@ -46,7 +46,7 @@ interface CliHealth {
 const ORCHESTRATOR_TO_LINEAGE: Record<string, string> = {
   claude: "anthropic",
   codex: "openai",
-  gemini: "google",
+  antigravity: "google",
   opencode: "opencode",
   kimi: "moonshot",
   grok: "grok",
@@ -59,7 +59,7 @@ const ORCHESTRATOR_TO_LINEAGE: Record<string, string> = {
 const ORCHESTRATOR_TO_PROVIDER: Record<string, string> = {
   claude: "claude-code",
   codex: "codex-cli",
-  gemini: "gemini-cli",
+  antigravity: "gemini-cli",
   kimi: "kimi-cli",
   opencode: "opencode-cli",
   grok: "grok-cli",

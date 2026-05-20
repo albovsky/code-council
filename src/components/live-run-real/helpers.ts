@@ -5,7 +5,7 @@ import type { ReviewerLineage } from "@/lib/types";
 export const AGENT_LABEL: Record<string, string> = {
   claude: "claude-code",
   codex: "codex-cli",
-  gemini: "gemini-cli",
+  antigravity: "gemini-cli",
   opencode: "opencode-cli",
   kimi: "kimi-cli",
   grok: "grok-cli",
@@ -17,12 +17,12 @@ export const AGENT_LABEL: Record<string, string> = {
 
 // Templates use runtime lineage names ("anthropic", "openai", "google",
 // ...) while the cockpit UI displays Linear-style brand names ("claude",
-// "codex", "gemini", ...). This map translates between them so
+// "codex", "antigravity", ...). This map translates between them so
 // placeholder reviewer cards match the visual lineage of real spawns.
 export const TEMPLATE_TO_UI_LINEAGE: Record<string, ReviewerLineage> = {
   anthropic: "claude",
   openai: "codex",
-  google: "gemini",
+  google: "antigravity",
   opencode: "opencode",
   moonshot: "kimi",
   grok: "grok",

@@ -41,7 +41,7 @@ function normalizeBinaryName(command: string | undefined): string {
 }
 
 function detectedGoogleCli(): { found: boolean; path?: string } | undefined {
-  return detectAllClis().find((cli) => cli.id === 'gemini-cli');
+  return detectAllClis().find((cli) => cli.id === 'antigravity-cli');
 }
 
 function shouldUseAgy(): boolean {

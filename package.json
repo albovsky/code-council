@@ -28,7 +28,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "rm -rf dist .next *.tsbuildinfo && pnpm build && pnpm build:server && rm -rf .next/cache && test -f dist/cli/index.js && test -f dist/daemon/index.js && test -f dist/mcp/index.js",
+    "prepublishOnly": "rm -rf dist .next *.tsbuildinfo && npm run build && npm run build:server && rm -rf .next/cache && test -f dist/cli/index.js && test -f dist/daemon/index.js && test -f dist/mcp/index.js",
     "postinstall": "node scripts/postinstall.mjs"
   },
   "dependencies": {

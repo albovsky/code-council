@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 const DAEMON_TO_UI_LINEAGE: Record<string, UILineage> = {
   anthropic: "claude",
   openai: "codex",
-  google: "gemini",
+  google: "antigravity",
   opencode: "opencode",
   moonshot: "kimi",
 };

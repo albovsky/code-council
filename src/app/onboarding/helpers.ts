@@ -79,7 +79,7 @@ export function classifyOpencodeClient(qualified: string): {
   if (tail.includes("claude")) return { lineage: "anthropic", vendor_family: null };
   if (tail.includes("gpt") || /(?:^|[^a-z])o[1-9](?:$|[^a-z0-9])/.test(tail))
     return { lineage: "openai", vendor_family: null };
-  if (tail.includes("gemini")) return { lineage: "google", vendor_family: null };
+  if (tail.includes("antigravity")) return { lineage: "google", vendor_family: null };
   if (tail.includes("deepseek")) return { lineage: "opencode", vendor_family: "deepseek" };
   if (tail.includes("llama") || tail.includes("meta"))
     return { lineage: "opencode", vendor_family: "meta" };

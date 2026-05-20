@@ -23,7 +23,7 @@ import {
 
 const COUNCIL_BIN_PATH = path.resolve(__dirname, '..', '..', 'bin', 'council.mjs');
 
-const ALL_NAMES = ['claude', 'codex', 'gemini', 'opencode', 'kimi', 'cursor', 'windsurf'] as const;
+const ALL_NAMES = ['claude', 'codex', 'antigravity', 'opencode', 'kimi', 'cursor', 'windsurf'] as const;
 
 function parseTargets(arg: string | undefined): OrchestratorName[] | null {
   if (!arg) return null; // null = "all detected"

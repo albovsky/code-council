@@ -207,6 +207,19 @@ describe('seedCliVoices', () => {
     expect(haiku?.enabled).toBe(true);
   });
 
+  it('first-boot migration respects legacy gemini.enabled_models setting', async () => {
+    // Simulate a user upgrading from an old version that used gemini.enabled_models.
+    // The seeder must read this and NOT treat it as a fresh install (all enabled).
+    await settings.set('gemini.enabled_models', ['gemini-3.5-flash']);
+
+    await seedCliVoices();
+
+    // The antigravity.enabled_models setting should now be set (migrated from gemini.enabled_models).
+    const migrated = await settings.get('antigravity.enabled_models');
+    expect(Array.isArray(migrated)).toBe(true);
+    expect(migrated).toEqual(['gemini-3.5-flash']);
+  });
+
   it('first-install with no migration data → all curated models enabled', async () => {
     // No <lineage>.enabled_models setting at all → treated as a fresh
     // install. Every curated/discovered model row starts enabled so the

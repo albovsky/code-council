@@ -212,8 +212,8 @@ export async function seedCliVoices(): Promise<{
   //     + (on first boot) seed curated non-default rows so fleet cards
   //     can list them.
   //   - NOT DETECTED on first boot but settings exist: migrate anyway
-  //     (round 1 cdx-1 BLOCKER — otherwise the user's gemini.enabled_models
-  //     would never migrate if gemini-cli isn't installed yet, and once
+  //     (round 1 cdx-1 BLOCKER — otherwise the user's antigravity.enabled_models
+  //     would never migrate if antigravity-cli isn't installed yet, and once
   //     voices table is non-empty the migration won't re-fire). Rows seed
   //     with the migrated enabled state; later when the CLI installs,
   //     voices.upsert preserves enabled and just rewrites model_id+label.
@@ -520,6 +520,17 @@ interface MigrationData {
 }
 
 async function readMigrationSettings(): Promise<MigrationData | null> {
+  // Settings key migration: copy legacy gemini.enabled_models to antigravity.enabled_models
+  // BEFORE the lineages loop so the loop picks up the migrated value.
+  // Guard: only copy if the new key doesn't exist yet AND the legacy value is a valid array.
+  const legacyModels = await settings.get('gemini.enabled_models');
+  if (Array.isArray(legacyModels)) {
+    const currentModels = await settings.get('antigravity.enabled_models');
+    if (currentModels === null || currentModels === undefined) {
+      await settings.set('antigravity.enabled_models', legacyModels);
+    }
+  }
+
   const byUiLineage = new Map<UiLineage, string[] | undefined>();
   let anySet = false;
   const lineages: UiLineage[] = ['claude', 'codex', 'antigravity', 'kimi', 'opencode'];
@@ -532,14 +543,6 @@ async function readMigrationSettings(): Promise<MigrationData | null> {
       anySet = true;
     } else {
       byUiLineage.set(ui, undefined);
-    }
-  }
-  // Settings key migration: copy legacy gemini.enabled_models to antigravity.enabled_models.
-  const legacyModels = await settings.get('gemini.enabled_models');
-  if (legacyModels !== null && legacyModels !== undefined) {
-    const currentModels = await settings.get('antigravity.enabled_models');
-    if (currentModels === null || currentModels === undefined) {
-      await settings.set('antigravity.enabled_models', legacyModels);
     }
   }
   // Returning null when zero settings exist is what makes the "fresh install

@@ -33,7 +33,7 @@ export const sym = {
 
 /**
  * Header line with bold title, optional dim subtitle.
- *   header(sym.ok, 'Chorus started')  →  ✓ Chorus started
+ *   header(sym.ok, 'Code Council started')  →  ✓ Code Council started
  *   header(sym.ok, 'Started', 'PID 1234')  →  ✓ Started  (PID 1234)
  */
 export function header(icon: string, title: string, sub?: string): string {

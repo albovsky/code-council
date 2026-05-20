@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Chorus CLI entry. Resolves dist/ when published, falls back to tsx for dev.
+// Code Council CLI entry. Resolves dist/ when published, falls back to tsx for dev.
 
 // Hard-gate Node version BEFORE any imports — package.json sets engines.node
 // >=20 but npm only WARNS on engine mismatch unless engine-strict is set
@@ -8,7 +8,7 @@
 const [nodeMajor] = process.versions.node.split(".").map(Number);
 if (nodeMajor < 20) {
   console.error(
-    `\n  ✗ Chorus requires Node 20 or newer (you have ${process.versions.node}).\n  Install latest LTS from https://nodejs.org/ or via your version manager (nvm, fnm, asdf).\n`,
+    `\n  ✗ Code Council requires Node 20 or newer (you have ${process.versions.node}).\n  Install latest LTS from https://nodejs.org/ or via your version manager (nvm, fnm, asdf).\n`,
   );
   process.exit(1);
 }
@@ -25,14 +25,14 @@ import { dirname, join, resolve } from "node:path";
 // 25 + Windows ESM URL scheme bug that motivated this work).
 //
 // Field set must stay in sync with src/cli/crash-hook.ts buildCrashLog
-// (timestamp, source, chorus, node, platform, argv, cwd, uptime_ms).
+// (timestamp, source, council, node, platform, argv, cwd, uptime_ms).
 // Drift means the maintainer has to read two formats. The package
 // version is read from package.json beside this file rather than
 // importing pkg from src — that import would itself need to load via
 // dist/src and could fail in the very situations this hook exists for.
 const ISSUE_URL = "https://github.com/chorus-codes/chorus/issues/new";
 
-function readChorusVersion() {
+function readCouncilVersion() {
   try {
     const __dn = dirname(fileURLToPath(import.meta.url));
     const raw = readFileSync(resolve(__dn, "..", "package.json"), "utf-8");
@@ -44,8 +44,8 @@ function readChorusVersion() {
 }
 
 function installCrashHook() {
-  const crashDir = join(homedir(), ".chorus", "crashes");
-  const version = readChorusVersion();
+  const crashDir = join(homedir(), ".code-council", "crashes");
+  const version = readCouncilVersion();
   const handle = (err, source) => {
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const stack =
@@ -53,11 +53,11 @@ function installCrashHook() {
         ? `${err.name}: ${err.message}\n${err.stack ?? "(no stack)"}`
         : String(err);
     const body = [
-      "# Chorus crash report",
+      "# Code Council crash report",
       "",
       `timestamp:    ${new Date().toISOString()}`,
       `source:       ${source}`,
-      `chorus:       ${version}`,
+      `council:      ${version}`,
       `node:         ${process.versions.node}`,
       `platform:     ${process.platform} ${process.arch}`,
       `argv:         ${process.argv.slice(1).join(" ")}`,
@@ -79,11 +79,11 @@ function installCrashHook() {
     }
     const headline =
       err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    process.stderr.write(`\n✗ Chorus crashed (${source}): ${headline}\n`);
+    process.stderr.write(`\n✗ Code Council crashed (${source}): ${headline}\n`);
     if (written) {
       process.stderr.write(`  Crash log saved to: ${written}\n`);
       process.stderr.write(`  Please attach it to a new issue: ${ISSUE_URL}\n`);
-      process.stderr.write(`  Or run: chorus diagnose\n\n`);
+      process.stderr.write(`  Or run: council diagnose\n\n`);
     } else {
       process.stderr.write(`  (could not write log to ${crashDir})\n`);
       process.stderr.write(`  Please file an issue at ${ISSUE_URL} with:\n`);

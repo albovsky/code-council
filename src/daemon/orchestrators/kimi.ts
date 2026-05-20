@@ -22,7 +22,7 @@ function getKimiStatus(): OrchestratorStatus {
     connected,
     approvedTools: connected ? 1 : 0,
     totalTools: 1,
-    note: 'Registers Chorus as an MCP server in ~/.kimi/mcp.json. Kimi may show a one-time prompt before the first tool call — click Always allow.',
+    note: 'Registers Code Council as an MCP server in ~/.kimi/mcp.json. Kimi may show a one-time prompt before the first tool call — click Always allow.',
     supported: detected,
     firstCallBehavior: 'prompts_once',
   };
@@ -36,17 +36,17 @@ function hasKimiMcpServer(expectedBinPath?: string): boolean {
       unknown
     >;
     const servers = body.mcpServers as Record<string, unknown> | undefined;
-    const chorus = servers?.chorus as { args?: string[] } | undefined;
-    if (!chorus) return false;
+    const council = servers?.council as { args?: string[] } | undefined;
+    if (!council) return false;
     if (!expectedBinPath) return true;
-    return Array.isArray(chorus.args) && chorus.args.includes(expectedBinPath);
+    return Array.isArray(council.args) && council.args.includes(expectedBinPath);
   } catch {
     return false;
   }
 }
 
 /**
- * Register Chorus with Kimi CLI via `kimi mcp add`. Same JSON shape as
+ * Register Code Council with Kimi CLI via `kimi mcp add`. Same JSON shape as
  * Gemini (mcpServers.<name>) but stored in ~/.kimi/mcp.json. Idempotent
  * + path-aware: re-registers if binPath drifted.
  */
@@ -56,7 +56,7 @@ async function connectKimi(
   if (hasKimiMcpServer(opts.binPath)) {
     return {
       added: [],
-      alreadyPresent: ['mcpServers.chorus'],
+      alreadyPresent: ['mcpServers.council'],
       configPath: KIMI_MCP_PATH,
       slashCommand: 'skipped',
       slashCommandPath: '',
@@ -65,7 +65,7 @@ async function connectKimi(
 
   if (hasKimiMcpServer()) {
     try {
-      await execFileAsync('kimi', ['mcp', 'remove', 'chorus'], {
+      await execFileAsync('kimi', ['mcp', 'remove', 'council'], {
         timeout: 30_000,
         shell: process.platform === 'win32',
       });
@@ -83,9 +83,9 @@ async function connectKimi(
         'add',
         '--transport',
         'stdio',
-        'chorus',
+        'council',
         '-e',
-        `CHORUS_DAEMON_URL=${daemonUrl}`,
+        `COUNCIL_DAEMON_URL=${daemonUrl}`,
         '--',
         'node',
         opts.binPath,
@@ -102,7 +102,7 @@ async function connectKimi(
   }
 
   return {
-    added: ['mcpServers.chorus'],
+    added: ['mcpServers.council'],
     alreadyPresent: [],
     configPath: KIMI_MCP_PATH,
     slashCommand: 'skipped',

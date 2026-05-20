@@ -1,5 +1,5 @@
 /**
- * `chorus doctor` — diagnose CLI detection + PATH issues.
+ * `council doctor` — diagnose CLI detection + PATH issues.
  *
  * Surfaces the gap between "what your terminal sees" and "what the
  * daemon sees" when those diverge — the bug class that bit the launch
@@ -64,7 +64,7 @@ function printReport(r: DoctorReport): void {
   };
 
   console.log('');
-  console.log(header(sym.pointer, 'Chorus doctor'));
+  console.log(header(sym.pointer, 'Code Council doctor'));
   console.log('');
   console.log(c.bold('  CLI detection'));
   console.log('');
@@ -116,12 +116,12 @@ function printReport(r: DoctorReport): void {
       }
       console.log('');
       console.log(
-        `    ${c.dim('Tip:')} restart the daemon with ${c.bold('chorus stop && chorus start')} to re-capture.`,
+        `    ${c.dim('Tip:')} restart the daemon with ${c.bold('council stop && council start')} to re-capture.`,
       );
     }
   } else {
     console.log(
-      `    captured shell:   ${c.dim('not captured yet — run ')}${c.bold('chorus init')}${c.dim(' or ')}${c.bold('chorus start')}`,
+      `    captured shell:   ${c.dim('not captured yet — run ')}${c.bold('council init')}${c.dim(' or ')}${c.bold('council start')}`,
     );
   }
 
@@ -148,7 +148,7 @@ function printReport(r: DoctorReport): void {
       `      to paste a path for any missing CLI.`,
     );
     console.log(
-      `    ${c.dim('•')} Or run ${c.bold('chorus stop && chorus start')} from your usual terminal so`,
+      `    ${c.dim('•')} Or run ${c.bold('council stop && council start')} from your usual terminal so`,
     );
     console.log(
       `      we re-capture the PATH that has the CLI.`,

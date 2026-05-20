@@ -10,14 +10,14 @@ import { promisify } from 'node:util';
 
 export const execFileAsync = promisify(execFile);
 
-export const CHORUS_TOOLS = [
-  'mcp__chorus__create_chat',
-  'mcp__chorus__wait_for_chat',
-  'mcp__chorus__get_chat_status',
-  'mcp__chorus__list_blocked',
-  'mcp__chorus__resume_chat',
-  'mcp__chorus__cancel_chat',
-  'mcp__chorus__list_templates',
+export const COUNCIL_TOOLS = [
+  'mcp__council__create_chat',
+  'mcp__council__wait_for_chat',
+  'mcp__council__get_chat_status',
+  'mcp__council__list_blocked',
+  'mcp__council__resume_chat',
+  'mcp__council__cancel_chat',
+  'mcp__council__list_templates',
 ];
 
 export type OrchestratorName =
@@ -35,11 +35,11 @@ export const DEFAULT_DAEMON_URL = 'http://127.0.0.1:7707';
 export interface OrchestratorStatus {
   name: OrchestratorName;
   label: string;
-  /** True when Chorus's MCP tools are pre-approved (all of them). */
+  /** True when Code Council's MCP tools are pre-approved (all of them). */
   connected: boolean;
-  /** How many of CHORUS_TOOLS are pre-approved right now. */
+  /** How many of COUNCIL_TOOLS are pre-approved right now. */
   approvedTools: number;
-  /** Total expected (always CHORUS_TOOLS.length for now). */
+  /** Total expected (always COUNCIL_TOOLS.length for now). */
   totalTools: number;
   /** Human note for "what does connecting do?" UX copy. */
   note: string;
@@ -145,11 +145,11 @@ function readJsonOrEmpty(filePath: string): McpJsonShape {
 
 export function hasMcpEntry(filePath: string, expectedBinPath?: string): boolean {
   const cfg = readJsonOrEmpty(filePath);
-  const chorus = (cfg.mcpServers as Record<string, { args?: string[] }> | undefined)
-    ?.chorus;
-  if (!chorus) return false;
+  const council = (cfg.mcpServers as Record<string, { args?: string[] }> | undefined)
+    ?.council;
+  if (!council) return false;
   if (!expectedBinPath) return true;
-  return Array.isArray(chorus.args) && chorus.args.includes(expectedBinPath);
+  return Array.isArray(council.args) && council.args.includes(expectedBinPath);
 }
 
 export function writeMcpEntry(opts: {
@@ -159,10 +159,10 @@ export function writeMcpEntry(opts: {
 }): void {
   const cfg = readJsonOrEmpty(opts.filePath);
   const servers = (cfg.mcpServers ?? {}) as Record<string, unknown>;
-  servers.chorus = {
+  servers.council = {
     command: 'node',
     args: [opts.binPath, 'mcp'],
-    env: { CHORUS_DAEMON_URL: opts.daemonUrl },
+    env: { COUNCIL_DAEMON_URL: opts.daemonUrl },
   };
   const next: McpJsonShape = { ...cfg, mcpServers: servers };
   fs.mkdirSync(path.dirname(opts.filePath), { recursive: true });

@@ -1,5 +1,5 @@
 /**
- * Detect where chorus is running so the CLI can print the right URL hint.
+ * Detect where council is running so the CLI can print the right URL hint.
  *
  * The cockpit binds to 127.0.0.1:5050. On a native install that opens fine in
  * the local browser. On remote-dev setups (VSCode/Cursor Remote-SSH,
@@ -68,7 +68,7 @@ export function detectRuntimeEnv(): RuntimeEnvInfo {
 }
 
 /**
- * Should `chorus start --ui` actually try to spawn a browser?
+ * Should `council start --ui` actually try to spawn a browser?
  * On remote-dev hosts there's usually no graphical browser; calling `open()`
  * just emits an `xdg-open` error. Skip it and rely on the printed URL +
  * the editor's own port-forwarding UI.

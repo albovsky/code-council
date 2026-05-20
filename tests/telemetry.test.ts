@@ -28,9 +28,10 @@ let fakeHome: string;
 
 beforeEach(async () => {
   realHome = process.env.HOME;
-  fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'chorus-telemetry-'));
+  fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'council-telemetry-'));
   process.env.HOME = fakeHome;
-  fs.mkdirSync(path.join(fakeHome, '.chorus'), { recursive: true });
+  fs.mkdirSync(path.join(fakeHome, '.code-council'), { recursive: true });
+  delete process.env.COUNCIL_TELEMETRY;
   delete process.env.CHORUS_TELEMETRY;
   // Each test gets its own DB so settings + chats stay isolated.
   await _resetDbForTests();
@@ -47,20 +48,20 @@ describe('isTelemetryEnabled', () => {
     expect(await isTelemetryEnabled()).toBe(true);
   });
 
-  it('returns false when CHORUS_TELEMETRY=0', async () => {
-    process.env.CHORUS_TELEMETRY = '0';
+  it('returns false when COUNCIL_TELEMETRY=0', async () => {
+    process.env.COUNCIL_TELEMETRY = '0';
     expect(await isTelemetryEnabled()).toBe(false);
   });
 
-  it('returns true when CHORUS_TELEMETRY is set to anything else', async () => {
-    process.env.CHORUS_TELEMETRY = '1';
+  it('returns true when COUNCIL_TELEMETRY is set to anything else', async () => {
+    process.env.COUNCIL_TELEMETRY = '1';
     expect(await isTelemetryEnabled()).toBe(true);
   });
 
   it.each([['false'], ['False'], ['FALSE'], ['no'], ['off'], ['NO'], ['0']])(
-    'accepts CHORUS_TELEMETRY=%s as a disable (round-1 dogfood feedback)',
+    'accepts COUNCIL_TELEMETRY=%s as a disable (round-1 dogfood feedback)',
     async (val) => {
-      process.env.CHORUS_TELEMETRY = val;
+      process.env.COUNCIL_TELEMETRY = val;
       expect(await isTelemetryEnabled()).toBe(false);
     },
   );
@@ -71,7 +72,7 @@ describe('isTelemetryEnabled', () => {
     expect(await isTelemetryEnabled()).toBe(false);
   });
 
-  it('returns false when ~/.chorus/no-telemetry exists', async () => {
+  it('returns false when ~/.code-council/no-telemetry exists', async () => {
     fs.writeFileSync(_testing.noTelemetryPath(), '');
     expect(await isTelemetryEnabled()).toBe(false);
   });
@@ -88,7 +89,7 @@ describe('isTelemetryEnabled', () => {
 
   it('env wins over a true settings flag', async () => {
     await settings.set(_testing.SETTINGS_KEY, true);
-    process.env.CHORUS_TELEMETRY = '0';
+    process.env.COUNCIL_TELEMETRY = '0';
     expect(await isTelemetryEnabled()).toBe(false);
   });
 });
@@ -270,7 +271,7 @@ describe('countChatsLast24h', () => {
 
 describe('sendHeartbeat', () => {
   it('returns null and never calls fetch when telemetry is disabled', async () => {
-    process.env.CHORUS_TELEMETRY = '0';
+    process.env.COUNCIL_TELEMETRY = '0';
     const fetchSpy = vi.fn();
     const result = await sendHeartbeat({
       version: '0.7.0',

@@ -37,7 +37,7 @@ function getCursorStatus(): OrchestratorStatus {
     connected,
     approvedTools: connected ? 1 : 0,
     totalTools: 1,
-    note: 'Registers Chorus in ~/.cursor/mcp.json. Cursor will prompt on first tool call — choose "Always allow" to make it stick.',
+    note: 'Registers Code Council in ~/.cursor/mcp.json. Cursor will prompt on first tool call — choose "Always allow" to make it stick.',
     supported: detected,
     firstCallBehavior: 'prompts_once',
   };
@@ -49,7 +49,7 @@ async function connectCursor(
   if (hasMcpEntry(CURSOR_MCP_PATH, opts.binPath)) {
     return {
       added: [],
-      alreadyPresent: ['mcpServers.chorus'],
+      alreadyPresent: ['mcpServers.council'],
       configPath: CURSOR_MCP_PATH,
       slashCommand: 'skipped',
       slashCommandPath: '',
@@ -63,7 +63,7 @@ async function connectCursor(
   });
 
   return {
-    added: ['mcpServers.chorus'],
+    added: ['mcpServers.council'],
     alreadyPresent: [],
     configPath: CURSOR_MCP_PATH,
     slashCommand: 'skipped',
@@ -80,7 +80,7 @@ function getWindsurfStatus(): OrchestratorStatus {
     connected,
     approvedTools: connected ? 1 : 0,
     totalTools: 1,
-    note: 'Registers Chorus in ~/.codeium/windsurf/mcp_config.json. Windsurf will prompt on first tool call — choose "Always allow".',
+    note: 'Registers Code Council in ~/.codeium/windsurf/mcp_config.json. Windsurf will prompt on first tool call — choose "Always allow".',
     supported: detected,
     firstCallBehavior: 'prompts_once',
   };
@@ -92,7 +92,7 @@ async function connectWindsurf(
   if (hasMcpEntry(WINDSURF_MCP_PATH, opts.binPath)) {
     return {
       added: [],
-      alreadyPresent: ['mcpServers.chorus'],
+      alreadyPresent: ['mcpServers.council'],
       configPath: WINDSURF_MCP_PATH,
       slashCommand: 'skipped',
       slashCommandPath: '',
@@ -106,7 +106,7 @@ async function connectWindsurf(
   });
 
   return {
-    added: ['mcpServers.chorus'],
+    added: ['mcpServers.council'],
     alreadyPresent: [],
     configPath: WINDSURF_MCP_PATH,
     slashCommand: 'skipped',

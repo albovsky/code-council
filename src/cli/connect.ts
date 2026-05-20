@@ -1,6 +1,6 @@
 /**
- * `chorus connect [orchestrator]` — wire Chorus into a CLI's MCP config so
- * the user can call chorus.* tools from inside it. Removes the per-tool
+ * `council connect [orchestrator]` — wire Code Council into a CLI's MCP config so
+ * the user can call council.* tools from inside it. Removes the per-tool
  * "Yes, allow for this project?" friction (Claude) or registers the MCP
  * server (Codex/Gemini/OpenCode) which they don't have until we add it.
  *
@@ -8,20 +8,20 @@
  * so the cockpit's /connect page can run it with one click.
  *
  * Usage:
- *   chorus connect              # all detected CLIs
- *   chorus connect claude       # just Claude Code
- *   chorus connect codex,gemini # comma-separated subset
+ *   council connect              # all detected CLIs
+ *   council connect claude       # just Claude Code
+ *   council connect codex,gemini # comma-separated subset
  */
 
 import path from 'node:path';
 import {
   autoConnectAll,
-  CHORUS_TOOLS,
+  COUNCIL_TOOLS,
   listOrchestrators,
   type OrchestratorName,
 } from '../daemon/orchestrators/index.js';
 
-const CHORUS_BIN_PATH = path.resolve(__dirname, '..', '..', 'bin', 'chorus.mjs');
+const COUNCIL_BIN_PATH = path.resolve(__dirname, '..', '..', 'bin', 'council.mjs');
 
 const ALL_NAMES = ['claude', 'codex', 'gemini', 'opencode', 'kimi', 'cursor', 'windsurf'] as const;
 
@@ -42,9 +42,9 @@ function parseTargets(arg: string | undefined): OrchestratorName[] | null {
 
 export async function runConnect(orchestrator?: string): Promise<void> {
   const only = parseTargets(orchestrator);
-  const binPath = CHORUS_BIN_PATH;
+  const binPath = COUNCIL_BIN_PATH;
 
-  console.log(`Connecting Chorus${only ? ` to: ${only.join(', ')}` : ''}...`);
+  console.log(`Connecting Code Council${only ? ` to: ${only.join(', ')}` : ''}...`);
   console.log('');
 
   try {
@@ -71,9 +71,9 @@ export async function runConnect(orchestrator?: string): Promise<void> {
       if (step.registered) parts.push('MCP server registered');
       else parts.push('MCP already registered');
       if (step.toolsAdded > 0) parts.push(`${step.toolsAdded} tool(s) approved`);
-      else if (step.name === 'claude') parts.push(`all ${CHORUS_TOOLS.length} tools already approved`);
-      if (step.slashCommand === 'installed') parts.push('/chorus command installed');
-      else if (step.slashCommand === 'updated') parts.push('/chorus command updated');
+      else if (step.name === 'claude') parts.push(`all ${COUNCIL_TOOLS.length} tools already approved`);
+      if (step.slashCommand === 'installed') parts.push('/council command installed');
+      else if (step.slashCommand === 'updated') parts.push('/council command updated');
       console.log(`  ✓ ${step.label}: ${parts.join(' · ')}`);
 
       const status = statuses.find((s) => s.name === step.name);
@@ -90,13 +90,13 @@ export async function runConnect(orchestrator?: string): Promise<void> {
 
     console.log('');
     console.log('Restart any CLI you just connected so it picks up the new MCP server.');
-    console.log('Inside the CLI: try `/chorus bug-diagnose <paste a snippet>` (Claude) or');
-    console.log('say `chorus, run bug-diagnose on <snippet>` (any other CLI).');
+    console.log('Inside the CLI: try `/council bug-diagnose <paste a snippet>` (Claude) or');
+    console.log('say `council, run bug-diagnose on <snippet>` (any other CLI).');
 
     if (promptsOnce.length > 0) {
       console.log('');
       console.log(`Heads up: ${promptsOnce.join(', ')} will show a one-time permission prompt`);
-      console.log('on your first chorus.* tool call. Click "Always allow" to make it stick.');
+      console.log('on your first council.* tool call. Click "Always allow" to make it stick.');
     }
     if (inheritsGlobal.length > 0) {
       console.log('');
@@ -108,7 +108,7 @@ export async function runConnect(orchestrator?: string): Promise<void> {
       console.log('Codex headless note: `codex exec` blocks all MCP tool calls under any');
       console.log('approval_policy except `--dangerously-bypass-approvals-and-sandbox`.');
       console.log('Interactive `codex` (TUI) prompts normally and works fine. Use the bypass');
-      console.log('flag for scripted/CI usage. See https://github.com/chorus-codes/chorus/issues/16.');
+      console.log('flag for scripted/CI usage. See https://github.com/council-codes/council/issues/16.');
     }
   } catch (err) {
     console.error(

@@ -7,7 +7,7 @@
  * OpenRouter exposes prices in $ per token (not per Mtok) at
  * `GET https://openrouter.ai/api/v1/models` — no auth required for the
  * catalog. We fetch once at first need, cache in memory, persist a 24h
- * disk copy at `~/.chorus/model-pricing.json` so a daemon restart reuses
+ * disk copy at `~/.code-council/model-pricing.json` so a daemon restart reuses
  * the snapshot instead of refetching cold.
  *
  * Model-id matching is dash/dot-insensitive: chorus uses `claude-opus-4-7`
@@ -27,7 +27,7 @@ interface ModelPrice {
   outputCostPerToken: number;
 }
 
-const CACHE_PATH = path.join(os.homedir(), '.chorus', 'model-pricing.json');
+const CACHE_PATH = path.join(os.homedir(), '.code-council', 'model-pricing.json');
 const DISK_TTL_MS = 24 * 60 * 60 * 1000;
 const MEMORY_TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 8_000;

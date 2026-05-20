@@ -3,7 +3,7 @@ import { ApiResponse } from "@/lib/types";
 
 // Both server-side and browser-side route through the Next.js proxy
 // at /api/daemon. The proxy handler runs in nodejs runtime and has
-// reliable access to ~/.chorus/daemon.json — no need to duplicate
+// reliable access to ~/.code-council/daemon.json — no need to duplicate
 // the discovery logic across runtimes (which broke historically).
 //
 // Browser side: relative URL works because the cockpit is the origin.
@@ -29,13 +29,13 @@ const API_PREFIX = "/api/v1";
  *           failed in some user environments — fell through to a 7707
  *           default that hit a VSCode tunnel squatter and hung 15s.
  *   v0.8.7 (this): use process.env.PORT directly. PORT is set by
- *           `chorus start` when spawning the cockpit child AND is the
+ *           `council start` when spawning the cockpit child AND is the
  *           same env Next.js reads to bind, so it's unambiguously
  *           available in every Next.js context. Synchronous, no
  *           chunk loading, no request-scope dependency.
  *
  * The proxy at /api/daemon runs in the catch-all route's nodejs
- * runtime where ~/.chorus/daemon.json reads work reliably — so this
+ * runtime where ~/.code-council/daemon.json reads work reliably — so this
  * function only needs to know the cockpit's own port, not the
  * daemon's.
  */
@@ -142,7 +142,7 @@ export async function fetchFromDaemon<T>(
       throw new DaemonError(
         "connection_failed",
         0,
-        "Failed to connect to Chorus daemon. Is it running?",
+        "Failed to connect to Code Council daemon. Is it running?",
       );
     }
 

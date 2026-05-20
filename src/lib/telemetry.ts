@@ -7,8 +7,8 @@
  * file paths, no hostnames, no API keys.
  *
  * Three opt-out paths, any one disables:
- *   1. CHORUS_TELEMETRY=0 environment variable
- *   2. ~/.chorus/no-telemetry touch-file (matches cargo / brew convention)
+ *   1. COUNCIL_TELEMETRY=0 environment variable
+ *   2. ~/.code-council/no-telemetry touch-file (matches cargo / brew convention)
  *   3. settings key `telemetry.enabled` set to false
  *
  * The endpoint may not exist yet — sends are fire-and-forget with a 5s
@@ -36,7 +36,7 @@ export interface TelemetryPayload {
   // firing." With these we can compute time-to-first-chat (TTFC) and
   // separate "tried once and bounced" from "active for N days."
   /** First-boot timestamp (ms epoch). Set once per install on first daemon
-   *  start; persisted to `~/.chorus/install-at`. Stable across upgrades. */
+   *  start; persisted to `~/.code-council/install-at`. Stable across upgrades. */
   installAt: number;
   /** Timestamp (ms epoch) of the install's first-ever chat creation, or
    *  `null` if no chat has been created yet. Persisted in the settings
@@ -61,7 +61,7 @@ const HEARTBEAT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const SEND_TIMEOUT_MS = 5_000;
 
 function chorusDir(): string {
-  return path.join(os.homedir(), '.chorus');
+  return path.join(os.homedir(), '.code-council');
 }
 
 function installIdPath(): string {
@@ -89,7 +89,7 @@ const ENV_DISABLE_VALUES = new Set(['0', 'false', 'no', 'off']);
  * is a soft kill switch, not a strict on/off enum.
  */
 export async function isTelemetryEnabled(): Promise<boolean> {
-  const env = process.env.CHORUS_TELEMETRY;
+  const env = process.env.COUNCIL_TELEMETRY || process.env.CHORUS_TELEMETRY;
   if (env !== undefined && ENV_DISABLE_VALUES.has(env.toLowerCase())) return false;
   if (fs.existsSync(noTelemetryPath())) return false;
   try {
@@ -105,9 +105,9 @@ export async function isTelemetryEnabled(): Promise<boolean> {
 export interface TelemetryStatus {
   /** Effective enabled state — what the next heartbeat will use. */
   enabled: boolean;
-  /** True when CHORUS_TELEMETRY is set to a recognised disable value. */
+  /** True when COUNCIL_TELEMETRY is set to a recognised disable value. */
   envOverride: boolean;
-  /** True when ~/.chorus/no-telemetry exists. */
+  /** True when ~/.code-council/no-telemetry exists. */
   fileOverride: boolean;
   /** Settings-DB value: true / false (explicit) / undefined (default-on). */
   settingValue: boolean | undefined;
@@ -122,7 +122,7 @@ export interface TelemetryStatus {
  * that secretly does nothing.
  */
 export async function getTelemetryStatus(): Promise<TelemetryStatus> {
-  const env = process.env.CHORUS_TELEMETRY;
+  const env = process.env.COUNCIL_TELEMETRY || process.env.CHORUS_TELEMETRY;
   const envOverride =
     env !== undefined && ENV_DISABLE_VALUES.has(env.toLowerCase());
   const fileOverride = fs.existsSync(noTelemetryPath());

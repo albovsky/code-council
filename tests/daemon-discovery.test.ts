@@ -56,8 +56,8 @@ const sampleInfo = (overrides: Partial<DaemonInfo> = {}): DaemonInfo => ({
 });
 
 describe('daemonInfoPath', () => {
-  it('points at $HOME/.chorus/daemon.json', () => {
-    expect(daemonInfoPath()).toBe(path.join(homeDir, '.chorus', 'daemon.json'));
+  it('points at $HOME/.code-council/daemon.json', () => {
+    expect(daemonInfoPath()).toBe(path.join(homeDir, '.code-council', 'daemon.json'));
   });
 });
 

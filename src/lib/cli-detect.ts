@@ -157,7 +157,7 @@ function fallbackPaths(cli: DetectableCli): string[] {
   if (cli === 'grok-cli') {
     // xAI's installer drops binaries here (curl|bash from x.ai/cli).
     // GROK_BIN_DIR env override is honoured upstream but not by the
-    // chorus detector — second-chance scan is best-effort, users on
+    // council detector — second-chance scan is best-effort, users on
     // custom prefixes should add the dir to PATH.
     dirs.push(path.join(HOME, '.grok', 'bin'));
   }
@@ -412,7 +412,7 @@ function detectOne(cli: DetectableCli): CliDetection {
  * a CLI path on every HTTP poll (e.g. /orchestrators/opencode/models
  * during onboarding), we'd fork ~50 processes/second without a cache.
  *
- * 30s TTL is short enough that a `chorus install <cli>` run from a
+ * 30s TTL is short enough that a `council install <cli>` run from a
  * different shell shows up before the user finishes onboarding, but
  * long enough that a polling UI doesn't keep retriggering scans.
  * Tests can call detectAllClis with `force: true` to bypass.

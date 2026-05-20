@@ -4,7 +4,7 @@
  * Goals:
  *   1. When the bin entry crashes (uncaught exception or unhandled
  *      rejection), write a single self-contained log file to
- *      ~/.chorus/crashes/<ISO>.log so the user has something concrete
+ *      ~/.code-council/crashes/<ISO>.log so the user has something concrete
  *      to attach to a bug report.
  *   2. Print a one-line nudge to stderr pointing at the file + the
  *      issues URL. Do NOT dump the full stack — most users panic at
@@ -13,7 +13,7 @@
  *      is the worst failure mode (silently lost diagnostic).
  *
  * Why this lives in its own tiny module:
- *   - Must be installable BEFORE any other import in bin/chorus.mjs so
+ *   - Must be installable BEFORE any other import in bin/council.mjs so
  *     it catches early-startup crashes (e.g. the Node 25 + Windows
  *     ESM URL scheme issue that motivated this work — bin's
  *     `await import(distEntry)` fails with `Received protocol 'c:'`
@@ -28,10 +28,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const ISSUE_URL = 'https://github.com/chorus-codes/chorus/issues/new';
+const ISSUE_URL = 'https://github.com/code-council/chorus/issues/new';
 
 interface InstallOptions {
-  /** Override crash dir. Tests use this; production reads ~/.chorus/crashes. */
+  /** Override crash dir. Tests use this; production reads ~/.code-council/crashes. */
   crashDir?: string;
   /** Override stderr writer. Tests capture; production uses process.stderr.write. */
   stderr?: (msg: string) => void;
@@ -39,7 +39,7 @@ interface InstallOptions {
   exit?: (code: number) => void;
   /** Pass the package version through. The hook can't `import { pkg }` —
    *  pkg.ts uses fs+path with __dirname, which means tsx/dist resolution.
-   *  bin/chorus.mjs already knows the version implicitly via package.json
+   *  bin/council.mjs already knows the version implicitly via package.json
    *  in its parent dir; we leave it optional and fall back to "(unknown)". */
   version?: string;
 }
@@ -58,11 +58,11 @@ function buildCrashLog(
       ? `${err.name}: ${err.message}\n${err.stack ?? '(no stack)'}`
       : String(err);
   return [
-    '# Chorus crash report',
+    '# Code Council crash report',
     '',
     `timestamp:    ${new Date().toISOString()}`,
     `source:       ${source}`,
-    `chorus:       ${version}`,
+    `council:       ${version}`,
     `node:         ${process.versions.node}`,
     `platform:     ${process.platform} ${process.arch}`,
     `argv:         ${process.argv.slice(1).join(' ')}`,
@@ -85,7 +85,7 @@ function writeCrashFile(dir: string, body: string): string | null {
   } catch {
     // mkdir or write failed (read-only home, ENOSPC, ...). The hook
     // must still print SOMETHING useful to stderr — the user's
-    // diagnostic value here is "chorus crashed at <stack>", not "we
+    // diagnostic value here is "council crashed at <stack>", not "we
     // couldn't write a file."
     return null;
   }
@@ -106,7 +106,7 @@ export function installCrashHook(opts: InstallOptions = {}): void {
   if (installed) return;
   installed = true;
 
-  const crashDir = opts.crashDir ?? join(homedir(), '.chorus', 'crashes');
+  const crashDir = opts.crashDir ?? join(homedir(), '.code-council', 'crashes');
   const stderr = opts.stderr ?? ((msg: string) => process.stderr.write(msg));
   const exit = opts.exit ?? ((code: number) => process.exit(code));
   const version = opts.version ?? '(unknown)';
@@ -118,11 +118,11 @@ export function installCrashHook(opts: InstallOptions = {}): void {
     const headline =
       err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     stderr('\n');
-    stderr(`✗ Chorus crashed (${source}): ${headline}\n`);
+    stderr(`✗ Code Council crashed (${source}): ${headline}\n`);
     if (file) {
       stderr(`  Crash log saved to: ${file}\n`);
       stderr(`  Please attach it to a new issue: ${ISSUE_URL}\n`);
-      stderr('  Or run: chorus diagnose\n');
+      stderr('  Or run: council diagnose\n');
     } else {
       // File write failed — give the user the stack inline as a
       // last-resort fallback so they have something to paste.

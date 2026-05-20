@@ -7,7 +7,7 @@ import { sym } from './ui.js';
  * Probe whether anything is listening on a TCP port on 127.0.0.1.
  *
  * Used by the start-path orphan reaper: if a previous next-server from
- * an earlier `chorus start` survived a `chorus stop` (because the
+ * an earlier `council start` survived a `council stop` (because the
  * pidfile was lost or the SIGTERM was ignored), the next start would
  * silently race against it on :5050 and leave the user stuck on stale
  * chunks after a rebuild.
@@ -89,9 +89,9 @@ export function findPidsOnPort(port: number): number[] {
 /**
  * Same as findPidsOnPort but escalates via `sudo -n` (non-interactive).
  * Linux's `ss -p` and `lsof` redact the PID column for sockets owned by
- * a different uid when the caller is unprivileged — so a chorus daemon
- * left behind by a `sudo chorus start` is invisible to a plain
- * `chorus start`. Without this, the user hits the dead-end "couldn't
+ * a different uid when the caller is unprivileged — so a council daemon
+ * left behind by a `sudo council start` is invisible to a plain
+ * `council start`. Without this, the user hits the dead-end "couldn't
  * identify the PID — free the port and retry" message and gets stuck.
  *
  * Returns [] on any failure: sudo prompt would block (no passwordless
@@ -143,12 +143,12 @@ export function findPidsOnPortWithSudo(port: number): number[] {
 /**
  * SIGTERM-then-SIGKILL via `sudo -n kill`. Same shape as killAndVerify
  * but escalates so we can reap an orphan owned by another uid (typically
- * a daemon a sudo-invoked `chorus start` left behind). Returns true if
+ * a daemon a sudo-invoked `council start` left behind). Returns true if
  * the process is gone by the time we return.
  *
  * Silently fails (returns false) when passwordless sudo isn't
  * available — callers should already have established that the orphan
- * is chorus-shaped before deciding to reap, so the worst case is that
+ * is council-shaped before deciding to reap, so the worst case is that
  * the user gets the actionable diagnostic instead of auto-recovery.
  */
 export async function killWithSudoAndVerify(
@@ -197,7 +197,7 @@ export async function killWithSudoAndVerify(
 
 /**
  * Read the process's command line so we can decide whether it looks
- * like a chorus orphan (safe to reap) vs a foreign process the user
+ * like a council orphan (safe to reap) vs a foreign process the user
  * owns (refuse to kill — Grafana/another dev server happens to be on
  * 5050 or 7707). Linux exposes /proc/<pid>/cmdline; macOS doesn't, so
  * we fall back to `ps -p <pid> -o command=`.
@@ -229,42 +229,42 @@ function readCmdline(pid: number): string | null {
 }
 
 /**
- * Path-segment match for the chorus / chorus-codes directory names.
+ * Path-segment match for the council / code-council directory names.
  * Splitting on `/` so we accept `/dev/chorus/...` but not
  * `/dev/chorus-experiments/...`. Used by the next-launcher fallback
  * for both cmdline and cwd checks.
  */
-function pathHasChorusSegment(somePath: string): boolean {
+function pathHasCouncilSegment(somePath: string): boolean {
   const segs = somePath.split('/');
-  return segs.includes('chorus') || segs.includes('chorus-codes');
+  return segs.includes('council') || segs.includes('code-council');
 }
 
-function cmdlineHasChorusSegment(cmdline: string): boolean {
+function cmdlineHasCouncilSegment(cmdline: string): boolean {
   for (const tok of cmdline.split(/\s+/)) {
-    if (pathHasChorusSegment(tok)) return true;
+    if (pathHasCouncilSegment(tok)) return true;
   }
   return false;
 }
 
 /**
- * Does this process look like a chorus daemon or cockpit?
+ * Does this process look like a council daemon or cockpit?
  *
- * The reap loop in `chorus start` kills whatever's bound to 5050/7707
+ * The reap loop in `council start` kills whatever's bound to 5050/7707
  * before respawning. Pre-fix, that loop would happily SIGKILL
  * `grafana-server` or another user's `next dev` if either happened to
  * be on the same port — silently murdering work and surprising the user.
  *
  * Accept anything whose argv mentions one of these markers, all of
- * which are uniquely chorus-shaped:
- *   - `chorus/dist/daemon/index.js` — compiled daemon entrypoint
+ * which are uniquely council-shaped:
+ *   - `council/dist/daemon/index.js` — compiled daemon entrypoint
  *   - `src/daemon/index.ts`         — dev (tsx) entrypoint
- *   - `chorus/bin/chorus.mjs`       — CLI wrapper
+ *   - `council/bin/council.mjs`       — CLI wrapper
  *   - `next-server` / `next start` running in a path that contains chorus
  *
  * Anything else returns false; the caller should refuse to reap and
  * surface a clear "port is taken by <cmd>" error.
  */
-export function pidLooksLikeChorus(pid: number): {
+export function pidLooksLikeCouncil(pid: number): {
   match: boolean;
   cmdline: string | null;
 } {
@@ -283,14 +283,14 @@ export function pidLooksLikeChorus(pid: number): {
   // `cmdline.includes('chorus/dist/...')` would match
   // `/x/notchorus/dist/...` or `/x/mychorus-fork/dist/...`.
   const markers = [
-    '/chorus/dist/daemon/index.js',
-    '/chorus/src/daemon/index.ts',
-    '/chorus/bin/chorus.mjs',
-    '/chorus/dist/cli/index.js',
-    '/chorus-codes/dist/daemon/index.js',
-    '/chorus-codes/src/daemon/index.ts',
-    '/chorus-codes/bin/chorus.mjs',
-    '/chorus-codes/dist/cli/index.js',
+    '/council/dist/daemon/index.js',
+    '/council/src/daemon/index.ts',
+    '/council/bin/council.mjs',
+    '/council/dist/cli/index.js',
+    '/code-council/dist/daemon/index.js',
+    '/code-council/src/daemon/index.ts',
+    '/code-council/bin/council.mjs',
+    '/code-council/dist/cli/index.js',
   ];
   if (markers.some((m) => cmdline.includes(m))) return { match: true, cmdline };
 
@@ -300,7 +300,7 @@ export function pidLooksLikeChorus(pid: number): {
   // disappears from cmdline at that point) OR as the original `node
   // node_modules/next/dist/bin/next start` argv. To stay safe in both
   // states, accept either form when the cmdline carries a chorus path
-  // segment OR the process's cwd has one — chorus start always spawns
+  // segment OR the process's cwd has one — council start always spawns
   // Next with cwd: packageRoot. Path-segment matching (split + includes)
   // so /home/user/chorus-experiments/marketing-site doesn't mistakenly
   // match.
@@ -308,9 +308,9 @@ export function pidLooksLikeChorus(pid: number): {
     cmdline.includes('next-server') ||
     /node_modules\/next\/dist\/bin\/next (start|dev)/.test(cmdline);
   if (nextLauncher) {
-    if (cmdlineHasChorusSegment(cmdline)) return { match: true, cmdline };
+    if (cmdlineHasCouncilSegment(cmdline)) return { match: true, cmdline };
     const cwd = readCwd(pid);
-    if (cwd && pathHasChorusSegment(cwd)) return { match: true, cmdline };
+    if (cwd && pathHasCouncilSegment(cwd)) return { match: true, cmdline };
   }
   return { match: false, cmdline };
 }
@@ -318,13 +318,13 @@ export function pidLooksLikeChorus(pid: number): {
 /**
  * Read /proc/<pid>/cwd, falling back to `sudo -n readlink` when the
  * unprivileged readlink hits EACCES — the cwd symlink is owned by the
- * process uid and locked to mode 0500, so a `sudo chorus start` orphan
- * is invisible to a plain `chorus start` without escalation.
+ * process uid and locked to mode 0500, so a `sudo council start` orphan
+ * is invisible to a plain `council start` without escalation.
  *
  * Used by the next-server cwd cross-check: cmdline gets clobbered to
  * `next-server (vX.Y.Z)` once Next overwrites process.title, leaving
  * cwd as the only signal that an unidentifiable next-server is in fact
- * the chorus cockpit.
+ * the council cockpit.
  *
  * Returns null when both probes fail (non-Linux, process gone, sudo
  * would prompt). Caller should treat null as "not chorus" — fail-closed

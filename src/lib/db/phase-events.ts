@@ -52,12 +52,12 @@ export type PhaseEvent = z.infer<typeof PhaseEventSchema>;
  * fetch — and the run page calls list() on every SSE re-attach. Cap at
  * 256 KB; if a real output is bigger we keep the head + tail and emit a
  * truncation marker pointing at the on-disk artifact dir. Long-form
- * artifacts already live under ~/.chorus/chats/<id>/.
+ * artifacts already live under ~/.code-council/chats/<id>/.
  */
 const MAX_PHASE_OUTPUT_BYTES = 256 * 1024;
 
 function buildTruncationMarker(chatId: string): string {
-  return `\n\n... [truncated — see ~/.chorus/chats/${chatId}/ for full transcript] ...\n\n`;
+  return `\n\n... [truncated — see ~/.code-council/chats/${chatId}/ for full transcript] ...\n\n`;
 }
 
 function capOutput(output: string | null, chatId: string): string | null {

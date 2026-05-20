@@ -1,6 +1,6 @@
 /**
  * Crash hook tests — covers the canonical src/cli/crash-hook.ts module.
- * The inline twin in bin/chorus.mjs is intentionally not unit-tested
+ * The inline twin in bin/council.mjs is intentionally not unit-tested
  * (it's a plain-ESM entry point); behavioural parity is reviewed on
  * source change.
  */
@@ -20,7 +20,7 @@ describe('buildCrashLog', () => {
   it('formats Error with stack', () => {
     const err = new Error('boom');
     const body = _testing.buildCrashLog(err, 'uncaughtException', '0.9.0');
-    expect(body).toContain('chorus:       0.9.0');
+    expect(body).toContain('council:       0.9.0');
     expect(body).toContain('source:       uncaughtException');
     expect(body).toContain('Error: boom');
     expect(body).toContain('## Error');
@@ -40,7 +40,7 @@ describe('buildCrashLog', () => {
 
 describe('writeCrashFile', () => {
   it('writes to the target dir, creating it if absent', () => {
-    const tmp = path.join(os.tmpdir(), `chorus-crash-${Date.now()}-${Math.random()}`);
+    const tmp = path.join(os.tmpdir(), `council-crash-${Date.now()}-${Math.random()}`);
     expect(fs.existsSync(tmp)).toBe(false);
     const file = _testing.writeCrashFile(tmp, 'hello\n');
     expect(file).not.toBeNull();
@@ -62,7 +62,7 @@ describe('writeCrashFile', () => {
 
 describe('installCrashHook', () => {
   it('captures uncaughtException, writes a log, and calls exit', async () => {
-    const tmp = path.join(os.tmpdir(), `chorus-hook-${Date.now()}-${Math.random()}`);
+    const tmp = path.join(os.tmpdir(), `council-hook-${Date.now()}-${Math.random()}`);
     const stderrChunks: string[] = [];
     let exitCode: number | null = null;
 
@@ -83,7 +83,7 @@ describe('installCrashHook', () => {
 
     expect(exitCode).toBe(1);
     const out = stderrChunks.join('');
-    expect(out).toContain('Chorus crashed (uncaughtException)');
+    expect(out).toContain('Code Council crashed (uncaughtException)');
     expect(out).toContain('test crash');
     expect(out).toContain('issues/new');
 
@@ -91,14 +91,14 @@ describe('installCrashHook', () => {
     expect(files).toHaveLength(1);
     const body = fs.readFileSync(path.join(tmp, files[0]), 'utf-8');
     expect(body).toContain('Error: test crash');
-    expect(body).toContain('chorus:       0.9.0');
+    expect(body).toContain('council:       0.9.0');
 
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
   it('captures unhandledRejection', async () => {
     _testing.reset();
-    const tmp = path.join(os.tmpdir(), `chorus-hook-${Date.now()}-${Math.random()}`);
+    const tmp = path.join(os.tmpdir(), `council-hook-${Date.now()}-${Math.random()}`);
     const stderrChunks: string[] = [];
     let exitCode: number | null = null;
 

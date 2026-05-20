@@ -17,7 +17,7 @@ export function registerStatusCommand(program: Command): void {
         if (!response.ok) {
           console.log('');
           console.log(
-            header(sym.err, 'Daemon is not running', 'start with `chorus start`'),
+            header(sym.err, 'Daemon is not running', 'start with `council start`'),
           );
           console.log('');
           process.exit(1);
@@ -38,7 +38,7 @@ export function registerStatusCommand(program: Command): void {
                 ? `${Math.floor(uptime / 60)}m`
                 : `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`;
           console.log('');
-          console.log(header(sym.ok, 'Chorus is running'));
+          console.log(header(sym.ok, 'Code Council is running'));
           console.log('');
           console.log(
             kv([
@@ -58,7 +58,7 @@ export function registerStatusCommand(program: Command): void {
       } catch {
         console.log('');
         console.log(
-          header(sym.err, 'Daemon is not running', 'start with `chorus start`'),
+          header(sym.err, 'Daemon is not running', 'start with `council start`'),
         );
         console.log('');
         process.exit(1);

@@ -14,11 +14,24 @@
  * silent fallback to the default will fail the test.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
+
+vi.mock('child_process', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('child_process')>();
+  return {
+    ...mod,
+    spawnSync: (cmd: string, args: string[], opts: any) => {
+      if (cmd === 'tmux') {
+        return { status: 0 };
+      }
+      return mod.spawnSync(cmd, args, opts);
+    },
+  };
+});
 
 import { _resetDbForTests } from '@/lib/db';
 import { getTransport, setTransport, DEFAULT_TRANSPORT } from '@/lib/settings/transport';
@@ -32,8 +45,10 @@ import { getBillingMode, setBillingMode, DEFAULT_BILLING_MODE } from '@/lib/sett
 let dbPath: string;
 
 beforeEach(async () => {
-  dbPath = path.join(os.tmpdir(), `chorus-settings-${randomUUID()}.db`);
+  dbPath = path.join(os.tmpdir(), `council-settings-${randomUUID()}.db`);
+  process.env.COUNCIL_DB_PATH = dbPath;
   process.env.CHORUS_DB_PATH = dbPath;
+  delete process.env.COUNCIL_TRANSPORT;
   delete process.env.CHORUS_TRANSPORT; // env override would mask the bug
   await _resetDbForTests();
 });
@@ -43,6 +58,7 @@ afterEach(async () => {
   for (const suffix of ['', '-shm', '-wal']) {
     try { fs.unlinkSync(dbPath + suffix); } catch { /* best-effort */ }
   }
+  delete process.env.COUNCIL_DB_PATH;
   delete process.env.CHORUS_DB_PATH;
 });
 
@@ -56,9 +72,9 @@ describe('transport', () => {
     expect(await getTransport()).toBe('tmux');
   });
 
-  it('CHORUS_TRANSPORT env override wins over stored value', async () => {
+  it('COUNCIL_TRANSPORT env override wins over stored value', async () => {
     await setTransport('tmux');
-    process.env.CHORUS_TRANSPORT = 'headless';
+    process.env.COUNCIL_TRANSPORT = 'headless';
     expect(await getTransport()).toBe('headless');
   });
 });

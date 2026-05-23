@@ -38,33 +38,25 @@ export function CodeReviewLauncher() {
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold tracking-tight">Code Review</h2>
-          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-            {repoPath || "No repository detected"}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={run}
-          disabled={isStarting}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
-        >
-          {isStarting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <GitPullRequestArrow className="h-4 w-4" />
-          )}
-          {isStarting ? "Starting review..." : "Code Review"}
-        </button>
-      </div>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={run}
+        disabled={isStarting}
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground shadow-sm"
+      >
+        {isStarting ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <GitPullRequestArrow className="h-4 w-4" />
+        )}
+        {isStarting ? "Starting Review..." : "Start Review"}
+      </button>
       {error && (
-        <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-lg border border-destructive/40 bg-destructive/95 p-3 text-xs text-destructive shadow-lg backdrop-blur-md">
           {error}
-        </p>
+        </div>
       )}
-    </section>
+    </div>
   );
 }

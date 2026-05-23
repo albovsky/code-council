@@ -12,6 +12,7 @@ export type CliErrorKind =
   | 'mcp_handshake_failed'   // codex: "failed: handshaking with MCP server failed"
   | 'opencode_db_corrupt'    // opencode: "Provider returned error" repeating with no successful response in last N seconds
   | 'permission_prompt'      // any CLI: "Allow this tool? / Always allow" dialog. Recoverable via shim.recoverKeys (Layer 2 of perm model)
+  | 'survey_prompt'          // agy: "How's the CLI experience so far?" survey. Recoverable via shim.recoverKeys
   | 'cold_start_timeout'     // CLI never showed its prompt within cold_start_timeout_s
   | 'tmux_dead'              // session no longer exists per tmux has-session
   | 'unknown';               // catch-all
@@ -35,6 +36,32 @@ function parseResetTime(humanTime?: string): number | undefined {
   const cleaned = humanTime.replace(/(\d+)(st|nd|rd|th)\b/gi, '$1');
   const t = Date.parse(cleaned);
   return Number.isFinite(t) ? t : undefined;
+}
+
+function parseResetDuration(duration?: string): number | undefined {
+  if (!duration) return undefined;
+  const matches = [...duration.matchAll(/(\d+)\s*([dhms])/gi)];
+  if (matches.length === 0) return undefined;
+  let ms = 0;
+  for (const match of matches) {
+    const value = Number.parseInt(match[1], 10);
+    if (!Number.isFinite(value)) continue;
+    switch (match[2].toLowerCase()) {
+      case 'd':
+        ms += value * 24 * 60 * 60 * 1000;
+        break;
+      case 'h':
+        ms += value * 60 * 60 * 1000;
+        break;
+      case 'm':
+        ms += value * 60 * 1000;
+        break;
+      case 's':
+        ms += value * 1000;
+        break;
+    }
+  }
+  return ms > 0 ? Date.now() + ms : undefined;
 }
 
 /**
@@ -157,6 +184,22 @@ export class ErrorDetector {
     // quota signal across the free tier and paid tiers. Surfaces in the
     // Gemini CLI as either the raw code or the friendlier "Quota exceeded".
     if (lineage === 'google') {
+      const agyQuota =
+        /Individual quota reached[\s\S]*?Resets?\s+in\s+([0-9dhms\s]+)/i.exec(paneText);
+      if (agyQuota) {
+        const reset = agyQuota[1]?.trim();
+        return {
+          kind: 'quota_exhausted',
+          lineage,
+          message: reset
+            ? `Antigravity quota reached. Resets in ${reset}.`
+            : 'Antigravity quota reached.',
+          cta: 'Wait for the reset window or switch to another reviewer.',
+          resetAt: parseResetDuration(reset),
+          detail: agyQuota[0].slice(0, 200),
+        };
+      }
+
       const geminiQuota =
         /(RESOURCE_EXHAUSTED|429.*Quota exceeded|Quota exceeded for quota metric|"code"\s*:\s*429)/i.exec(paneText);
       if (geminiQuota) {
@@ -320,6 +363,17 @@ export class ErrorDetector {
       }
     }
 
+    // Pattern 6: Survey prompt / experience survey
+    if (/How's the CLI experience so far|Help us improve/i.test(paneText)) {
+      return {
+        kind: 'survey_prompt',
+        lineage,
+        message: `${lineage} is asking for a feedback survey.`,
+        cta: 'Runner auto-bypasses via shim.recoverKeys; if stuck, press 0 manually.',
+        detail: 'Survey prompt detected in pane.',
+      };
+    }
+
     return null;
   }
 
@@ -394,4 +448,3 @@ export class ErrorDetector {
     }
   }
 }
-

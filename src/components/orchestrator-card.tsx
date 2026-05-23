@@ -27,7 +27,7 @@ interface Props {
 const ORCHESTRATOR_TO_PROVIDER: Record<string, string> = {
   claude: "claude-code",
   codex: "codex-cli",
-  antigravity: "gemini-cli",
+  antigravity: "antigravity-cli",
   opencode: "opencode-cli",
   kimi: "kimi-cli",
 };

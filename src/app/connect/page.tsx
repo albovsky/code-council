@@ -14,7 +14,7 @@ import type { ListEnvelope } from "@/lib/types";
 const ORCHESTRATOR_TO_PROVIDER: Record<string, string> = {
   claude: "claude-code",
   codex: "codex-cli",
-  antigravity: "gemini-cli",
+  antigravity: "antigravity-cli",
   opencode: "opencode-cli",
   kimi: "kimi-cli",
   grok: "grok-cli",
@@ -91,8 +91,9 @@ export default async function ConnectPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 items-start gap-2 lg:grid-cols-2">
+              {/* 1. Connected/configured orchestrators */}
               {orchestrators
-                .filter((o) => o.supported)
+                .filter((o) => o.supported && o.connected)
                 .map((o) => (
                   <OrchestratorCard
                     key={o.name}
@@ -100,7 +101,29 @@ export default async function ConnectPage() {
                     voices={voicesForOrchestrator(o.name)}
                   />
                 ))}
-              <OpenRouterCard voices={openrouterVoices} />
+
+              {/* 2. Connected/configured OpenRouter (has voices) */}
+              {openrouterVoices.length > 0 && (
+                <OpenRouterCard voices={openrouterVoices} />
+              )}
+
+              {/* 3. Unconnected/unconfigured orchestrators */}
+              {orchestrators
+                .filter((o) => o.supported && !o.connected)
+                .map((o) => (
+                  <OrchestratorCard
+                    key={o.name}
+                    initial={o}
+                    voices={voicesForOrchestrator(o.name)}
+                  />
+                ))}
+
+              {/* 4. Unconnected/unconfigured OpenRouter (no voices yet) */}
+              {openrouterVoices.length === 0 && (
+                <OpenRouterCard voices={openrouterVoices} />
+              )}
+
+              {/* 5. Coming soon / unsupported orchestrators */}
               {orchestrators
                 .filter((o) => !o.supported)
                 .map((o) => (

@@ -13,9 +13,15 @@ export interface CodeReviewScopeSummary {
 
 export interface CodeReviewContext {
   repoPath: string;
-  reviewable?: boolean;
+  repoRoot?: string;
+  headRef?: string;
+  mode?: "worktree" | "branch";
+  baseRef?: string;
+  filesCount?: number;
+  insertions?: number;
+  deletions?: number;
   error?: {
-    code: string;
+    code?: string;
     message: string;
   };
 }

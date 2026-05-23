@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { _resetDbForTests, templates } from '../src/lib/db/index';
+import { _resetDbForTests, templates, voices } from '../src/lib/db/index';
 
 const gitScopeMock = vi.hoisted(() => {
   class CodeReviewScopeError extends Error {
@@ -120,5 +120,81 @@ describe('registerCodeReviewRoutes', () => {
       ok: false,
       error: { code: 'no_changes', message: 'No reviewable changes.' },
     });
+  });
+
+  it('refreshes the builtin code-review template from currently enabled voices at launch', async () => {
+    const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
+    await voices.upsert({
+      id: 'codex-cli',
+      label: 'Codex',
+      source: 'cli',
+      provider: 'codex-cli',
+      model_id: 'gpt-5.5',
+      lineage: 'openai',
+      enabled: true,
+    });
+    await voices.upsert({
+      id: 'antigravity-cli',
+      label: 'Antigravity',
+      source: 'cli',
+      provider: 'antigravity-cli',
+      model_id: 'gemini-3.5-flash',
+      lineage: 'google',
+      enabled: true,
+    });
+    await voices.upsert({
+      id: 'opencode-kimi',
+      label: 'Kimi via OpenCode',
+      source: 'cli',
+      provider: 'opencode-cli',
+      model_id: 'opencode-go/kimi-k2.6',
+      lineage: 'opencode',
+      vendor_family: 'moonshot',
+      enabled: true,
+    });
+    await voices.upsert({
+      id: 'opencode-deepseek',
+      label: 'DeepSeek via OpenCode',
+      source: 'cli',
+      provider: 'opencode-cli',
+      model_id: 'opencode-go/deepseek-v4-pro',
+      lineage: 'opencode',
+      enabled: true,
+    });
+    await voices.upsert({
+      id: 'opencode-qwen',
+      label: 'Qwen via OpenCode',
+      source: 'cli',
+      provider: 'opencode-cli',
+      model_id: 'opencode-go/qwen3.6-plus',
+      lineage: 'opencode',
+      enabled: true,
+    });
+
+    gitScopeMock.resolveCodeReviewScope.mockResolvedValue({
+      repoPath: '/repo',
+      repoRoot: '/repo',
+      mode: 'worktree',
+      headRef: 'feature/current',
+      files: ['app.ts'],
+      artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
+      title: 'Review worktree changes in repo',
+      totalBytes: 92,
+    });
+
+    const app = Fastify({ logger: false });
+    registerCodeReviewRoutes(app, { startRun: false });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/code-review',
+      payload: { repoPath: '/repo' },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    const refreshed = await templates.getById('branch-code-review');
+    expect(refreshed?.yaml).toContain('opencode-go/kimi-k2.6');
+    expect(refreshed?.yaml).toContain('opencode-go/deepseek-v4-pro');
+    expect(refreshed?.yaml).toContain('opencode-go/qwen3.6-plus');
   });
 });

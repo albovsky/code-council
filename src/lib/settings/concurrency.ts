@@ -34,7 +34,7 @@ import { settings } from '../db';
 export const CLI_LINEAGES = [
   'claude-code',
   'codex-cli',
-  'gemini-cli',
+  'antigravity-cli',
   'opencode-cli',
   'kimi-cli',
 ] as const;
@@ -49,7 +49,7 @@ export type CliLineageKey = (typeof CLI_LINEAGES)[number];
 const DEFAULT_PER_CLI: Record<CliLineageKey, number> = {
   'claude-code': 3,
   'codex-cli': 3,
-  'gemini-cli': 2,
+  'antigravity-cli': 2,
   'opencode-cli': 2,
   'kimi-cli': 2,
 };

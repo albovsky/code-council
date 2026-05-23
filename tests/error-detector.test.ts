@@ -155,6 +155,19 @@ describe('ErrorDetector.inspect — quota_exhausted (anthropic)', () => {
 });
 
 describe('ErrorDetector.inspect — quota_exhausted (gemini)', () => {
+  it('flags Antigravity individual quota text as quota_exhausted', () => {
+    const detector = new ErrorDetector();
+    const paneText =
+      'Individual quota reached. Contact your administrator to enable overages.\n' +
+      'Resets in 3h30m20s.';
+    const error = detector.inspect('agy-1', 'google', paneText);
+    expect(error).not.toBeNull();
+    expect(error!.kind).toBe('quota_exhausted');
+    expect(error!.lineage).toBe('google');
+    expect(error!.message).toContain('Antigravity quota reached');
+    expect(error!.resetAt).toBeDefined();
+  });
+
   it('flags RESOURCE_EXHAUSTED as quota_exhausted', () => {
     const detector = new ErrorDetector();
     const paneText = '{"code":429,"message":"RESOURCE_EXHAUSTED: Quota exceeded"}';

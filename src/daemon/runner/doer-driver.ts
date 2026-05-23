@@ -332,8 +332,7 @@ export async function runDoer(
       });
       const err = errorDetector.inspect(session.name, phase.doer.lineage, pane);
       if (err) {
-        const recoveryKeys =
-          err.kind === 'permission_prompt' ? shim.recoverKeys?.permission_prompt : undefined;
+        const recoveryKeys = shim.recoverKeys?.[err.kind as keyof typeof shim.recoverKeys];
         if (recoveryKeys && recoveryKeys.length > 0) {
           // Layer 2 recovery: navigate the dialog, emit a warning (not error),
           // skip health recording — we recovered, no degradation.

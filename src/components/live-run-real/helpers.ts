@@ -5,7 +5,7 @@ import type { ReviewerLineage } from "@/lib/types";
 export const AGENT_LABEL: Record<string, string> = {
   claude: "claude-code",
   codex: "codex-cli",
-  antigravity: "gemini-cli",
+  antigravity: "antigravity-cli",
   opencode: "opencode-cli",
   kimi: "kimi-cli",
   grok: "grok-cli",

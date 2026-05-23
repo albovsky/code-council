@@ -91,9 +91,18 @@ async function resolveBaseRef(repoRoot: string): Promise<string> {
   );
 }
 
+function nullDiffPath(): string {
+  return process.platform === 'win32' ? 'NUL' : '/dev/null';
+}
+
 async function untrackedDiff(repoRoot: string, file: string): Promise<string> {
-  const nullPath = process.platform === 'win32' ? 'NUL' : '/dev/null';
-  const diff = await git(repoRoot, ['diff', '--no-index', '--', nullPath, file]);
+  const diff = await git(repoRoot, [
+    'diff',
+    '--no-index',
+    '--',
+    nullDiffPath(),
+    file,
+  ]);
   if (!diff.trim()) return '';
 
   const lines = diff.split('\n');
@@ -101,6 +110,47 @@ async function untrackedDiff(repoRoot: string, file: string): Promise<string> {
     lines[0] = `diff --git a/${file} b/${file}`;
   }
   return lines.join('\n');
+}
+
+async function untrackedNumstat(repoRoot: string, file: string): Promise<string> {
+  return git(repoRoot, [
+    'diff',
+    '--numstat',
+    '--no-index',
+    '--',
+    nullDiffPath(),
+    file,
+  ]);
+}
+
+async function worktreeNumstat(repoRoot: string, files: string[]): Promise<string> {
+  const trackedStats = await git(repoRoot, ['diff', '--numstat', 'HEAD', '--']);
+  const tracked = await trackedFiles(repoRoot);
+  const untracked = files.filter((file) => !tracked.has(file));
+  const untrackedStats = await Promise.all(
+    untracked.map((file) => untrackedNumstat(repoRoot, file)),
+  );
+  return [trackedStats, ...untrackedStats].filter(Boolean).join('\n');
+}
+
+function parseNumstatTotals(statsStdout: string): {
+  insertions: number;
+  deletions: number;
+} {
+  let insertions = 0;
+  let deletions = 0;
+
+  for (const line of statsStdout.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const ins = parseInt(parts[0], 10);
+      const del = parseInt(parts[1], 10);
+      if (!isNaN(ins)) insertions += ins;
+      if (!isNaN(del)) deletions += del;
+    }
+  }
+
+  return { insertions, deletions };
 }
 
 function buildHeading(args: {
@@ -226,4 +276,82 @@ export async function resolveCodeReviewScope(
         : `Review ${headRef} against ${baseRef}`,
     totalBytes,
   };
+}
+
+export interface CodeReviewContextData {
+  repoPath: string;
+  repoRoot?: string;
+  headRef?: string;
+  mode?: CodeReviewScopeMode;
+  baseRef?: string;
+  filesCount?: number;
+  insertions?: number;
+  deletions?: number;
+  error?: { message: string };
+}
+
+export async function getCodeReviewContextData(repoPath: string): Promise<CodeReviewContextData> {
+  const resolved = path.resolve(repoPath);
+  try {
+    const repoRoot = await git(resolved, ['rev-parse', '--show-toplevel']);
+    const headRef =
+      (await git(repoRoot, ['branch', '--show-current'])) ||
+      (await git(repoRoot, ['rev-parse', '--short', 'HEAD']));
+
+    const worktreeFiles = await changedWorktreeFiles(repoRoot);
+    let mode: CodeReviewScopeMode = 'worktree';
+    let baseRef: string | undefined;
+    let files: string[] = [];
+
+    if (worktreeFiles.length > 0) {
+      mode = 'worktree';
+      files = worktreeFiles;
+    } else {
+      mode = 'branch';
+      try {
+        baseRef = await resolveBaseRef(repoRoot);
+        const names = await git(repoRoot, [
+          'diff',
+          '--name-only',
+          `${baseRef}...HEAD`,
+          '--',
+        ]);
+        files = uniqueSorted(names.split('\n'));
+      } catch {
+        files = [];
+      }
+    }
+
+    // Run diff stats
+    let insertions = 0;
+    let deletions = 0;
+    try {
+      const statsStdout =
+        mode === 'worktree'
+          ? await worktreeNumstat(repoRoot, files)
+          : await git(repoRoot, ['diff', '--numstat', `${baseRef}...HEAD`]);
+      const totals = parseNumstatTotals(statsStdout);
+      insertions = totals.insertions;
+      deletions = totals.deletions;
+    } catch {
+      // ignore diff stats failures
+    }
+
+    return {
+      repoPath: resolved,
+      repoRoot,
+      headRef,
+      mode,
+      baseRef,
+      filesCount: files.length,
+      insertions,
+      deletions,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      repoPath: resolved,
+      error: { message },
+    };
+  }
 }

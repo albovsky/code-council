@@ -25,6 +25,7 @@ import { sanitizeName } from './sanitize-name.js';
 import { appendSwapSidecar } from './swap-sidecar.js';
 import { buildSlotFallbackChain } from './template-fallback.js';
 import type { Lineage } from '../agents/types.js';
+import type { CliError } from '../error-detector.js';
 import type { RunnerEvent } from './types.js';
 import { verdictFromReviewerText } from './verdict.js';
 
@@ -631,6 +632,11 @@ async function runReviewer(
   await new Promise((r) => setTimeout(r, 500));
   tmuxMgr.sendKeys(session.name, ['Enter']);
 
+  let failDetected: ((err: CliError) => void) | null = null;
+  const detectedFailure = new Promise<CliError>((resolve) => {
+    failDetected = resolve;
+  });
+
   // Failure-mode polling — same pattern as the doer.
   const pollHandle = setInterval(() => {
     try {
@@ -649,8 +655,7 @@ async function runReviewer(
       });
       const err = errorDetector.inspect(session.name, candidate.lineage, pane);
       if (err) {
-        const recoveryKeys =
-          err.kind === 'permission_prompt' ? shim.recoverKeys?.permission_prompt : undefined;
+        const recoveryKeys = shim.recoverKeys?.[err.kind as keyof typeof shim.recoverKeys];
         if (recoveryKeys && recoveryKeys.length > 0) {
           tmuxMgr.sendKeys(session.name, [...recoveryKeys]);
           onEvent({
@@ -689,6 +694,10 @@ async function runReviewer(
             },
             ts: Date.now(),
           });
+          writePreSpawnFailure(err.kind, err.message, err.resetAt);
+          tmuxMgr.markTerminal(session.name);
+          tmuxMgr.kill(session.name);
+          failDetected?.(err);
         }
       }
     } catch {
@@ -697,10 +706,14 @@ async function runReviewer(
   }, 2000);
 
   try {
-    const result = await waitForAnswer(answerFile, {
-      timeoutMs: phase.timeoutMs ?? DEFAULT_TMUX_PHASE_TIMEOUT_MS,
-      doneSentinel: '## DONE',
-    });
+    const result = await Promise.race([
+      waitForAnswer(answerFile, {
+        timeoutMs: phase.timeoutMs ?? DEFAULT_TMUX_PHASE_TIMEOUT_MS,
+        doneSentinel: '## DONE',
+      }),
+      detectedFailure.then(() => null),
+    ]);
+    if (result === null) return null;
     if (!result.full || result.content.trim().length === 0) {
       // Watcher resolved on timeout/silence with no real answer.
       return null;

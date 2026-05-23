@@ -25,7 +25,7 @@ export const CLIS: CliRow[] = [
     hint: "OpenAI — ChatGPT Plus/Pro subscription",
   },
   {
-    id: "gemini-cli",
+    id: "antigravity-cli",
     provider: "google",
     label: "Antigravity CLI",
     hint: "Google — uses AGY, or legacy Gemini CLI when installed",
@@ -96,7 +96,7 @@ export function manualBinaryName(cliId: string): string {
       return "claude";
     case "codex-cli":
       return "codex";
-    case "gemini-cli":
+    case "antigravity-cli":
       return "agy";
     case "opencode-cli":
       return "opencode";

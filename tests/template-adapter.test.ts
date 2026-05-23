@@ -277,16 +277,15 @@ describe('adaptTemplate — diversity-preferring substitution', () => {
     expect(result.isComplete).toBe(true);
     const parsed = yaml.parse(result.yaml);
     const cands = parsed.phases[0].reviewer.candidates;
-    // Doer used anthropic. openai slot has no exact match → falls
-    // through to "find an unused lineage" → picks google.
+    // Template has 3 slots (openai, google, moonshot) but user only has
+    // 2 unique voices → after deduplication only 2 reviewer windows.
+    // Slot 0 (openai): no match → fallback to google (unused) → google.
+    // Slot 1 (google): exact match → google — same key as slot 0 → deduplicated out.
+    // Slot 2 (moonshot): no match, google used → fallback to another available voice.
+    // Result: 2 unique slots: google + either anthropic or google.
+    expect(cands.length).toBe(2);
     expect(cands[0].lineage).toBe('google');
-    // google slot has an EXACT match → keeps google (intent
-    // preservation wins over diversity when the user actually has
-    // the requested lineage).
-    expect(cands[1].lineage).toBe('google');
-    // moonshot slot has no match and both available lineages are
-    // used; falls through to "any available" — last-ditch.
-    expect(['anthropic', 'google']).toContain(cands[2].lineage);
+    expect(['anthropic', 'google']).toContain(cands[1].lineage);
   });
 
   it('preserves intent: exact match wins over diversity', () => {
@@ -327,19 +326,38 @@ describe('adaptTemplate — empty / incomplete states', () => {
     }
   });
 
-  it('marks template incomplete when only one slot type can be filled', () => {
-    // Doer slot fillable (anthropic), but reviewer cans... wait, the
-    // adapter falls through to "any available" so even one lineage
-    // fills all slots. This test pins the fact that only-one-voice
-    // results in COMPLETE templates (with reduced diversity).
+  it('caps reviewer slots to unique voices (no duplicates when fleet < template slots)', () => {
+    // Template has 3 reviewer slots; user has only 1 voice.
+    // Before dedup fix: 3 windows all showing the same model.
+    // After fix: 1 window.
     const result = adaptTemplate(TRI_REVIEW, [v('anthropic', 'claude-opus-4-7')]);
     expect(result.isComplete).toBe(true);
     const parsed = yaml.parse(result.yaml);
-    // All slots fall back to anthropic.
     expect(parsed.phases[0].doer.lineage).toBe('anthropic');
-    for (const c of parsed.phases[0].reviewer.candidates) {
-      expect(c.lineage).toBe('anthropic');
-    }
+    // Only 1 unique reviewer voice → only 1 reviewer slot after dedup.
+    expect(parsed.phases[0].reviewer.require).toBe(1);
+    expect(parsed.phases[0].reviewer.candidates.length).toBe(1);
+    expect(parsed.phases[0].reviewer.candidates[0].lineage).toBe('anthropic');
+  });
+
+  it('preserves multiple incomplete reviewer slots with no lineage', () => {
+    const tpl = `id: no-lineage-reviewers
+phases:
+  - id: review
+    kind: review
+    reviewer:
+      require: 2
+      candidates:
+        - models: []
+        - models: []
+`;
+    const result = adaptTemplate(tpl, [v('anthropic', 'claude-opus-4-7')]);
+    const parsed = yaml.parse(result.yaml);
+
+    expect(result.isComplete).toBe(false);
+    expect(parsed.phases[0].reviewer.candidates).toHaveLength(2);
+    expect(parsed.phases[0].reviewer.candidates[0].lineage).toBeUndefined();
+    expect(parsed.phases[0].reviewer.candidates[1].lineage).toBeUndefined();
   });
 
   it('skips disabled voices', () => {

@@ -33,6 +33,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/code-review", label: "Code Review", icon: GitPullRequestArrow },
   { href: "/runs", label: "Runs", icon: ListChecks },
   { href: "/templates", label: "Templates", icon: Layers },
   { href: "/personas", label: "Personas", icon: Users },
@@ -297,16 +298,7 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
             backing API; clicking it would suggest a feature that doesn't
             exist. Lands in v0.8 with a Cmd+K modal. */}
         <div className="flex shrink-0 flex-col gap-2 bg-card/40 px-3 py-3">
-          <Link
-            href="/"
-            onClick={onNavigate}
-            aria-label="Code Review"
-            className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90"
-          >
-            <GitPullRequestArrow className="h-3.5 w-3.5" />
-            <span>Code Review</span>
-          </Link>
-          <div className="mt-1 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          <div className="px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
             Recent
           </div>
         </div>

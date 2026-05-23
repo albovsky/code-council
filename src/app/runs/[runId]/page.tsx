@@ -48,7 +48,7 @@ async function getRunData(runId: string) {
 const AGENT_TO_LINEAGE: Record<string, "claude" | "codex" | "antigravity" | "opencode" | "kimi" | "openrouter"> = {
   "claude-code": "claude",
   "codex-cli": "codex",
-  "gemini-cli": "antigravity",
+  "antigravity-cli": "antigravity",
   "opencode-cli": "opencode",
   "kimi-cli": "kimi",
   // HTTP-dispatched shim — runner creates `reviewer-openrouter-N` dirs;

@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chorus — many voices, one chorus",
+  title: "Code Council — many voices, one council",
   description:
     "The polished orchestrator over your AI fleet. Paste a task. Pick a template. Watch multiple LLMs reach consensus.",
 };

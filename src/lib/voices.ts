@@ -28,7 +28,7 @@ import {
 const run = promisify(execFile);
 
 type DaemonLineage = 'anthropic' | 'openai' | 'google' | 'opencode' | 'moonshot' | 'grok';
-type UiLineage = 'claude' | 'codex' | 'gemini' | 'opencode' | 'kimi' | 'grok';
+type UiLineage = 'claude' | 'codex' | 'antigravity' | 'opencode' | 'kimi' | 'grok';
 
 /**
  * Daemon-side lineage → UI-side lineage (for UI_LINEAGE_AVAILABLE_MODELS
@@ -37,7 +37,7 @@ type UiLineage = 'claude' | 'codex' | 'gemini' | 'opencode' | 'kimi' | 'grok';
 const LINEAGE_TO_UI: Record<DaemonLineage, UiLineage> = {
   anthropic: 'claude',
   openai: 'codex',
-  google: 'gemini',
+  google: 'antigravity',
   opencode: 'opencode',
   moonshot: 'kimi',
   grok: 'grok',
@@ -54,7 +54,7 @@ const SINGLE_MODEL_CLIS: ReadonlyArray<{
 }> = [
   { cli: 'claude-code', provider: 'claude-code', lineage: 'anthropic' },
   { cli: 'codex-cli', provider: 'codex-cli', lineage: 'openai' },
-  { cli: 'gemini-cli', provider: 'gemini-cli', lineage: 'google' },
+  { cli: 'antigravity-cli', provider: 'antigravity-cli', lineage: 'google' },
   { cli: 'kimi-cli', provider: 'kimi-cli', lineage: 'moonshot' },
   // Grok Build is single-model (grok-build) on first launch. xAI may
   // ship more model IDs in future; if/when `grok models` exposes them,
@@ -212,8 +212,8 @@ export async function seedCliVoices(): Promise<{
   //     + (on first boot) seed curated non-default rows so fleet cards
   //     can list them.
   //   - NOT DETECTED on first boot but settings exist: migrate anyway
-  //     (round 1 cdx-1 BLOCKER — otherwise the user's gemini.enabled_models
-  //     would never migrate if gemini-cli isn't installed yet, and once
+  //     (round 1 cdx-1 BLOCKER — otherwise the user's antigravity.enabled_models
+  //     would never migrate if antigravity-cli isn't installed yet, and once
   //     voices table is non-empty the migration won't re-fire). Rows seed
   //     with the migrated enabled state; later when the CLI installs,
   //     voices.upsert preserves enabled and just rewrites model_id+label.
@@ -225,7 +225,7 @@ export async function seedCliVoices(): Promise<{
     // Prefer live probe over static catalog; fall back to static when the
     // CLI doesn't expose model listing or the probe failed.
     const liveModels = cli === 'codex-cli' ? codexLive : null;
-    const staticModels = cli === 'gemini-cli'
+    const staticModels = cli === 'antigravity-cli'
       ? googleModelCatalogForCommand(detected?.path)
       : (UI_LINEAGE_AVAILABLE_MODELS[uiLineage] ?? []);
     const models = liveModels ?? staticModels;
@@ -270,6 +270,12 @@ export async function seedCliVoices(): Promise<{
       });
       if (before) updated++;
       else added++;
+
+      // If a separate row exists for the default model, delete it to prevent duplicates.
+      const defaultModelId = `${provider}:${latestModel}`;
+      if (await voices.getById(defaultModelId)) {
+        await voices.delete(defaultModelId);
+      }
 
       // Reconcile non-default curated/discovered models on EVERY boot —
       // not just first boot. Why: when the catalog changes (new model
@@ -520,9 +526,20 @@ interface MigrationData {
 }
 
 async function readMigrationSettings(): Promise<MigrationData | null> {
+  // Settings key migration: copy legacy gemini.enabled_models to antigravity.enabled_models
+  // BEFORE the lineages loop so the loop picks up the migrated value.
+  // Guard: only copy if the new key doesn't exist yet AND the legacy value is a valid array.
+  const legacyModels = await settings.get('gemini.enabled_models');
+  if (Array.isArray(legacyModels)) {
+    const currentModels = await settings.get('antigravity.enabled_models');
+    if (currentModels === null || currentModels === undefined) {
+      await settings.set('antigravity.enabled_models', legacyModels);
+    }
+  }
+
   const byUiLineage = new Map<UiLineage, string[] | undefined>();
   let anySet = false;
-  const lineages: UiLineage[] = ['claude', 'codex', 'gemini', 'kimi', 'opencode'];
+  const lineages: UiLineage[] = ['claude', 'codex', 'antigravity', 'kimi', 'opencode'];
   for (const ui of lineages) {
     const raw = await settings.get(`${ui}.enabled_models`);
     if (raw === null || raw === undefined) {

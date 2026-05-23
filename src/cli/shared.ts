@@ -11,12 +11,12 @@ import path from 'path';
  * `process.argv[1]` would also work for the npm-installed case, but in
  * tsx dev mode it points at the .ts file which `node` can't execute.
  */
-export const CHORUS_BIN_PATH = path.resolve(
+export const COUNCIL_BIN_PATH = path.resolve(
   __dirname,
   '..',
   '..',
   'bin',
-  'chorus.mjs',
+  'council.mjs',
 );
 
 /**
@@ -31,10 +31,10 @@ export const pkg: { version: string; name: string } = (() => {
     const parsed = JSON.parse(raw) as { version?: string; name?: string };
     return {
       version: parsed.version ?? '0.0.0',
-      name: parsed.name ?? 'chorus',
+      name: parsed.name ?? 'code-council',
     };
   } catch {
-    return { version: '0.0.0', name: 'chorus' };
+    return { version: '0.0.0', name: 'code-council' };
   }
 })();
 

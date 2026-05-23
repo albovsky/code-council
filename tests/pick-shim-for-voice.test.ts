@@ -16,7 +16,7 @@ import {
   openrouterShim,
   claudeShim,
   codexShim,
-  geminiShim,
+  agyShim,
   opencodeShim,
   kimiShim,
 } from "../src/daemon/agents/index.js";
@@ -41,7 +41,7 @@ describe("pickShimForVoice", () => {
   it("returns lineage-mapped CLI shim when no openrouter prefix", () => {
     expect(pickShimForVoice("anthropic", "claude-opus-4-7")).toBe(claudeShim);
     expect(pickShimForVoice("openai", "gpt-5.5")).toBe(codexShim);
-    expect(pickShimForVoice("google", "gemini-3.1-pro-preview")).toBe(geminiShim);
+    expect(pickShimForVoice("google", "gemini-3.1-pro-preview")).toBe(agyShim);
     expect(pickShimForVoice("opencode", "deepseek-v4-pro")).toBe(opencodeShim);
     expect(pickShimForVoice("moonshot", "kimi-k2.6")).toBe(kimiShim);
   });
@@ -76,7 +76,7 @@ describe("isHttpDispatchedShim", () => {
     expect(isHttpDispatchedShim(openrouterShim)).toBe(true);
     expect(isHttpDispatchedShim(claudeShim)).toBe(false);
     expect(isHttpDispatchedShim(codexShim)).toBe(false);
-    expect(isHttpDispatchedShim(geminiShim)).toBe(false);
+    expect(isHttpDispatchedShim(agyShim)).toBe(false);
     expect(isHttpDispatchedShim(opencodeShim)).toBe(false);
     expect(isHttpDispatchedShim(kimiShim)).toBe(false);
   });

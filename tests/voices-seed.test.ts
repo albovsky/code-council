@@ -131,7 +131,7 @@ describe('classifyOpencodeModel', () => {
 describe('migrationFor', () => {
   const { migrationFor } = _internals;
 
-  type UiLineage = 'claude' | 'codex' | 'gemini' | 'opencode' | 'kimi';
+  type UiLineage = 'claude' | 'codex' | 'antigravity' | 'opencode' | 'kimi';
   type MigrationData = { byUiLineage: Map<UiLineage, string[] | undefined> };
 
   it('absent → default model only is enabled', () => {
@@ -205,6 +205,19 @@ describe('seedCliVoices', () => {
     // Haiku (curated, in user's list) should be enabled.
     const haiku = claudeVoices.find((v) => v.model_id === 'claude-haiku-4-5');
     expect(haiku?.enabled).toBe(true);
+  });
+
+  it('first-boot migration respects legacy gemini.enabled_models setting', async () => {
+    // Simulate a user upgrading from an old version that used gemini.enabled_models.
+    // The seeder must read this and NOT treat it as a fresh install (all enabled).
+    await settings.set('gemini.enabled_models', ['gemini-3.5-flash']);
+
+    await seedCliVoices();
+
+    // The antigravity.enabled_models setting should now be set (migrated from gemini.enabled_models).
+    const migrated = await settings.get('antigravity.enabled_models');
+    expect(Array.isArray(migrated)).toBe(true);
+    expect(migrated).toEqual(['gemini-3.5-flash']);
   });
 
   it('first-install with no migration data → all curated models enabled', async () => {
@@ -321,7 +334,7 @@ describe('seedCliVoices', () => {
 });
 
 describe('Google CLI catalog selection', () => {
-  const { googleModelCatalogForCommand } = _internals;
+  const { googleModelCatalogForCommand, SINGLE_MODEL_CLIS } = _internals;
 
   it('selects the Antigravity catalog for agy binaries', () => {
     expect(googleModelCatalogForCommand('/Users/me/.local/bin/agy')).toEqual([
@@ -338,5 +351,12 @@ describe('Google CLI catalog selection', () => {
       'gemini-3.1-pro-preview',
       'gemini-2.5-flash',
     ]);
+  });
+
+  it('seedCliVoices uses antigravity-cli as provider for Google lineage', async () => {
+    const googleEntry = SINGLE_MODEL_CLIS.find((c) => c.lineage === 'google');
+    expect(googleEntry).toBeDefined();
+    expect(googleEntry?.cli).toBe('antigravity-cli');
+    expect(googleEntry?.provider).toBe('antigravity-cli');
   });
 });

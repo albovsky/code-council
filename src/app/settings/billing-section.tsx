@@ -10,7 +10,7 @@ import {
 import { Section } from "./primitives";
 
 /**
- * Billing-mode toggle. Tells chorus how the user pays for the underlying
+ * Billing-mode toggle. Tells Code Council how the user pays for the underlying
  * CLIs so the cost preview on /new can render honestly:
  *   api          → show $ estimate at spot rates
  *   subscription → show "Subscription quota" + token count, no $
@@ -57,7 +57,7 @@ export function BillingModeSection() {
     <Section
       icon={<CreditCard className="h-4 w-4" />}
       title="Billing mode"
-      subtitle="How you pay for the AI CLIs chorus drives. Affects what the cost preview shows on the new-chat page — defaults to API rates so the number stays honest until you tell us otherwise."
+      subtitle="How you pay for the AI CLIs Code Council drives. Affects what the cost preview shows on the new-chat page — defaults to API rates so the number stays honest until you tell us otherwise."
     >
       {error && (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">

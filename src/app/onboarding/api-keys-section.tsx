@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
  */
 
 // Curated starter set — surfaced first in the picker so a user who
-// just wants "any 2 voices to try chorus" doesn't have to scroll.
+// just wants "any 2 voices to try Code Council" doesn't have to scroll.
 // Prefixed `openrouter:` form is what voices.id stores; the picker
 // reconciles against the bare model_id.
 const STARTER_PICKS = [
@@ -134,7 +134,7 @@ export function ApiKeysSection({ apiKeys, updateApiKey }: ApiKeysSectionProps) {
       <h2 className="mb-3 flex flex-wrap items-baseline gap-x-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <span>API access</span>
         <span className="font-normal normal-case text-muted-foreground/70">
-          optional — gives you any model on OpenRouter as a chorus voice
+          optional — gives you any model on OpenRouter as a Code Council voice
         </span>
       </h2>
       <Card className="space-y-3 bg-card p-4">
@@ -290,7 +290,7 @@ export function ApiKeysSection({ apiKeys, updateApiKey }: ApiKeysSectionProps) {
         )}
 
         <p className="text-[11px] leading-relaxed text-muted-foreground/80">
-          Stored locally in <code>~/.chorus/chorus.db</code>. Used only to
+          Stored locally in <code>~/.code-council/council.db</code>. Used only to
           call OpenRouter on your behalf. Direct API support for other
           providers (Anthropic, OpenAI, Google, xAI) is on the roadmap —
           today, route those models via OpenRouter.

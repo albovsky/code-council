@@ -33,6 +33,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/code-review", label: "Code Review", icon: GitPullRequestArrow },
   { href: "/runs", label: "Runs", icon: ListChecks },
   { href: "/templates", label: "Templates", icon: Layers },
   { href: "/personas", label: "Personas", icon: Users },
@@ -230,7 +231,7 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
         </div>
         {!collapsed && (
           <>
-            <span className="text-sm font-semibold tracking-tight">Chorus</span>
+            <span className="text-sm font-semibold tracking-tight">Code Council</span>
             <span className="ml-auto rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
               {daemonVersion ? `v${daemonVersion.replace(/^v/, "").replace(/-dev\.\d+$/, "")}` : "—"}
             </span>
@@ -297,16 +298,7 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
             backing API; clicking it would suggest a feature that doesn't
             exist. Lands in v0.8 with a Cmd+K modal. */}
         <div className="flex shrink-0 flex-col gap-2 bg-card/40 px-3 py-3">
-          <Link
-            href="/"
-            onClick={onNavigate}
-            aria-label="Code Review"
-            className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90"
-          >
-            <GitPullRequestArrow className="h-3.5 w-3.5" />
-            <span>Code Review</span>
-          </Link>
-          <div className="mt-1 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          <div className="px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
             Recent
           </div>
         </div>
@@ -318,9 +310,9 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
             </div>
           ) : chatsState === "error" ? (
             <div className="px-2 py-4 text-xs text-muted-foreground">
-              Can&apos;t reach Chorus. Try restarting it from your terminal:{" "}
+              Can&apos;t reach Code Council. Try restarting it from your terminal:{" "}
               <code className="rounded bg-muted/40 px-1 font-mono text-[10px] text-foreground/80">
-                chorus start
+                council start
               </code>
             </div>
           ) : chats.length === 0 ? (
@@ -393,7 +385,7 @@ export function SidebarBody({ onNavigate, collapsed = false, onToggleCollapsed }
                 v{updateInfo.current.replace(/^v/, "")} → v{updateInfo.latest.replace(/^v/, "")}
               </div>
               <div className="mt-1 font-mono text-[10px] text-muted-foreground/80">
-                Run <code className="rounded bg-muted/40 px-1 text-foreground/80">chorus update</code>
+                Run <code className="rounded bg-muted/40 px-1 text-foreground/80">council update</code>
               </div>
             </div>
           </div>

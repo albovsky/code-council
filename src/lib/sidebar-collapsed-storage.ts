@@ -9,7 +9,7 @@
  * storage source directly.
  */
 
-export const SIDEBAR_COLLAPSED_KEY = 'chorus.sidebar.collapsed';
+export const SIDEBAR_COLLAPSED_KEY = 'council.sidebar.collapsed';
 
 /**
  * Read the persisted collapsed flag. Returns `false` if storage is

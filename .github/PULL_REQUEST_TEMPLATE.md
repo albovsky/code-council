@@ -3,7 +3,7 @@ Thanks for the PR. Quick checklist:
 
 - One concern per PR. Bug fix vs refactor vs feature should be separate.
 - Tests added/updated where relevant.
-- pnpm typecheck && pnpm lint && pnpm test all green.
+- npm run typecheck && npm run lint && npm run test all green.
 - Conventional commit subject (feat: / fix: / refactor: / docs: / chore:).
 
 If you ran chorus on your own diff (we dogfood) — paste the verdict
@@ -34,8 +34,8 @@ catches blind spots a single reviewer misses. -->
 ## Checklist
 
 - [ ] Tests added/updated
-- [ ] `pnpm typecheck` clean
-- [ ] `pnpm lint` clean
-- [ ] `pnpm test` green
+- [ ] `npm run typecheck` clean
+- [ ] `npm run lint` clean
+- [ ] `npm run test` green
 - [ ] README / docs updated if user-visible
 - [ ] No unrelated drive-by changes

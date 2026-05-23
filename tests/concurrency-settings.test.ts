@@ -46,12 +46,12 @@ describe('concurrency settings', () => {
   it('round-trips a full config', async () => {
     await setConcurrency({
       maxParallelCli: 5,
-      perCli: { 'opencode-cli': 1, 'gemini-cli': 3 },
+      perCli: { 'opencode-cli': 1, 'antigravity-cli': 3 },
     });
     const fetched = await getConcurrency();
     expect(fetched.maxParallelCli).toBe(5);
     expect(fetched.perCli['opencode-cli']).toBe(1);
-    expect(fetched.perCli['gemini-cli']).toBe(3);
+    expect(fetched.perCli['antigravity-cli']).toBe(3);
   });
 
   it('safeParse fallback: corrupt JSON in DB → defaults, no throw', async () => {
@@ -91,6 +91,6 @@ describe('concurrency settings', () => {
     });
     const updated = await getConcurrency();
     expect(resolvePerCliCap(updated, 'opencode-cli')).toBe(1); // override
-    expect(resolvePerCliCap(updated, 'gemini-cli')).toBe(2); // still default
+    expect(resolvePerCliCap(updated, 'antigravity-cli')).toBe(2); // still default
   });
 });

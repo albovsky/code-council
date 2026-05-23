@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  CHORUS_TOOLS,
+  COUNCIL_TOOLS,
   DEFAULT_DAEMON_URL,
   execFileAsync,
   type ConnectOpts,
@@ -31,7 +31,7 @@ const CLAUDE_SLASH_COMMAND_PATH = path.join(
   os.homedir(),
   '.claude',
   'commands',
-  'chorus.md',
+  'council.md',
 );
 const CLAUDE_PROJECT_CONFIG_PATH = path.join(os.homedir(), '.claude.json');
 
@@ -47,22 +47,22 @@ function readClaudeSettings(): ClaudeSettings {
 function getClaudeStatus(): OrchestratorStatus {
   const config = readClaudeSettings();
   const allow = new Set(config.permissions?.allow ?? []);
-  const approved = CHORUS_TOOLS.filter((t) => allow.has(t)).length;
+  const approved = COUNCIL_TOOLS.filter((t) => allow.has(t)).length;
   return {
     name: 'claude',
     label: 'Claude Code',
-    connected: approved === CHORUS_TOOLS.length,
+    connected: approved === COUNCIL_TOOLS.length,
     approvedTools: approved,
-    totalTools: CHORUS_TOOLS.length,
-    note: "Pre-approves the 7 chorus.* tools so Claude Code doesn't prompt per-tool.",
+    totalTools: COUNCIL_TOOLS.length,
+    note: "Pre-approves the 7 council.* tools so Claude Code doesn't prompt per-tool.",
     supported: true,
     firstCallBehavior: 'auto',
   };
 }
 
 /**
- * Resolve the bundled `/chorus` slash command markdown shipped in the npm
- * package at `assets/slash-commands/chorus.md`. Works in both dist
+ * Resolve the bundled `/council` slash command markdown shipped in the npm
+ * package at `assets/slash-commands/council.md`. Works in both dist
  * (`__dirname` = `dist/daemon/orchestrators`) and dev/tsx
  * (`__dirname` = `src/daemon/orchestrators`) — both resolve to
  * `<pkg>/assets/...`.
@@ -75,7 +75,7 @@ function resolveChorusSlashAsset(): string | null {
     '..',
     'assets',
     'slash-commands',
-    'chorus.md',
+    'council.md',
   );
   return fs.existsSync(candidate) ? candidate : null;
 }
@@ -98,8 +98,8 @@ function installChorusSlashCommand(): ConnectResult['slashCommand'] {
 }
 
 /**
- * Patch Claude Code's local settings to whitelist all 7 Chorus MCP tools, and
- * drop the `/chorus` slash command into `~/.claude/commands/`. Idempotent.
+ * Patch Claude Code's local settings to whitelist all 7 Code Council MCP tools, and
+ * drop the `/council` slash command into `~/.claude/commands/`. Idempotent.
  */
 async function connectClaude(): Promise<ConnectResult> {
   const config = readClaudeSettings();
@@ -110,7 +110,7 @@ async function connectClaude(): Promise<ConnectResult> {
 
   const added: string[] = [];
   const alreadyPresent: string[] = [];
-  for (const tool of CHORUS_TOOLS) {
+  for (const tool of COUNCIL_TOOLS) {
     if (existing.has(tool)) {
       alreadyPresent.push(tool);
     } else {
@@ -146,16 +146,16 @@ async function connectClaude(): Promise<ConnectResult> {
   };
 }
 
-function readUserScopeChorusEntry(): { binPath: string } | null {
+function readUserScopeCouncilEntry(): { binPath: string } | null {
   const configPath = path.join(os.homedir(), '.claude.json');
   if (!fs.existsSync(configPath)) return null;
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
       mcpServers?: Record<string, { args?: unknown }>;
     };
-    const chorus = config.mcpServers?.chorus;
-    if (!chorus || !Array.isArray(chorus.args)) return null;
-    const binPath = chorus.args[0];
+    const council = config.mcpServers?.council;
+    if (!council || !Array.isArray(council.args)) return null;
+    const binPath = council.args[0];
     return typeof binPath === 'string' ? { binPath } : null;
   } catch {
     return null;
@@ -166,7 +166,7 @@ export async function registerClaudeMcpServer(opts: {
   binPath: string;
   daemonUrl?: string;
 }): Promise<{ added: boolean }> {
-  const existing = readUserScopeChorusEntry();
+  const existing = readUserScopeCouncilEntry();
   if (existing && existing.binPath === opts.binPath) {
     return { added: false };
   }
@@ -180,7 +180,7 @@ export async function registerClaudeMcpServer(opts: {
     try {
       await execFileAsync(
         'claude',
-        ['mcp', 'remove', 'chorus', '--scope', 'user'],
+        ['mcp', 'remove', 'council', '--scope', 'user'],
         execOpts,
       );
     } catch {
@@ -195,11 +195,11 @@ export async function registerClaudeMcpServer(opts: {
       [
         'mcp',
         'add',
-        'chorus',
+        'council',
         '--scope',
         'user',
         '--env',
-        `CHORUS_DAEMON_URL=${daemonUrl}`,
+        `COUNCIL_DAEMON_URL=${daemonUrl}`,
         '--',
         'node',
         opts.binPath,

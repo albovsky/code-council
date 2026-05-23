@@ -1,14 +1,14 @@
 /**
  * Fetch wrapper around the daemon REST API.
  *
- * Daemon location is resolved at runtime from `~/.chorus/daemon.json`
- * (v0.8+) with `CHORUS_DAEMON_URL` and `http://127.0.0.1:7707` as
+ * Daemon location is resolved at runtime from `~/.code-council/daemon.json`
+ * (v0.8+) with `COUNCIL_DAEMON_URL` and `http://127.0.0.1:7707` as
  * fallbacks. See lib/daemon-discovery.ts for the resolution order.
  *
  * Auto-start: if the daemon isn't running when an MCP tool is called,
- * the shim spawns `chorus start` (daemon-only, no cockpit) detached
+ * the shim spawns `council start` (daemon-only, no cockpit) detached
  * and waits up to 10 s for it to come up. Disable via
- * `CHORUS_AUTOSTART=0`. The auto-start path uses stderr for status
+ * `COUNCIL_AUTOSTART=0`. The auto-start path uses stderr for status
  * messages because stdout is reserved for the MCP JSON-RPC protocol.
  */
 
@@ -75,11 +75,12 @@ async function getDaemonUrl(): Promise<string> {
  * manage the daemon lifecycle themselves and prefer a hard error.
  */
 async function tryAutoStart(): Promise<boolean> {
-  if (process.env.CHORUS_AUTOSTART === "0") return false;
+  const autostart = process.env.COUNCIL_AUTOSTART || process.env.CHORUS_AUTOSTART;
+  if (autostart === "0") return false;
 
-  // Locate the chorus binary. process.execPath is `node`; argv[1] is
-  // dist/mcp/index.js when launched via `chorus mcp`. The bin wrapper
-  // sits two levels up at bin/chorus.mjs.
+  // Locate the council binary. process.execPath is `node`; argv[1] is
+  // dist/mcp/index.js when launched via `council mcp`. The bin wrapper
+  // sits two levels up at bin/council.mjs.
   //
   // The build emits CommonJS, so __dirname is the runtime-available
   // path to this file's directory (dist/mcp at install time, src/mcp
@@ -87,15 +88,15 @@ async function tryAutoStart(): Promise<boolean> {
   const path = await import("node:path");
   const fs = await import("node:fs");
   const packageRoot = path.resolve(__dirname, "..", "..");
-  const binPath = path.resolve(packageRoot, "bin", "chorus.mjs");
+  const binPath = path.resolve(packageRoot, "bin", "council.mjs");
   if (!fs.existsSync(binPath)) {
     process.stderr.write(
-      `chorus: cannot auto-start — bin/chorus.mjs not found at ${binPath}\n`,
+      `council: cannot auto-start — bin/council.mjs not found at ${binPath}\n`,
     );
     return false;
   }
 
-  process.stderr.write("chorus: daemon not running, auto-starting...\n");
+  process.stderr.write("council: daemon not running, auto-starting...\n");
 
   try {
     // --daemon-only: MCP-triggered auto-start should NOT boot the
@@ -109,7 +110,7 @@ async function tryAutoStart(): Promise<boolean> {
     child.unref();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`chorus: failed to spawn chorus start: ${msg}\n`);
+    process.stderr.write(`council: failed to spawn council start: ${msg}\n`);
     return false;
   }
 
@@ -121,13 +122,13 @@ async function tryAutoStart(): Promise<boolean> {
     const info = readDaemonInfo();
     if (info && (await isDaemonHealthy(info.daemonPort, 500))) {
       cachedDaemonUrl = `http://127.0.0.1:${info.daemonPort}`;
-      process.stderr.write(`chorus: daemon ready on port ${info.daemonPort}\n`);
+      process.stderr.write(`council: daemon ready on port ${info.daemonPort}\n`);
       return true;
     }
   }
 
   process.stderr.write(
-    "chorus: auto-start timed out after 10s. Run `chorus start` manually and check ~/.chorus/logs/daemon.log.\n",
+    "council: auto-start timed out after 10s. Run `council start` manually and check ~/.code-council/logs/daemon.log.\n",
   );
   return false;
 }
@@ -175,8 +176,8 @@ async function daemonFetchWithRetry<T>(
         return daemonFetchWithRetry<T>(path, options, false);
       }
       throw new Error(
-        "Chorus daemon not running and auto-start failed. Run 'chorus start' first " +
-          "(set CHORUS_AUTOSTART=0 to disable auto-start prompts).",
+        "Code Council daemon not running and auto-start failed. Run 'council start' first " +
+          "(set COUNCIL_AUTOSTART=0 to disable auto-start prompts).",
       );
     }
     throw error;

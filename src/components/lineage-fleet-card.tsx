@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 const DAEMON_TO_UI_LINEAGE: Record<string, UILineage> = {
   anthropic: "claude",
   openai: "codex",
-  google: "gemini",
+  google: "antigravity",
   opencode: "opencode",
   moonshot: "kimi",
 };
@@ -158,7 +158,7 @@ export function LineageFleetCard({
             </div>
           )}
           <p className="text-[11px] leading-relaxed text-muted-foreground/70">
-            Toggles save automatically. Voice list is curated per chorus release —
+            Toggles save automatically. Voice list is curated per Code Council release —
             new models appear after upgrades.
           </p>
         </div>

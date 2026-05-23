@@ -22,7 +22,7 @@ describe('cli-detect', () => {
       const expectedIds: DetectableCli[] = [
         'claude-code',
         'codex-cli',
-        'gemini-cli',
+        'antigravity-cli',
         'opencode-cli',
         'kimi-cli',
         'grok-cli',

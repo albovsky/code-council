@@ -83,9 +83,9 @@ And add the new id to `expectedIds`.
 ### 1.8 Verify end-to-end (Level 1 done)
 
 ```bash
-pnpm typecheck
-pnpm test
-pnpm build:server
+npm run typecheck
+npm run test
+npm run build:server
 node bin/chorus.mjs stop && node bin/chorus.mjs start
 node bin/chorus.mjs diagnose | grep grok      # should show smoke result
 node bin/chorus.mjs init | grep grok          # should appear in CLI list
@@ -338,8 +338,8 @@ If you have OpenRouter rate sheets or vendor pricing, add to `src/lib/voices.ts`
 ### 3.7 Verify Level 3
 
 ```bash
-pnpm test
-pnpm build:server
+npm run test
+npm run build:server
 node bin/chorus.mjs stop && node bin/chorus.mjs start
 
 # Build a template that uses the new lineage as a reviewer

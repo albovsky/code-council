@@ -1,7 +1,7 @@
 /**
- * Orchestrator integrations: pre-approve Chorus's MCP tools in
+ * Orchestrator integrations: pre-approve Code Council's MCP tools in
  * third-party editors / CLIs so users don't get prompted on every tool
- * call. Same logic the `chorus connect` CLI uses, exposed via daemon
+ * call. Same logic the `council connect` CLI uses, exposed via daemon
  * HTTP so the cockpit's /connect page can do it with one click.
  */
 
@@ -11,7 +11,7 @@ import {
   cursorOrchestrator,
   windsurfOrchestrator,
 } from './cursor-windsurf.js';
-import { geminiOrchestrator } from './gemini.js';
+import { agyOrchestrator } from './agy.js';
 import { grokOrchestrator } from './grok.js';
 import { kimiOrchestrator } from './kimi.js';
 import { opencodeOrchestrator } from './opencode.js';
@@ -25,7 +25,7 @@ import type {
 } from './shared.js';
 
 export {
-  CHORUS_TOOLS,
+  COUNCIL_TOOLS,
   type AutoConnectResult,
   type AutoConnectStep,
   type ConnectResult,
@@ -36,7 +36,7 @@ export {
 const ORCHESTRATORS: OrchestratorDefinition[] = [
   claudeOrchestrator,
   codexOrchestrator,
-  geminiOrchestrator,
+  agyOrchestrator,
   opencodeOrchestrator,
   kimiOrchestrator,
   grokOrchestrator,

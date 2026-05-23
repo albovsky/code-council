@@ -37,7 +37,7 @@ const GROK_BIN_PATH = path.join(GROK_CONFIG_DIR, 'bin', 'grok');
  * `auth_missing` at dispatch time — handled by the existing health
  * + voice auto-disable machinery, no shim-specific code needed.
  */
-function hasChorusInClaudeJson(): boolean {
+function hasCouncilInClaudeJson(): boolean {
   const claudeJson = path.join(os.homedir(), '.claude.json');
   if (!fs.existsSync(claudeJson)) return false;
   try {
@@ -45,9 +45,9 @@ function hasChorusInClaudeJson(): boolean {
       mcpServers?: Record<string, unknown>;
       projects?: Record<string, { mcpServers?: Record<string, unknown> }>;
     };
-    if (config.mcpServers && 'chorus' in config.mcpServers) return true;
+    if (config.mcpServers && 'council' in config.mcpServers) return true;
     for (const project of Object.values(config.projects ?? {})) {
-      if (project?.mcpServers && 'chorus' in project.mcpServers) return true;
+      if (project?.mcpServers && 'council' in project.mcpServers) return true;
     }
     return false;
   } catch {
@@ -58,7 +58,7 @@ function hasChorusInClaudeJson(): boolean {
 function getGrokStatus(): OrchestratorStatus {
   const detected =
     fs.existsSync(GROK_BIN_PATH) || fs.existsSync(GROK_CONFIG_DIR);
-  const connected = detected && hasChorusInClaudeJson();
+  const connected = detected && hasCouncilInClaudeJson();
   return {
     name: 'grok',
     label: 'Grok Build',
@@ -66,8 +66,8 @@ function getGrokStatus(): OrchestratorStatus {
     approvedTools: connected ? 1 : 0,
     totalTools: 1,
     note: connected
-      ? 'Two-way wired: (1) Grok Build reads ~/.claude.json automatically, so it can call chorus.* tools; (2) chorus dispatches to grok-build as a reviewer via the new shim. SuperGrok Heavy subscription required for invocation — free-tier returns 403 cleanly.'
-      : 'Grok Build picks up chorus from ~/.claude.json. Run `chorus connect claude` first; Grok will then see chorus automatically. Chorus can also dispatch to grok-build as a reviewer (SuperGrok Heavy subscription required).',
+      ? 'Two-way wired: (1) Grok Build reads ~/.claude.json automatically, so it can call council.* tools; (2) council dispatches to grok-build as a reviewer via the new shim. SuperGrok Heavy subscription required for invocation — free-tier returns 403 cleanly.'
+      : 'Grok Build picks up council from ~/.claude.json. Run `council connect claude` first; Grok will then see council automatically. Council can also dispatch to grok-build as a reviewer (SuperGrok Heavy subscription required).',
     supported: detected,
     firstCallBehavior: 'inherits_global',
   };
@@ -80,14 +80,14 @@ export const grokOrchestrator: OrchestratorDefinition = {
   detect: () =>
     fs.existsSync(GROK_BIN_PATH) || fs.existsSync(GROK_CONFIG_DIR),
   connect: async (_opts: ConnectOpts) => {
-    // No-op: Grok Build auto-discovers chorus from ~/.claude.json via
+    // No-op: Grok Build auto-discovers council from ~/.claude.json via
     // its config merge. Tell the user to wire claude (if not already)
     // and they're done.
-    if (!hasChorusInClaudeJson()) {
+    if (!hasCouncilInClaudeJson()) {
       throw new Error(
-        'Grok Build reads chorus MCP from ~/.claude.json — but no chorus ' +
-          'entry exists there yet. Run `chorus connect claude` first, then ' +
-          'Grok will see chorus automatically.',
+        'Grok Build reads council MCP from ~/.claude.json — but no council ' +
+          'entry exists there yet. Run `council connect claude` first, then ' +
+          'Grok will see council automatically.',
       );
     }
     return {
@@ -96,7 +96,7 @@ export const grokOrchestrator: OrchestratorDefinition = {
       slashCommand: 'skipped' as const,
       full: {
         added: [],
-        alreadyPresent: ['mcpServers.chorus (via ~/.claude.json)'],
+        alreadyPresent: ['mcpServers.council (via ~/.claude.json)'],
         configPath: path.join(os.homedir(), '.claude.json'),
         slashCommand: 'skipped' as const,
         slashCommandPath: '',

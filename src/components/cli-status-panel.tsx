@@ -23,9 +23,6 @@ import type { ListEnvelope } from "@/lib/types";
 import { lineageDot } from "@/lib/lineage-maps";
 import type { Voice } from "@/lib/api/voices";
 import Link from "next/link";
-import { OpencodeFleetCard } from "./opencode-fleet-card";
-import { LineageFleetCard } from "./lineage-fleet-card";
-import { OpenRouterFleetCard } from "./openrouter-fleet-card";
 
 interface OrchestratorStatus {
   name: string;
@@ -46,7 +43,7 @@ interface CliHealth {
 const ORCHESTRATOR_TO_LINEAGE: Record<string, string> = {
   claude: "anthropic",
   codex: "openai",
-  gemini: "google",
+  antigravity: "google",
   opencode: "opencode",
   kimi: "moonshot",
   grok: "grok",
@@ -59,7 +56,7 @@ const ORCHESTRATOR_TO_LINEAGE: Record<string, string> = {
 const ORCHESTRATOR_TO_PROVIDER: Record<string, string> = {
   claude: "claude-code",
   codex: "codex-cli",
-  gemini: "gemini-cli",
+  antigravity: "antigravity-cli",
   kimi: "kimi-cli",
   opencode: "opencode-cli",
   grok: "grok-cli",
@@ -123,6 +120,16 @@ function statusBadge(health: CliHealth): React.ReactNode {
   }
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+  "claude-code": "Claude Code",
+  "codex-cli": "Codex CLI",
+  "antigravity-cli": "Antigravity CLI",
+  "kimi-cli": "Kimi CLI",
+  "opencode-cli": "OpenCode",
+  "grok-cli": "Grok",
+  "openrouter": "OpenRouter",
+};
+
 export async function CliStatusPanel() {
   let orchestrators: OrchestratorStatus[] = [];
   let healths: CliHealth[] = [];
@@ -143,8 +150,7 @@ export async function CliStatusPanel() {
     healths = [];
   }
   try {
-    // Default GET /voices returns ALL rows (enabled + disabled) — fleet
-    // cards need both so users can re-enable from the toggle UI.
+    // Default GET /voices returns ALL rows (enabled + disabled)
     const env = await fetchFromDaemon<ListEnvelope<Voice>>("/voices?source=cli");
     allVoices = env.items;
   } catch {
@@ -159,19 +165,16 @@ export async function CliStatusPanel() {
     /* best-effort */
   }
 
-  function voicesForProvider(provider: string): Voice[] {
-    return allVoices.filter((v) => v.provider === provider);
-  }
-
   const healthByLineage: Record<string, CliHealth> = {};
   for (const h of healths) healthByLineage[h.lineage] = h;
 
-  const connectedOrchestrators = orchestrators.filter((o) => o.connected);
+  // Filter and collect all enabled models across active CLI and API connections
+  const enabledVoices = [
+    ...allVoices.filter((v) => v.enabled),
+    ...openrouterVoices.filter((v) => v.enabled),
+  ];
 
-  // Render the panel if there's any reviewer-eligible voice source —
-  // a connected CLI orchestrator OR at least one OpenRouter voice.
-  if (connectedOrchestrators.length === 0 && openrouterVoices.length === 0)
-    return null;
+  if (enabledVoices.length === 0) return null;
 
   return (
     <section className="mt-10">
@@ -188,75 +191,39 @@ export async function CliStatusPanel() {
         </Link>
       </div>
       <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {connectedOrchestrators.map((o) => {
-          const lineage = ORCHESTRATOR_TO_LINEAGE[o.name] ?? o.name;
-          const health = healthByLineage[lineage] ?? {
-            lineage,
+        {enabledVoices.map((v) => {
+          const lineage = v.lineage;
+          const healthKey = v.provider === "openrouter" ? "openrouter" : v.lineage;
+          const health = healthByLineage[healthKey] ?? {
+            lineage: healthKey,
             status: "unknown" as const,
             updatedAt: 0,
           };
-          // OpenCode is special — gateway-grouped and discovered via
-          // `opencode models`. Other CLIs use the generic flat-list card
-          // backed by UI_LINEAGE_AVAILABLE_MODELS. Cursor/Windsurf and
-          // anything without a curated list fall through to the static
-          // info card.
-          const provider = ORCHESTRATOR_TO_PROVIDER[o.name];
-          if (o.name === "opencode") {
-            return (
-              <OpencodeFleetCard
-                key={o.name}
-                health={{ status: health.status, message: health.message }}
-                voices={voicesForProvider("opencode-cli")}
-              />
-            );
-          }
-          if (provider) {
-            const providerVoices = voicesForProvider(provider);
-            if (providerVoices.length > 0) {
-              return (
-                <LineageFleetCard
-                  key={o.name}
-                  lineage={lineage}
-                  label={o.label}
-                  voices={providerVoices}
-                  health={{ status: health.status, message: health.message }}
-                />
-              );
-            }
-          }
+
           return (
             <div
-              key={o.name}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card p-3"
+              key={v.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-sm hover:border-foreground/20 transition-colors"
             >
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${lineageDot(lineage)}`}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium">{o.label}</div>
-                <div className="mt-0.5">{statusBadge(health)}</div>
-                {health.message && health.status !== "healthy" && health.status !== "unknown" && (
-                  <div className="mt-1 truncate text-[10px] text-muted-foreground">
-                    {health.message}
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${lineageDot(lineage)}`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-foreground" title={v.model_id}>
+                    {v.model_id}
                   </div>
-                )}
+                  <div className="mt-0.5 text-[10px] font-medium text-muted-foreground">
+                    via {PROVIDER_LABELS[v.provider] || v.provider}
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0">
+                {statusBadge(health)}
               </div>
             </div>
           );
         })}
-        {openrouterVoices.length > 0 && (
-          <OpenRouterFleetCard
-            voices={openrouterVoices}
-            health={
-              healthByLineage["openrouter"]
-                ? {
-                    status: healthByLineage["openrouter"].status,
-                    message: healthByLineage["openrouter"].message,
-                  }
-                : undefined
-            }
-          />
-        )}
       </div>
     </section>
   );

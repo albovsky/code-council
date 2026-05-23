@@ -1,10 +1,10 @@
 /**
- * `chorus audit <path>` — multi-LLM review of existing production code.
+ * `council audit <path>` — multi-LLM review of existing production code.
  *
- * The complement to `chorus review` / `/work`. Where review tools assume
+ * The complement to `council review` / `/work`. Where review tools assume
  * a PR-shaped diff, audit takes any path (file or directory) and asks
  * the reviewer fleet to critique what's already there. Useful for
- * onboarding chorus on a legacy codebase or auditing a subsystem that
+ * onboarding Code Council on a legacy codebase or auditing a subsystem that
  * was never PR-reviewed.
  *
  * Substrate: existing review-only phase + `artifact` field on /chats.
@@ -42,21 +42,21 @@ const DAEMON_FETCH_TIMEOUT_MS = 30_000;
 
 async function runAudit(targetPath: string, opts: AuditOptions): Promise<void> {
   console.log('');
-  console.log(`  ${sym.rocket} ${c.bold('chorus audit')} ${c.dim('— multi-LLM review of existing code')}`);
+  console.log(`  ${sym.rocket} ${c.bold('council audit')} ${c.dim('— multi-LLM review of existing code')}`);
   console.log('');
 
   // 1. Daemon up?
   const info = readDaemonInfo();
   if (!info) {
     console.log(`  ${c.red('✗')} daemon not running`);
-    console.log(`     run ${c.bold('chorus start')} first, then re-run audit`);
+    console.log(`     run ${c.bold('council start')} first, then re-run audit`);
     process.exitCode = 1;
     return;
   }
   const healthy = await isDaemonHealthy(info.daemonPort, 1500);
   if (!healthy) {
     console.log(`  ${c.red('✗')} daemon not responding on :${info.daemonPort}`);
-    console.log(`     run ${c.bold('chorus stop && chorus start')} to recycle`);
+    console.log(`     run ${c.bold('council stop && council start')} to recycle`);
     process.exitCode = 1;
     return;
   }

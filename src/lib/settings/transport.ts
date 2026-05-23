@@ -56,29 +56,29 @@ export const TMUX_AVAILABLE: boolean = detectTmuxBinary();
  * v0.5 default is 'headless' — the migration target. Existing users who had
  * tmux working will see the same outputs in the cockpit; only the spawn
  * mechanism differs. To revert, flip the toggle in /settings or set the env
- * override `CHORUS_TRANSPORT=tmux` (env wins over settings — useful for CI
+ * override `COUNCIL_TRANSPORT=tmux` (env wins over settings — useful for CI
  * and per-user overrides without DB writes).
  */
 export const DEFAULT_TRANSPORT: Transport = 'headless';
 
 // Module-level dedup so we warn once per process, not once per chat. The
-// daemon reads getTransport() per-chat, and a stuck typo in CHORUS_TRANSPORT
+// daemon reads getTransport() per-chat, and a stuck typo in COUNCIL_TRANSPORT
 // would otherwise spam stderr for every new chat.
 let envWarnFired = false;
 
 export async function getTransport(): Promise<Transport> {
   // Env override takes precedence — operator escape hatch.
-  const envOverride = process.env.CHORUS_TRANSPORT;
+  const envOverride = process.env.COUNCIL_TRANSPORT || process.env.CHORUS_TRANSPORT;
   let resolved: Transport;
   if (envOverride === 'headless' || envOverride === 'tmux') {
     resolved = envOverride;
   } else {
     if (envOverride !== undefined && envOverride !== '' && !envWarnFired) {
       // Operator-typo aid: silent fallback used to mean a misspelled
-      // CHORUS_TRANSPORT (e.g. "headles") just inherited DB/default with no
+      // COUNCIL_TRANSPORT (e.g. "headles") just inherited DB/default with no
       // signal. Surface once on stderr; one line, no stack, no rotation.
       console.warn(
-        `[chorus] CHORUS_TRANSPORT=${JSON.stringify(envOverride)} is not 'headless' or 'tmux' — ignoring env, falling back to settings/default.`,
+        `[council] COUNCIL_TRANSPORT=${JSON.stringify(envOverride)} is not 'headless' or 'tmux' — ignoring env, falling back to settings/default.`,
       );
       envWarnFired = true;
     }

@@ -9,8 +9,8 @@ import { resolveDaemonUrl } from "@/lib/daemon-discovery";
  * Server-side fetches still hit the daemon URL directly via lib/api/client.ts.
  *
  * Daemon URL resolution: see lib/daemon-discovery.ts. Honours the v0.8
- * `~/.chorus/daemon.json` first, falls back to `CHORUS_DAEMON_URL`,
- * then the legacy http://127.0.0.1:7707. `chorus start` sets the env
+ * `~/.code-council/daemon.json` first, falls back to `COUNCIL_DAEMON_URL`,
+ * then the legacy http://127.0.0.1:7707. `council start` sets the env
  * var when spawning the cockpit process so the proxy bypasses
  * disk reads in the steady state.
  */
@@ -28,7 +28,7 @@ const API_PREFIX = "api/v1";
  * before forwarding — that's 1+ ms of overhead per UI call (see
  * gemini review feedback on PR #v0.8). Caching once per Next.js
  * process keeps the proxy on the fast path. The daemon.json port
- * only changes between `chorus stop` and `chorus start`, by which
+ * only changes between `council stop` and `council start`, by which
  * point the cockpit process has already restarted, so the cache
  * lifetime aligns with the value's actual stability.
  */
@@ -53,7 +53,7 @@ async function proxy(req: NextRequest, ctx: ProxyContext): Promise<Response> {
   // literal `/` and Fastify's `:id` parameter route on the daemon
   // would only match one segment of the id, return a default 404, and
   // the caller would surface the unhelpful "Unknown error" because
-  // Fastify's 404 envelope doesn't match chorus's `{ ok, error }`
+  // Fastify's 404 envelope doesn't match Code Council's `{ ok, error }`
   // shape.
   const segments = path.map(encodeURIComponent).join("/");
   // Auto-prepend /api/v1 so cockpit code can call /api/daemon/<route>
@@ -142,7 +142,7 @@ async function proxy(req: NextRequest, ctx: ProxyContext): Promise<Response> {
         error: {
           code: "daemon_unreachable",
           message:
-            "Chorus daemon is not running on this host. Start it with `chorus start`.",
+            "Code Council daemon is not running on this host. Start it with `council start`.",
         },
       },
       { status: 502 },

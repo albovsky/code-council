@@ -240,7 +240,7 @@ export function PreviewSections(p: PreviewSectionsProps) {
             features={[
               "Daemon runs on your machine; CLIs run on your machine.",
               "Prompts go directly from your machine to each provider.",
-              "Chorus sees nothing — not even chat IDs.",
+              "Code Council sees nothing — not even chat IDs.",
             ]}
             tradeoff="No cloud dashboard, no team sharing, no fallback when a CLI is down."
           />
@@ -266,7 +266,7 @@ export function PreviewSections(p: PreviewSectionsProps) {
             title="Cloud workspace"
             tagline="Team / multi-machine"
             features={[
-              "Code is cloned into Chorus's cloud workspace.",
+              "Code is cloned into Code Council's cloud workspace.",
               "Transcripts + verdicts kept for audit & retro.",
               "Encrypted at rest; SOC 2 in progress.",
             ]}
@@ -290,14 +290,14 @@ export function PreviewSections(p: PreviewSectionsProps) {
               <Workflow className="mt-0.5 h-4 w-4 text-primary" />
               <div className="flex flex-col">
                 <span className="text-sm text-foreground">
-                  Chorus MCP server
+                  Code Council MCP server
                 </span>
                 <span className="text-[11px] text-muted-foreground">
                   Exposes <span className="font-mono">mm.create_chat</span>,{" "}
                   <span className="font-mono">mm.update_settings</span>,{" "}
                   <span className="font-mono">mm.create_template</span> and 9
                   other tools. Outer Claude / Cursor / Codex can configure
-                  Chorus for you.
+                  Code Council for you.
                 </span>
               </div>
             </div>
@@ -324,7 +324,7 @@ export function PreviewSections(p: PreviewSectionsProps) {
                 type="url"
                 value={p.webhookUrl}
                 onChange={(e) => p.setWebhookUrl(e.target.value)}
-                placeholder="https://hooks.example.com/chorus"
+                placeholder="https://hooks.example.com/council"
                 className="flex-1 rounded-md border border-border bg-card px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-foreground/30 focus:outline-none"
               />
               <button

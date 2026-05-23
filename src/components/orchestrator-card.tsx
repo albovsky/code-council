@@ -27,7 +27,7 @@ interface Props {
 const ORCHESTRATOR_TO_PROVIDER: Record<string, string> = {
   claude: "claude-code",
   codex: "codex-cli",
-  gemini: "gemini-cli",
+  antigravity: "antigravity-cli",
   opencode: "opencode-cli",
   kimi: "kimi-cli",
 };
@@ -190,11 +190,6 @@ export function OrchestratorCard({ initial, voices: initialVoices }: Props) {
           </div>
         )}
 
-        {isConnected && status.firstCallBehavior === "prompts_once" && (
-          <p className="text-[11px] text-amber-300/90">
-            ⚠ First chorus.* call will show a one-time prompt — click &quot;Always allow&quot;.
-          </p>
-        )}
 
         {supportsModels && (
           <div className="space-y-2">

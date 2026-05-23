@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { resolveDbPath, templates } from '../../lib/db/index.js';
-import { CHORUS_BIN_PATH } from '../shared.js';
+import { COUNCIL_BIN_PATH } from '../shared.js';
 import { c, header, sym } from '../ui.js';
 
 interface ReviewerDetect {
@@ -21,7 +21,7 @@ interface ReviewerDetect {
 /**
  * Detect which reviewer CLIs (claude/codex/agy or gemini/opencode/kimi) are
  * usable on the host. Returns the list of human-friendly names that
- * passed the full detect-and-verify probe. Used by `chorus init` to
+ * passed the full detect-and-verify probe. Used by `council init` to
  * warn when zero are installed — the cockpit would otherwise look
  * healthy but every run would hang on first dispatch.
  */
@@ -58,12 +58,12 @@ async function runOrchestratorAutoConnect(connectFlag?: string): Promise<void> {
   const { autoConnectAll } = await import(
     '../../daemon/orchestrators/index.js'
   );
-  const binPath = CHORUS_BIN_PATH;
+  const binPath = COUNCIL_BIN_PATH;
 
   type Name =
     | 'claude'
     | 'codex'
-    | 'gemini'
+    | 'antigravity'
     | 'opencode'
     | 'kimi'
     | 'cursor'
@@ -71,7 +71,7 @@ async function runOrchestratorAutoConnect(connectFlag?: string): Promise<void> {
   const ALL_NAMES = [
     'claude',
     'codex',
-    'gemini',
+    'antigravity',
     'opencode',
     'kimi',
     'cursor',
@@ -117,8 +117,8 @@ async function runOrchestratorAutoConnect(connectFlag?: string): Promise<void> {
     else parts.push('MCP already registered');
     if (step.toolsAdded > 0) parts.push(`${step.toolsAdded} tool(s) approved`);
     else if (step.name === 'claude') parts.push('all tools approved');
-    if (step.slashCommand === 'installed') parts.push('/chorus installed');
-    else if (step.slashCommand === 'updated') parts.push('/chorus updated');
+    if (step.slashCommand === 'installed') parts.push('/council installed');
+    else if (step.slashCommand === 'updated') parts.push('/council updated');
     console.log(
       `  ${sym.ok} ${c.bold(step.label.padEnd(14))} ${c.dim(parts.join(' · '))}`,
     );
@@ -127,7 +127,7 @@ async function runOrchestratorAutoConnect(connectFlag?: string): Promise<void> {
   if (!result.anyConnected) {
     console.log('');
     console.log(
-      `  ${sym.info} ${c.dim('No supported editors found. Connect manually later with')} ${c.bold('chorus connect')}`,
+      `  ${sym.info} ${c.dim('No supported editors found. Connect manually later with')} ${c.bold('council connect')}`,
     );
   }
 }
@@ -136,19 +136,19 @@ export function registerInitCommand(program: Command): void {
   program
     .command('init')
     .description(
-      'Initialize Chorus: create ~/.chorus/, seed database, register MCP with detected editors',
+      'Initialize Code Council: create ~/.code-council/, seed database, register MCP with detected editors',
     )
     .option('--no-register', 'Skip auto-detecting orchestrators')
     .option(
       '--connect <list>',
-      'Comma-separated list of CLIs to connect (claude,codex,gemini,opencode,kimi,cursor,windsurf). Default: all detected.',
+      'Comma-separated list of CLIs to connect (claude,codex,antigravity,opencode,kimi,cursor,windsurf). Default: all detected.',
     )
     .action(async (opts: { register?: boolean; connect?: string }) => {
       try {
-        const chorusDir = path.join(os.homedir(), '.chorus');
+        const chorusDir = path.join(os.homedir(), '.code-council');
 
         console.log('');
-        console.log(header(sym.pointer, 'Initializing Chorus...'));
+        console.log(header(sym.pointer, 'Initializing Code Council...'));
         console.log('');
 
         if (!fs.existsSync(chorusDir)) {
@@ -156,9 +156,9 @@ export function registerInitCommand(program: Command): void {
           console.log(`  ${sym.ok} ${c.dim('created')} ${chorusDir}`);
         }
 
-        // Seed the DB. resolveDbPath() honours CHORUS_DB_PATH so the
+        // Seed the DB. resolveDbPath() honours COUNCIL_DB_PATH so the
         // line we print matches what the daemon will actually open —
-        // hardcoding ~/.chorus/chorus.db here misled users who'd set
+        // hardcoding ~/.code-council/council.db here misled users who'd set
         // the env var and then asked "where's my DB?".
         const { getDb } = await import('../../lib/db/index.js');
         await getDb();
@@ -222,7 +222,7 @@ export function registerInitCommand(program: Command): void {
 
         // Reviewer-CLI presence check — separate from orchestrator wiring
         // above. Without at least one of claude/codex/gemini/opencode/
-        // kimi installed OR an OpenRouter API key configured, Chorus
+        // kimi installed OR an OpenRouter API key configured, Code Council
         // has nothing to dispatch chats to.
         const detect = await detectReviewerClis();
         if (detect.detectFailed) {
@@ -241,7 +241,7 @@ export function registerInitCommand(program: Command): void {
             `  ${c.yellow('!')} ${c.bold(c.yellow('No AI CLIs detected on this machine.'))}`,
           );
           console.log(
-            c.dim('    Chorus needs at least one of these (or an OpenRouter API key):'),
+            c.dim('    Code Council needs at least one of these (or an OpenRouter API key):'),
           );
           console.log(c.dim('      claude     — https://docs.anthropic.com/en/docs/claude-code'));
           console.log(c.dim('      codex      — https://github.com/openai/codex'));
@@ -254,7 +254,7 @@ export function registerInitCommand(program: Command): void {
             c.dim('      openrouter — Settings → Voices → Add OpenRouter (uses your API key)'),
           );
           console.log(
-            c.dim('    Install at least one CLI, or add an OpenRouter voice after `chorus start`.'),
+            c.dim('    Install at least one CLI, or add an OpenRouter voice after `council start`.'),
           );
         } else {
           console.log('');
@@ -264,10 +264,10 @@ export function registerInitCommand(program: Command): void {
         }
 
         console.log('');
-        console.log(header(sym.ok, 'Chorus initialized'));
+        console.log(header(sym.ok, 'Code Council initialized'));
         console.log('');
         console.log(
-          `  ${c.dim('Next:')} ${c.bold('chorus start')} ${c.dim('— bring up the daemon and cockpit.')}`,
+          `  ${c.dim('Next:')} ${c.bold('council start')} ${c.dim('— bring up the daemon and cockpit.')}`,
         );
         console.log(
           `  ${c.dim('Then restart any editor we just registered (Claude Code, etc.) so it picks up the MCP server.')}`,

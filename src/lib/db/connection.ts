@@ -1,11 +1,11 @@
 /**
- * Chorus DB seam — backed by @libsql/client (napi-rs prebuilt for every
+ * Council DB seam — backed by @libsql/client (napi-rs prebuilt for every
  * platform; no node-gyp at install time). Migrated from better-sqlite3 in
  * v0.7 to fix `npm install -g` reliability on Windows + locked-down dev
  * machines (planning/libsql-migration.md).
  *
  * SQL dialect + on-disk format are unchanged — same SQLite3 file at
- * ~/.chorus/chorus.db. Existing user DBs open cleanly.
+ * ~/.code-council/council.db. Existing user DBs open cleanly.
  */
 
 import { createClient, type Client } from '@libsql/client';
@@ -20,7 +20,7 @@ let dbInitPromise: Promise<Client> | null = null;
 /**
  * Resolve DB path lazily inside getDb() rather than at module load. Two
  * reasons:
- *   1. CHORUS_DB_PATH env override only takes effect if read at init time.
+ *   1. COUNCIL_DB_PATH env override only takes effect if read at init time.
  *      A module-level `const dbPath = ...` evaluates once on import and is
  *      then frozen, so tests setting the env after import would have no
  *      effect.
@@ -28,9 +28,9 @@ let dbInitPromise: Promise<Client> | null = null;
  *      process — see `_resetDbForTests()`.
  */
 export function resolveDbPath(): string {
-  const override = process.env.CHORUS_DB_PATH;
+  const override = process.env.COUNCIL_DB_PATH || process.env.CHORUS_DB_PATH;
   if (override) return override;
-  return path.join(os.homedir(), '.chorus', 'chorus.db');
+  return path.join(os.homedir(), '.code-council', 'council.db');
 }
 
 function resolveSchemaPath(): string {
@@ -61,21 +61,67 @@ export async function getDb(): Promise<Client> {
   return dbInitPromise;
 }
 
+function copyDirRecursive(src: string, dest: string) {
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      if (!fs.existsSync(destPath)) {
+        fs.mkdirSync(destPath, { recursive: true, mode: 0o700 });
+      }
+      copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+      fs.chmodSync(destPath, 0o600);
+    }
+  }
+}
+
+function runLegacyDataMigration() {
+  const oldDir = path.join(os.homedir(), '.chorus');
+  const newDir = path.join(os.homedir(), '.code-council');
+  
+  if (!fs.existsSync(newDir) && fs.existsSync(oldDir)) {
+    try {
+      fs.mkdirSync(newDir, { recursive: true, mode: 0o700 });
+      copyDirRecursive(oldDir, newDir);
+      
+      // Rename database and sidecar files
+      const oldDb = path.join(newDir, 'chorus.db');
+      const newDb = path.join(newDir, 'council.db');
+      if (fs.existsSync(oldDb)) {
+        fs.renameSync(oldDb, newDb);
+      }
+      
+      for (const ext of ['-wal', '-shm', '-journal']) {
+        const oldFile = oldDb + ext;
+        const newFile = newDb + ext;
+        if (fs.existsSync(oldFile)) {
+          fs.renameSync(oldFile, newFile);
+        }
+      }
+      console.log(`[migration] Successfully migrated legacy Chorus data to ${newDir}`);
+    } catch (err) {
+      console.error(`[migration] Error migrating legacy folder:`, err);
+    }
+  }
+}
+
 async function initDb(): Promise<Client> {
+  // Run auto-migration if present before accessing SQLite database
+  runLegacyDataMigration();
+
   const dbPath = resolveDbPath();
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
-    // 0700: only the owner traverses ~/.chorus. Without this the dir
+    // 0700: only the owner traverses ~/.code-council. Without this the dir
     // inherits umask (typically 0755 → world-traversable), which lets
-    // other local users `cat ~/.chorus/chorus.db` and read every API
+    // other local users `cat ~/.code-council/council.db` and read every API
     // key in the secrets table. Audit A2 BLOCKER.
     fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
-  } else if (path.basename(dbDir) === '.chorus') {
-    // Existing ~/.chorus from before this fix shipped — tighten
-    // retroactively on first boot of an upgraded install. Guard on the
-    // dirname so a CHORUS_DB_PATH override pointing at a system dir
-    // (e.g. tests using /tmp/chorus-foo.db) doesn't chmod /tmp to 0700.
-    // Best-effort; failure on exotic filesystems is non-fatal.
+  } else if (path.basename(dbDir) === '.code-council') {
+    // Existing ~/.code-council — tighten retroactively on first boot.
     try {
       fs.chmodSync(dbDir, 0o700);
     } catch {
@@ -189,6 +235,26 @@ async function initDb(): Promise<Client> {
     await db.execute('ALTER TABLE voices ADD COLUMN disabled_reason TEXT');
   }
 
+  // Boot migration: rename legacy gemini-cli provider entries to antigravity-cli.
+  // Idempotent: WHERE clause ensures it only runs when old rows exist.
+  // Two-step: delete any pre-existing antigravity-cli rows first to prevent
+  // UNIQUE constraint collision on the id rename.
+  // Run after voices table is created/verified so schema is always ready.
+  await db.execute(`
+    DELETE FROM voices
+    WHERE id IN (
+      SELECT REPLACE(g.id, 'gemini-cli', 'antigravity-cli')
+      FROM voices g
+      WHERE g.provider = 'gemini-cli'
+    )
+  `);
+  await db.execute(`
+    UPDATE voices
+    SET id = REPLACE(id, 'gemini-cli', 'antigravity-cli'),
+        provider = 'antigravity-cli'
+    WHERE provider = 'gemini-cli'
+  `);
+
   // is_complete on templates — added in v0.8.3 to gate "Use template"
   // when the seed adapter couldn't fill every slot from the user's
   // installed voices. Default 1 keeps existing rows usable.
@@ -239,7 +305,7 @@ async function backfillChatSlugs(db: Client): Promise<void> {
 /**
  * @internal — for tests only. Closes the singleton handle and clears the
  * cached instance so the next `getDb()` call re-initializes against the
- * current `CHORUS_DB_PATH` env. Without this, vitest tests running in the
+ * current `COUNCIL_DB_PATH` env. Without this, vitest tests running in the
  * same module instance would all share the first DB they opened.
  */
 export async function _resetDbForTests(): Promise<void> {

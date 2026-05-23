@@ -32,7 +32,7 @@ function normalizeBinaryName(command: string): string {
 }
 
 function selectGoogleCli(): GoogleCliSelection {
-  const detected = detectAllClis().find((cli) => cli.id === 'gemini-cli');
+  const detected = detectAllClis().find((cli) => cli.id === 'antigravity-cli');
   const command = detected?.found && detected.path ? detected.path : 'agy';
   return {
     command,
@@ -40,14 +40,42 @@ function selectGoogleCli(): GoogleCliSelection {
   };
 }
 
-function agyExitEvents(fullStdout: string, _fullStderr: string, code: number | null): AgentEvent[] {
-  if (code !== 0) return [];
+export function agyExitEvents(
+  fullStdout: string,
+  fullStderr: string,
+  code: number | null,
+): AgentEvent[] {
+  if (code !== 0) {
+    const quota = parseAgyQuotaMessage(`${fullStdout}\n${fullStderr}`);
+    if (quota) return [quota];
+    return [];
+  }
   return [{ type: 'message_done', finalText: fullStdout.trim() }];
 }
 
-export const geminiShim: AgentShim = {
+function parseAgyQuotaMessage(text: string): AgentEvent | null {
+  if (!/Individual quota reached/i.test(text)) return null;
+  const reset = text.match(/Resets?\s+in\s+([0-9dhms\s]+)/i)?.[1]?.trim();
+  return {
+    type: 'error',
+    kind: 'quota_exhausted',
+    message: reset
+      ? `Antigravity quota reached — resets in ${reset}.`
+      : 'Antigravity quota reached.',
+  };
+}
+
+export const agyShim: AgentShim = {
   lineage: 'google',
-  name: 'gemini-cli',
+  name: 'antigravity-cli',
+
+  // Auto-dismiss the AGY end-of-session NPS survey ("How's the CLI
+  // experience so far?") by sending '0' (Skip) then Enter. Without this
+  // the tmux pane hangs waiting for interactive input after the review
+  // completes, and the round never finishes.
+  recoverKeys: {
+    survey_prompt: ['0', 'Enter'],
+  },
 
   buildLaunchCommand(opts: AgentSpawnOptions): string {
     validateValue('model', opts.model);

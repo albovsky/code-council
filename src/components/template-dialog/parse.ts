@@ -292,11 +292,11 @@ export function parseYamlToForm(
       id: parsed.id ?? existingId,
       name: parsed.name ?? "",
       description: parsed.description ?? "",
-      // author default 'chorus' must match TemplateSchema. Earlier `?? "you"`
+      // author default 'council' must match TemplateSchema. Earlier `?? "you"`
       // corrupted builtin templates' author on round-trip: schema parses
-      // missing author as 'chorus' → wizard sees absence → form shows 'you'
+      // missing author as 'council' → wizard sees absence → form shows 'you'
       // → save emits 'you' → builtin row promoted to user with wrong author.
-      author: parsed.author ?? "chorus",
+      author: parsed.author ?? "council",
       category: deriveCategory(parsed.id ?? existingId),
       phases: phases.length > 0 ? phases : DEFAULT_FORM.phases,
       threshold,

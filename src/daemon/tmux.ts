@@ -40,11 +40,11 @@ export class TmuxManagerImpl implements TmuxManager {
         const lines = result.stdout.trim().split('\n').filter((line) => line.length > 0);
 
         for (const sessionName of lines) {
-          if (!sessionName.startsWith('chorus-')) continue;
+          if (!sessionName.startsWith('council-')) continue;
 
-          // Parse session name: chorus-<chatId>-<phaseId>-<role>-<agentName>
+          // Parse session name: council-<chatId>-<phaseId>-<role>-<agentName>
           const parts = sessionName.split('-');
-          if (parts.length < 6) continue; // chorus + chatId + phaseId + role + agentName = 5 parts after split
+          if (parts.length < 6) continue; // council + chatId + phaseId + role + agentName = 5 parts after split
 
           // Rebuild a minimal handle; agent lineage/name come from the parts
           const chatId = parts[1];
@@ -102,7 +102,7 @@ export class TmuxManagerImpl implements TmuxManager {
 
   /**
    * Build the tmux session name from components.
-   * Format: chorus-<chatId>-<phaseId>-<role>-<agentName>
+   * Format: council-<chatId>-<phaseId>-<role>-<agentName>
    */
   private makeSessionName(
     chatId: string,
@@ -110,7 +110,7 @@ export class TmuxManagerImpl implements TmuxManager {
     role: 'doer' | 'reviewer',
     agentName: string
   ): string {
-    return `chorus-${chatId}-${phaseId}-${role}-${agentName}`;
+    return `council-${chatId}-${phaseId}-${role}-${agentName}`;
   }
 
   /**

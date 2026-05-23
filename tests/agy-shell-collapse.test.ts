@@ -37,11 +37,11 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
 /**
  * Set up a fresh spy on spawnHeadless that records the call but produces a
  * benign run handle (empty event stream, immediate exit). Returns the
- * captured-call accumulator and the dynamically-imported geminiShim.
+ * captured-call accumulator and the dynamically-imported agyShim.
  */
 async function setupShimWithSpy(opts: { googleCliPath?: string } = {}): Promise<{
   captured: CapturedSpawn[];
-  geminiShim: typeof import('../src/daemon/agents/gemini').geminiShim;
+  agyShim: typeof import('../src/daemon/agents/agy').agyShim;
 }> {
   vi.resetModules();
   const captured: CapturedSpawn[] = [];
@@ -74,19 +74,19 @@ async function setupShimWithSpy(opts: { googleCliPath?: string } = {}): Promise<
 
   vi.doMock('../src/lib/cli-detect', () => ({
     detectAllClis: () => [
-      { id: 'gemini-cli', found: true, path: googleCliPath, source: 'path' },
+      { id: 'antigravity-cli', found: true, path: googleCliPath, source: 'path' },
     ],
   }));
 
-  const { geminiShim } = await import('../src/daemon/agents/gemini');
-  return { captured, geminiShim };
+  const { agyShim } = await import('../src/daemon/agents/agy');
+  return { captured, agyShim };
 }
 
-describe('geminiShim.runHeadless — argv shape', () => {
+describe('agyShim.runHeadless — argv shape', () => {
   it('passes `-p` followed by a non-whitespace placeholder (`_`), not a space', async () => {
-    const { captured, geminiShim } = await setupShimWithSpy();
+    const { captured, agyShim } = await setupShimWithSpy();
 
-    const stream = geminiShim.runHeadless!({
+    const stream = agyShim.runHeadless!({
       cwd: process.cwd(),
       promptText: 'review this PR',
       model: 'gemini-2.5-pro',
@@ -103,9 +103,9 @@ describe('geminiShim.runHeadless — argv shape', () => {
   });
 
   it('placeholder survives a Windows-shell-collapse simulation (multi-space → single-space split round-trip)', async () => {
-    const { captured, geminiShim } = await setupShimWithSpy();
+    const { captured, agyShim } = await setupShimWithSpy();
 
-    const stream = geminiShim.runHeadless!({
+    const stream = agyShim.runHeadless!({
       cwd: process.cwd(),
       promptText: 'review',
       model: 'gemini-2.5-pro',
@@ -128,9 +128,9 @@ describe('geminiShim.runHeadless — argv shape', () => {
   });
 
   it('keeps the full headless flag set: --output-format stream-json, --skip-trust, --approval-mode auto_edit, -m <model>', async () => {
-    const { captured, geminiShim } = await setupShimWithSpy();
+    const { captured, agyShim } = await setupShimWithSpy();
 
-    const stream = geminiShim.runHeadless!({
+    const stream = agyShim.runHeadless!({
       cwd: process.cwd(),
       promptText: 'review',
       model: 'gemini-2.5-pro',
@@ -155,9 +155,9 @@ describe('geminiShim.runHeadless — argv shape', () => {
   });
 
   it('strict sandbox flips approval-mode to plan (read-only) but keeps the `-p _` placeholder intact', async () => {
-    const { captured, geminiShim } = await setupShimWithSpy();
+    const { captured, agyShim } = await setupShimWithSpy();
 
-    const stream = geminiShim.runHeadless!({
+    const stream = agyShim.runHeadless!({
       cwd: process.cwd(),
       promptText: 'review',
       model: 'gemini-2.5-pro',
@@ -173,9 +173,9 @@ describe('geminiShim.runHeadless — argv shape', () => {
   });
 
   it('falls back to gemini-2.5-pro when no model is provided (preview models 404 on most accounts)', async () => {
-    const { captured, geminiShim } = await setupShimWithSpy();
+    const { captured, agyShim } = await setupShimWithSpy();
 
-    const stream = geminiShim.runHeadless!({
+    const stream = agyShim.runHeadless!({
       cwd: process.cwd(),
       promptText: 'review',
       sandbox: 'workspace',
@@ -188,11 +188,11 @@ describe('geminiShim.runHeadless — argv shape', () => {
   });
 
   it('uses AGY print mode when the detected Google CLI binary is agy', async () => {
-    const { captured, geminiShim } = await setupShimWithSpy({
+    const { captured, agyShim } = await setupShimWithSpy({
       googleCliPath: '/Users/me/.local/bin/agy',
     });
 
-    const stream = geminiShim.runHeadless!({
+    const stream = agyShim.runHeadless!({
       cwd: process.cwd(),
       promptText: 'review this PR',
       model: 'gemini-3.1-pro-preview',
@@ -210,11 +210,11 @@ describe('geminiShim.runHeadless — argv shape', () => {
   });
 
   it('keeps AGY strict runs inside the terminal sandbox while remaining non-interactive', async () => {
-    const { captured, geminiShim } = await setupShimWithSpy({
+    const { captured, agyShim } = await setupShimWithSpy({
       googleCliPath: '/Users/me/.local/bin/agy',
     });
 
-    const stream = geminiShim.runHeadless!({
+    const stream = agyShim.runHeadless!({
       cwd: process.cwd(),
       promptText: 'review',
       sandbox: 'strict',
@@ -229,11 +229,11 @@ describe('geminiShim.runHeadless — argv shape', () => {
   });
 
   it('emits AGY print output as the final message on successful exit', async () => {
-    const { captured, geminiShim } = await setupShimWithSpy({
+    const { captured, agyShim } = await setupShimWithSpy({
       googleCliPath: '/Users/me/.local/bin/agy',
     });
 
-    const stream = geminiShim.runHeadless!({
+    const stream = agyShim.runHeadless!({
       cwd: process.cwd(),
       promptText: 'review',
       sandbox: 'workspace',

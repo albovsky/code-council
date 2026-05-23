@@ -18,7 +18,7 @@ export async function getPermissions(): Promise<PermissionSettings> {
 export type DetectableCliId =
   | "claude-code"
   | "codex-cli"
-  | "gemini-cli"
+  | "antigravity-cli"
   | "opencode-cli"
   | "kimi-cli";
 

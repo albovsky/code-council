@@ -159,7 +159,7 @@ export interface AgentShim {
  * sending a per-CLI key sequence. Non-recoverable kinds (quota_exhausted,
  * auth_required, opencode_db_corrupt, etc.) stay as `cli_error` events.
  */
-export type RecoverableKind = 'permission_prompt';
+export type RecoverableKind = 'permission_prompt' | 'survey_prompt';
 
 // ─── Headless transport (v0.5+) ─────────────────────────────────────────────
 //

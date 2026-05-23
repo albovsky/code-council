@@ -45,7 +45,7 @@ export interface DaemonInfo {
 }
 
 export function daemonInfoPath(): string {
-  return path.join(os.homedir(), '.chorus', 'daemon.json');
+  return path.join(os.homedir(), '.code-council', 'daemon.json');
 }
 
 /**
@@ -188,7 +188,8 @@ export async function readLiveDaemonInfo(
 export async function resolveDaemonUrl(): Promise<string> {
   const live = await readLiveDaemonInfo();
   if (live) return `http://127.0.0.1:${live.daemonPort}`;
-  if (process.env.CHORUS_DAEMON_URL) return process.env.CHORUS_DAEMON_URL;
+  const envUrl = process.env.COUNCIL_DAEMON_URL || process.env.CHORUS_DAEMON_URL;
+  if (envUrl) return envUrl;
   return DEFAULT_DAEMON_URL;
 }
 
@@ -199,7 +200,8 @@ export async function resolveDaemonUrl(): Promise<string> {
 export async function resolveCockpitUrl(): Promise<string> {
   const live = await readLiveDaemonInfo();
   if (live) return `http://127.0.0.1:${live.cockpitPort}`;
-  if (process.env.CHORUS_COCKPIT_URL) return process.env.CHORUS_COCKPIT_URL;
+  const envCockpitUrl = process.env.COUNCIL_COCKPIT_URL || process.env.CHORUS_COCKPIT_URL;
+  if (envCockpitUrl) return envCockpitUrl;
   return DEFAULT_COCKPIT_URL;
 }
 

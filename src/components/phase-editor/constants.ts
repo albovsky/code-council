@@ -46,7 +46,7 @@ export const KINDS: { id: PhaseKind; label: string }[] = [
 ];
 
 export const LINEAGES: { id: ReviewerLineage; label: string; dot: string }[] = (
-  ["claude", "codex", "gemini", "opencode", "kimi", "openrouter", "local", "grok"] as const
+  ["claude", "codex", "antigravity", "opencode", "kimi", "openrouter", "local", "grok"] as const
 ).map((id) => ({
   id,
   label: UI_LINEAGE_LABEL[id],
@@ -64,7 +64,7 @@ export const DEFAULT_MODELS: Record<ReviewerLineage, string> =
 export const DAEMON_TO_COCKPIT_LINEAGE: Record<string, ReviewerLineage> = {
   anthropic: "claude",
   openai: "codex",
-  google: "gemini",
+  google: "antigravity",
   opencode: "opencode",
   moonshot: "kimi",
   xai: "opencode",

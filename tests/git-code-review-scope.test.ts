@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { describe, expect, it } from 'vitest';
-import { resolveCodeReviewScope } from '../src/lib/git-code-review-scope';
+import { resolveCodeReviewScope, getCodeReviewContextData } from '../src/lib/git-code-review-scope';
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
@@ -86,5 +86,43 @@ describe('resolveCodeReviewScope', () => {
 
     expect(scope.mode).toBe('branch');
     expect(scope.baseRef).toBe('origin/main');
+  });
+});
+
+describe('getCodeReviewContextData', () => {
+  it('returns repository info and statistics for worktree changes', async () => {
+    const repo = makeRepo();
+    fs.writeFileSync(path.join(repo, 'app.ts'), 'export const value = 2;\n// extra line\n');
+    fs.writeFileSync(path.join(repo, 'new-file.ts'), 'hello\nworld\n');
+
+    const data = await getCodeReviewContextData(repo);
+    expect(data.error).toBeUndefined();
+    expect(data.mode).toBe('worktree');
+    expect(data.filesCount).toBe(2);
+    expect(data.insertions).toBe(4);
+    expect(data.deletions).toBe(1);
+  });
+
+  it('returns repository info and statistics for branch changes', async () => {
+    const repo = makeRepo();
+    git(repo, ['checkout', '-b', 'feature/review-me']);
+    fs.writeFileSync(path.join(repo, 'app.ts'), 'export const value = 3;\n// line 2\n// line 3\n');
+    git(repo, ['add', 'app.ts']);
+    git(repo, ['commit', '-m', 'change app']);
+
+    const data = await getCodeReviewContextData(repo);
+    expect(data.error).toBeUndefined();
+    expect(data.mode).toBe('branch');
+    expect(data.baseRef).toBe('main');
+    expect(data.headRef).toBe('feature/review-me');
+    expect(data.filesCount).toBe(1);
+    expect(data.insertions).toBeGreaterThanOrEqual(2);
+  });
+
+  it('returns error when not a git repository', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chorus-not-git-'));
+    const data = await getCodeReviewContextData(dir);
+    expect(data.error).toBeDefined();
+    expect(data.error?.message).toContain('not a git repository');
   });
 });

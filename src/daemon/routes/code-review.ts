@@ -1,15 +1,19 @@
 import type { FastifyInstance } from 'fastify';
+import fs from 'fs';
+import path from 'path';
 import yaml from 'yaml';
-import { chats, phaseEvents, templates } from '../../lib/db/index.js';
+import { chats, phaseEvents, templates, voices } from '../../lib/db/index.js';
 import {
   CodeReviewScopeError,
   resolveCodeReviewScope,
+  getCodeReviewContextData,
 } from '../../lib/git-code-review-scope.js';
 import { chatLogger, logger } from '../../lib/logger.js';
 import {
   isReviewOnlyPhase,
   TemplateSchema,
 } from '../../lib/template-schema.js';
+import { adaptTemplate } from '../template-adapter.js';
 import {
   errorResponse,
   successResponse,
@@ -31,6 +35,29 @@ function statusForScopeError(code: CodeReviewScopeError['code']): number {
   return code === 'git_failed' ? 500 : 400;
 }
 
+async function getCurrentCodeReviewTemplate() {
+  const templateRow = await templates.getById(TEMPLATE_ID);
+  if (!templateRow) return null;
+  if (templateRow.source !== 'builtin') return templateRow;
+
+  const currentVoices = await voices.list();
+  if (!currentVoices.some((v) => v.enabled)) return templateRow;
+
+  const templatePath = path.join(process.cwd(), 'templates', `${TEMPLATE_ID}.yaml`);
+  if (!fs.existsSync(templatePath)) return templateRow;
+
+  const canonicalYaml = fs.readFileSync(templatePath, 'utf-8');
+  const adapted = adaptTemplate(canonicalYaml, currentVoices);
+  if (
+    templateRow.yaml === adapted.yaml &&
+    templateRow.is_complete === adapted.isComplete
+  ) {
+    return templateRow;
+  }
+
+  return templates.create(TEMPLATE_ID, adapted.yaml, 'builtin', adapted.isComplete);
+}
+
 export function registerCodeReviewRoutes(
   fastify: FastifyInstance,
   args: RegisterCodeReviewRoutesArgs = {},
@@ -42,7 +69,8 @@ export function registerCodeReviewRoutes(
 
   fastify.get<{ Reply: ApiResponse<object> }>('/code-review/context', async () => {
     const repoPath = process.env.CHORUS_REPO_PATH || process.cwd();
-    return successResponse({ repoPath });
+    const data = await getCodeReviewContextData(repoPath);
+    return successResponse(data);
   });
 
   fastify.post<{
@@ -53,7 +81,7 @@ export function registerCodeReviewRoutes(
       request.body?.repoPath || process.env.CHORUS_REPO_PATH || process.cwd();
 
     try {
-      const templateRow = await templates.getById(TEMPLATE_ID);
+      const templateRow = await getCurrentCodeReviewTemplate();
       if (!templateRow) {
         reply.code(500);
         return errorResponse(

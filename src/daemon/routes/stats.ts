@@ -5,7 +5,7 @@
  *   - chats DB row counts (total, by status, today, week, top template,
  *     avg duration). Cheap — single sqlite roundtrip.
  *   - per-participant `_stats.json` files on disk under
- *     `~/.chorus/chats/<id>/round-<N>/<role-dir>/`. Walked at request
+ *     `~/.code-council/chats/<id>/round-<N>/<role-dir>/`. Walked at request
  *     time; for ~hundreds of chats this is sub-second. The on-disk file
  *     is the source of truth (per PR #16) — successful reviewer runs
  *     never write to phase_events, so DB-only would miss most cost.
@@ -206,7 +206,7 @@ export function registerStatsRoutes(fastify: FastifyInstance): void {
 
       // Walk every chat's on-disk stats to get cost + tokens. Bounded
       // I/O — runs ~O(chats) and each chat has ≤6 sidecar files.
-      const chatsRoot = path.join(os.homedir(), '.chorus', 'chats');
+      const chatsRoot = path.join(os.homedir(), '.code-council', 'chats');
       let totalCostUsd = 0;
       let costTodayUsd = 0;
       let actualCostUsd = 0;

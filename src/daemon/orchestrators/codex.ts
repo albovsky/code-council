@@ -21,7 +21,7 @@ function getCodexStatus(): OrchestratorStatus {
     connected,
     approvedTools: connected ? 1 : 0,
     totalTools: 1,
-    note: "Registers Chorus as an MCP server in ~/.codex/config.toml. Note: `codex exec` (headless mode) blocks MCP tool calls under any `approval_policy` setting except when run with `--dangerously-bypass-approvals-and-sandbox`. Interactive `codex` (TUI) prompts the user normally. See https://github.com/chorus-codes/chorus/issues/16.",
+    note: "Registers Code Council as an MCP server in ~/.codex/config.toml. Note: `codex exec` (headless mode) blocks MCP tool calls under any `approval_policy` setting except when run with `--dangerously-bypass-approvals-and-sandbox`. Interactive `codex` (TUI) prompts the user normally. See https://github.com/code-council/council/issues/16.",
     supported: detected,
     firstCallBehavior: 'inherits_global',
   };
@@ -30,13 +30,13 @@ function getCodexStatus(): OrchestratorStatus {
 function hasCodexMcpServer(expectedBinPath?: string): boolean {
   if (!fs.existsSync(CODEX_CONFIG_PATH)) return false;
   const body = fs.readFileSync(CODEX_CONFIG_PATH, 'utf-8');
-  if (!/^\[mcp_servers\.chorus\]/m.test(body)) return false;
+  if (!/^\[mcp_servers\.council\]/m.test(body)) return false;
   if (!expectedBinPath) return true;
   return body.includes(expectedBinPath);
 }
 
 /**
- * Register Chorus as an MCP server in Codex via `codex mcp add`. We shell
+ * Register Code Council as an MCP server in Codex via `codex mcp add`. We shell
  * out rather than write TOML by hand so we always emit the exact format
  * Codex expects — and stay forward-compatible if it changes.
  *
@@ -48,7 +48,7 @@ async function connectCodex(
   if (hasCodexMcpServer(opts.binPath)) {
     return {
       added: [],
-      alreadyPresent: ['mcp_servers.chorus'],
+      alreadyPresent: ['mcp_servers.council'],
       configPath: CODEX_CONFIG_PATH,
       slashCommand: 'skipped',
       slashCommandPath: '',
@@ -58,7 +58,7 @@ async function connectCodex(
   // Stale entry with a different binPath — remove it before re-add.
   if (hasCodexMcpServer()) {
     try {
-      await execFileAsync('codex', ['mcp', 'remove', 'chorus'], {
+      await execFileAsync('codex', ['mcp', 'remove', 'council'], {
         timeout: 30_000,
         shell: process.platform === 'win32',
       });
@@ -74,9 +74,9 @@ async function connectCodex(
       [
         'mcp',
         'add',
-        'chorus',
+        'council',
         '--env',
-        `CHORUS_DAEMON_URL=${daemonUrl}`,
+        `COUNCIL_DAEMON_URL=${daemonUrl}`,
         '--',
         'node',
         opts.binPath,
@@ -93,7 +93,7 @@ async function connectCodex(
   }
 
   return {
-    added: ['mcp_servers.chorus'],
+    added: ['mcp_servers.council'],
     alreadyPresent: [],
     configPath: CODEX_CONFIG_PATH,
     slashCommand: 'skipped',

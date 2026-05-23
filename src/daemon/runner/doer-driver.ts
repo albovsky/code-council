@@ -268,7 +268,7 @@ export async function runDoer(
   // Acquire session — fresh per chat by default; reuses across rounds when
   // template policy says so (shareSessionAcrossRounds, default true).
   const perms = await getPermissions();
-  const sessionName = sanitizeName(`chorus-${chatId}-${phase.id}-doer-${agentName}`);
+  const sessionName = sanitizeName(`council-${chatId}-${phase.id}-doer-${agentName}`);
   const session = await tmuxMgr.acquire({
     chatId,
     phaseId: phase.id,
@@ -318,10 +318,21 @@ export async function runDoer(
   const pollHandle = setInterval(() => {
     try {
       const pane = tmuxMgr.capturePane(session.name);
+      onEvent({
+        chatId,
+        type: 'phase_progress',
+        payload: {
+          phaseId: phase.id,
+          round,
+          role: 'doer',
+          agent: agentName,
+          output: pane,
+        },
+        ts: Date.now(),
+      });
       const err = errorDetector.inspect(session.name, phase.doer.lineage, pane);
       if (err) {
-        const recoveryKeys =
-          err.kind === 'permission_prompt' ? shim.recoverKeys?.permission_prompt : undefined;
+        const recoveryKeys = shim.recoverKeys?.[err.kind as keyof typeof shim.recoverKeys];
         if (recoveryKeys && recoveryKeys.length > 0) {
           // Layer 2 recovery: navigate the dialog, emit a warning (not error),
           // skip health recording — we recovered, no degradation.

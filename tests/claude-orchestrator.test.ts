@@ -29,7 +29,7 @@ let realHome: string | undefined;
 
 beforeEach(() => {
   realHome = process.env.HOME;
-  fakeHome = path.join(os.tmpdir(), `chorus-claude-orch-${randomUUID()}`);
+  fakeHome = path.join(os.tmpdir(), `council-claude-orch-${randomUUID()}`);
   fs.mkdirSync(fakeHome, { recursive: true });
   process.env.HOME = fakeHome;
   vi.mocked(execFile).mockClear();
@@ -62,7 +62,7 @@ function execFileCalls(): { cmd: string; args: readonly string[] }[] {
 describe('registerClaudeMcpServer', () => {
   it('shells out to `claude mcp add --scope user` on a fresh install', async () => {
     const result = await registerClaudeMcpServer({
-      binPath: '/usr/local/lib/node_modules/chorus-codes/bin/chorus.mjs',
+      binPath: '/usr/local/lib/node_modules/code-council/bin/council.mjs',
       daemonUrl: 'http://127.0.0.1:7707',
     });
 
@@ -74,46 +74,46 @@ describe('registerClaudeMcpServer', () => {
     expect(calls[0].args).toEqual([
       'mcp',
       'add',
-      'chorus',
+      'council',
       '--scope',
       'user',
       '--env',
-      'CHORUS_DAEMON_URL=http://127.0.0.1:7707',
+      'COUNCIL_DAEMON_URL=http://127.0.0.1:7707',
       '--',
       'node',
-      '/usr/local/lib/node_modules/chorus-codes/bin/chorus.mjs',
+      '/usr/local/lib/node_modules/code-council/bin/council.mjs',
       'mcp',
     ]);
   });
 
-  it('never writes chorus under projects.<dir>.mcpServers', async () => {
-    await registerClaudeMcpServer({ binPath: '/somewhere/chorus.mjs' });
+  it('never writes council under projects.<dir>.mcpServers', async () => {
+    await registerClaudeMcpServer({ binPath: '/somewhere/council.mjs' });
 
     const claudeJsonPath = path.join(fakeHome, '.claude.json');
     if (fs.existsSync(claudeJsonPath)) {
       const parsed = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8')) as {
         projects?: Record<string, { mcpServers?: Record<string, unknown> }>;
       };
-      const anyProjectHasChorus = Object.values(parsed.projects ?? {}).some(
-        (p) => p.mcpServers && 'chorus' in p.mcpServers,
+      const anyProjectHasCouncil = Object.values(parsed.projects ?? {}).some(
+        (p) => p.mcpServers && 'council' in p.mcpServers,
       );
-      expect(anyProjectHasChorus).toBe(false);
+      expect(anyProjectHasCouncil).toBe(false);
     }
   });
 
   it('is idempotent when the user-scope entry already points at the same binPath', async () => {
     writeClaudeConfig({
       mcpServers: {
-        chorus: {
+        council: {
           command: 'node',
-          args: ['/path/to/chorus.mjs', 'mcp'],
-          env: { CHORUS_DAEMON_URL: 'http://127.0.0.1:7707' },
+          args: ['/path/to/council.mjs', 'mcp'],
+          env: { COUNCIL_DAEMON_URL: 'http://127.0.0.1:7707' },
         },
       },
     });
 
     const result = await registerClaudeMcpServer({
-      binPath: '/path/to/chorus.mjs',
+      binPath: '/path/to/council.mjs',
     });
 
     expect(result).toEqual({ added: false });
@@ -123,15 +123,15 @@ describe('registerClaudeMcpServer', () => {
   it('removes a stale entry (different binPath) before re-adding', async () => {
     writeClaudeConfig({
       mcpServers: {
-        chorus: {
+        council: {
           command: 'node',
-          args: ['/old/path/to/chorus.mjs', 'mcp'],
+          args: ['/old/path/to/council.mjs', 'mcp'],
         },
       },
     });
 
     const result = await registerClaudeMcpServer({
-      binPath: '/new/path/to/chorus.mjs',
+      binPath: '/new/path/to/council.mjs',
     });
 
     expect(result).toEqual({ added: true });
@@ -141,14 +141,14 @@ describe('registerClaudeMcpServer', () => {
     expect(calls[0].args.slice(0, 5)).toEqual([
       'mcp',
       'remove',
-      'chorus',
+      'council',
       '--scope',
       'user',
     ]);
     expect(calls[1].args.slice(0, 5)).toEqual([
       'mcp',
       'add',
-      'chorus',
+      'council',
       '--scope',
       'user',
     ]);
@@ -159,9 +159,9 @@ describe('registerClaudeMcpServer', () => {
       projects: {
         [fakeHome]: {
           mcpServers: {
-            chorus: {
+            council: {
               command: 'node',
-              args: ['/stale/legacy/chorus.mjs', 'mcp'],
+              args: ['/stale/legacy/council.mjs', 'mcp'],
             },
           },
         },
@@ -169,7 +169,7 @@ describe('registerClaudeMcpServer', () => {
     });
 
     const result = await registerClaudeMcpServer({
-      binPath: '/new/chorus.mjs',
+      binPath: '/new/council.mjs',
     });
 
     expect(result).toEqual({ added: true });
@@ -191,7 +191,7 @@ describe('registerClaudeMcpServer', () => {
     );
 
     await expect(
-      registerClaudeMcpServer({ binPath: '/x/chorus.mjs' }),
+      registerClaudeMcpServer({ binPath: '/x/council.mjs' }),
     ).rejects.toThrow(/claude mcp add failed/);
   });
 });

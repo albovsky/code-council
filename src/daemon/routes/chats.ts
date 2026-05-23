@@ -606,7 +606,7 @@ export function registerChatRoutes(
 
       // 4. Nuke chat artifacts directory.
       const osModule = await import('os');
-      const chatDir = path.join(osModule.homedir(), '.chorus', 'chats', ulid);
+      const chatDir = path.join(osModule.homedir(), '.code-council', 'chats', ulid);
       if (fs.existsSync(chatDir)) {
         try {
           fs.rmSync(chatDir, { recursive: true, force: true });

@@ -4,12 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import { registerAgyMcpPlugin } from '@/daemon/orchestrators/gemini';
+import { registerAgyMcpPlugin } from '@/daemon/orchestrators/agy';
 
 let fakeHome: string;
 
 beforeEach(() => {
-  fakeHome = path.join(os.tmpdir(), `chorus-agy-orch-${randomUUID()}`);
+  fakeHome = path.join(os.tmpdir(), `council-agy-orch-${randomUUID()}`);
   fs.mkdirSync(fakeHome, { recursive: true });
 });
 
@@ -26,45 +26,45 @@ function readJson<T>(filePath: string): T {
 }
 
 describe('registerAgyMcpPlugin', () => {
-  it('writes an Antigravity plugin with chorus MCP config', () => {
+  it('writes an Antigravity plugin with council MCP config', () => {
     const result = registerAgyMcpPlugin({
       homeDir: fakeHome,
-      binPath: '/opt/homebrew/lib/node_modules/chorus-codes/bin/chorus.mjs',
+      binPath: '/opt/homebrew/lib/node_modules/code-council/bin/council.mjs',
       daemonUrl: 'http://127.0.0.1:7707',
     });
 
-    const pluginDir = path.join(fakeHome, '.gemini', 'antigravity-cli', 'plugins', 'chorus');
-    expect(result.added).toEqual(['plugins/chorus/mcp_config.json']);
+    const pluginDir = path.join(fakeHome, '.gemini', 'antigravity', 'plugins', 'council');
+    expect(result.added).toEqual(['plugins/council/mcp_config.json']);
     expect(result.configPath).toBe(path.join(pluginDir, 'mcp_config.json'));
 
     expect(readJson(path.join(pluginDir, 'plugin.json'))).toEqual({
-      name: 'chorus',
+      name: 'council',
     });
     expect(readJson(path.join(pluginDir, 'mcp_config.json'))).toEqual({
       mcpServers: {
-        chorus: {
+        council: {
           command: 'node',
-          args: ['/opt/homebrew/lib/node_modules/chorus-codes/bin/chorus.mjs', 'mcp'],
+          args: ['/opt/homebrew/lib/node_modules/code-council/bin/council.mjs', 'mcp'],
           env: {
-            CHORUS_DAEMON_URL: 'http://127.0.0.1:7707',
+            COUNCIL_DAEMON_URL: 'http://127.0.0.1:7707',
           },
         },
       },
     });
   });
 
-  it('is idempotent when the plugin already points at the same chorus binary', () => {
+  it('is idempotent when the plugin already points at the same council binary', () => {
     const first = registerAgyMcpPlugin({
       homeDir: fakeHome,
-      binPath: '/path/to/chorus.mjs',
+      binPath: '/path/to/council.mjs',
     });
     const second = registerAgyMcpPlugin({
       homeDir: fakeHome,
-      binPath: '/path/to/chorus.mjs',
+      binPath: '/path/to/council.mjs',
     });
 
-    expect(first.added).toEqual(['plugins/chorus/mcp_config.json']);
+    expect(first.added).toEqual(['plugins/council/mcp_config.json']);
     expect(second.added).toEqual([]);
-    expect(second.alreadyPresent).toEqual(['plugins/chorus/mcp_config.json']);
+    expect(second.alreadyPresent).toEqual(['plugins/council/mcp_config.json']);
   });
 });

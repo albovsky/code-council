@@ -49,7 +49,7 @@ export function PromptCard({
           placeholder={
             reviewOnly && artifactSpec
               ? artifactSpec.hint
-              : "Describe what you want chorus to weigh in on. Paste code, errors, design docs — anything the reviewers should see."
+              : "Describe what you want Code Council to weigh in on. Paste code, errors, design docs — anything the reviewers should see."
           }
           className={`block w-full resize-none border-0 bg-transparent px-5 py-4 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none ${
             reviewOnly ? "font-mono text-[12px] leading-relaxed" : ""

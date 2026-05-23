@@ -9,16 +9,15 @@ half the codebase.
 ```bash
 git clone https://github.com/chorus-codes/chorus.git
 cd chorus
-pnpm install
-pnpm dev:daemon       # daemon on :7707 (tsx watch — hot reload on edit)
-pnpm dev              # cockpit on :5050 (Next.js)
-pnpm test             # full vitest suite (~15s)
-pnpm typecheck        # tsc --noEmit
-pnpm lint             # eslint
+npm install
+npm run dev:daemon       # daemon on :7707 (tsx watch — hot reload on edit)
+npm run dev              # cockpit on :5050 (Next.js)
+npm run test             # full vitest suite (~15s)
+npm run typecheck        # tsc --noEmit
+npm run lint             # eslint
 ```
 
-Node ≥ 20 required (Node 22 is the daily-driver target). We pin pnpm
-to v9 in CI; please use the same locally.
+Node ≥ 20 required (Node 22 is the daily-driver target). We use npm for package management.
 
 ## Where to start
 
@@ -42,7 +41,7 @@ to v9 in CI; please use the same locally.
    a feature doesn't need a refactor for "while we're in there."
 4. **Conventional commits.** `feat:`, `fix:`, `refactor:`, `docs:`,
    `chore:`, `test:`. The PR title becomes the squash-merge subject.
-5. **Don't break `pnpm test`.** CI gates on the full suite green.
+5. **Don't break tests.** CI gates on the full suite green.
 6. **Run Chorus on your PR.** We dogfood — `chorus init` + the
    `code-review` template will fan-out your diff to ≥3 lineages
    before the human review starts.

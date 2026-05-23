@@ -67,7 +67,7 @@ const KNOWN_LINEAGES: ReadonlySet<string> = new Set([
 const UI_LINEAGE_MAP: Record<string, Template["phases"][number]["doer"]["lineage"]> = {
   anthropic: "claude",
   openai: "codex",
-  google: "gemini",
+  google: "antigravity",
   opencode: "opencode",
   moonshot: "kimi",
   any: "claude",

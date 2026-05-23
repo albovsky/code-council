@@ -20,14 +20,14 @@ import {
   isPortInUse,
   killAndVerify,
   killWithSudoAndVerify,
-  pidLooksLikeChorus,
+  pidLooksLikeCouncil,
 } from '../port-utils.js';
 import { detectRuntimeEnv, shouldAutoOpenBrowser } from '../runtime-env.js';
 import { pkg } from '../shared.js';
 import { c, header, sym, tip } from '../ui.js';
 import {
   fetchLatestVersion,
-  resolveChorusBinaryPath,
+  resolveCouncilBinaryPath,
   versionGreater,
 } from './update.js';
 
@@ -41,11 +41,11 @@ export function registerStartCommand(program: Command): void {
     .command('start')
     .option('--ui', 'Open browser UI after starting daemon')
     .option('--daemon-only', 'Skip cockpit (Next.js UI). Used by MCP auto-start.')
-    .description('Start the Chorus daemon (PM2-style fork)')
+    .description('Start the Code Council daemon (PM2-style fork)')
     .action(
       async (options: { ui?: boolean; daemonOnly?: boolean }) => {
         try {
-          const chorusDir = path.join(os.homedir(), '.chorus');
+          const chorusDir = path.join(os.homedir(), '.code-council');
 
           // First-pass already-running check. If a daemon is up AND
           // (we don't need the cockpit OR the cockpit is also up),
@@ -91,12 +91,12 @@ export function registerStartCommand(program: Command): void {
               clearStartLock(chorusDir);
               if (!acquireStartLock(chorusDir)) {
                 throw new Error(
-                  'Could not reclaim stale start lock. Try `chorus stop` then retry.',
+                  'Could not reclaim stale start lock. Try `council stop` then retry.',
                 );
               }
             } else {
               throw new Error(
-                'Another `chorus start` is still running. If this persists, run `chorus stop` then retry.',
+                'Another `council start` is still running. If this persists, run `council stop` then retry.',
               );
             }
           }
@@ -207,12 +207,12 @@ async function captureAndPersistPath(): Promise<void> {
 }
 
 type AlreadyRunningResult =
-  | 'satisfied' // healthy chorus + (no UI requested OR cockpit also up)
+  | 'satisfied' // healthy Code Council + (no UI requested OR cockpit also up)
   | 'cockpit_missing_ui_requested' // daemon up, cockpit NOT up, --ui flag set → upgrade path
   | 'not_running'; // no live daemon
 
 /**
- * Detect a healthy chorus already running on this host before we try
+ * Detect a healthy Code Council already running on this host before we try
  * to spawn another one. Returns:
  *   - 'satisfied': nothing to do (or just printed status + opened
  *     browser). Caller should return immediately.
@@ -247,7 +247,7 @@ async function alreadyRunningHealthy(
 
   console.log('');
   console.log(
-    header(sym.ok, 'Chorus is already running', `version ${live.version || pkg.version}`),
+    header(sym.ok, 'Code Council is already running', `version ${live.version || pkg.version}`),
   );
   if (cockpitRunning) {
     const cockpitUrl = `http://127.0.0.1:${live.cockpitPort}`;
@@ -265,7 +265,7 @@ async function alreadyRunningHealthy(
   } else {
     console.log('');
     console.log(
-      c.dim('   Daemon-only mode. Run `chorus start --ui` to bring up the cockpit.'),
+      c.dim('   Daemon-only mode. Run `council start --ui` to bring up the cockpit.'),
     );
     console.log('');
   }
@@ -284,7 +284,7 @@ async function spawnCockpitForExistingDaemon(
   if (!live) {
     // Edge case: daemon died between the alreadyRunningHealthy check
     // and this call. Caller's own logic will pick it up on retry.
-    throw new Error('Daemon disappeared while attaching cockpit. Retry `chorus start`.');
+    throw new Error('Daemon disappeared while attaching cockpit. Retry `council start`.');
   }
   const packageRoot = path.resolve(__dirname, '..', '..', '..');
   const nextEntry = path.resolve(
@@ -300,7 +300,7 @@ async function spawnCockpitForExistingDaemon(
     !fs.existsSync(path.join(packageRoot, '.next'))
   ) {
     console.log('');
-    console.log(c.red('  ✗ Cockpit UI not found. Try `npm install -g chorus-codes` to repair.'));
+    console.log(c.red('  ✗ Cockpit UI not found. Try `npm install -g code-council` to repair.'));
     console.log('');
     return;
   }
@@ -326,7 +326,7 @@ async function spawnCockpitForExistingDaemon(
       stdio: ['ignore', webLogFd, webLogFd],
       env: {
         ...process.env,
-        CHORUS_DAEMON_URL: `http://127.0.0.1:${live.daemonPort}`,
+        COUNCIL_DAEMON_URL: `http://127.0.0.1:${live.daemonPort}`,
         PORT: String(live.cockpitPort),
       },
     },
@@ -367,15 +367,15 @@ async function spawnCockpitForExistingDaemon(
 }
 
 /**
- * Pick a free (daemon, cockpit) port pair. Honours CHORUS_DAEMON_PORT
- * and CHORUS_COCKPIT_PORT env overrides as the *preferred* starting
+ * Pick a free (daemon, cockpit) port pair. Honours COUNCIL_DAEMON_PORT
+ * and COUNCIL_COCKPIT_PORT env overrides as the *preferred* starting
  * point — the walk still fires off them if taken. If the walk
  * exhausts, exit with the same actionable diagnostic the v0.7 reaper
  * used.
  */
 async function pickPortPair(): Promise<PortPair> {
-  const preferredDaemon = parseEnvPort('CHORUS_DAEMON_PORT', DEFAULT_DAEMON_PORT);
-  const preferredCockpit = parseEnvPort('CHORUS_COCKPIT_PORT', DEFAULT_COCKPIT_PORT);
+  const preferredDaemon = parseEnvPort('COUNCIL_DAEMON_PORT', DEFAULT_DAEMON_PORT);
+  const preferredCockpit = parseEnvPort('COUNCIL_COCKPIT_PORT', DEFAULT_COCKPIT_PORT);
 
   const daemonPort = await pickFreePort(
     preferredDaemon,
@@ -421,7 +421,7 @@ function failPortWalk(label: string, start: number, range: number): never {
   console.log('');
   console.log(c.dim('  Or pick a different starting port:'));
   console.log(
-    `    CHORUS_${label.toUpperCase()}_PORT=<port> chorus start`,
+    `    COUNCIL_${label.toUpperCase()}_PORT=<port> council start`,
   );
   console.log('');
   process.exit(1);
@@ -435,7 +435,7 @@ function failPortWalk(label: string, start: number, range: number): never {
  * cleanup, not a prerequisite.
  *
  * Foreign-process guard: only reap PIDs whose cmdline looks like a
- * chorus daemon/cockpit. If something else is bound, refuse to kill
+ * council daemon/cockpit. If something else is bound, refuse to kill
  * it and ask the user to free the port — same behaviour as v0.7.
  */
 async function reapOrphans(): Promise<void> {
@@ -465,7 +465,7 @@ async function reapOrphans(): Promise<void> {
     }
 
     for (const pid of pids) {
-      const { match, cmdline } = pidLooksLikeChorus(pid);
+      const { match, cmdline } = pidLooksLikeCouncil(pid);
       if (!match) {
         // Foreign process on the default port — let the picker walk
         // past it. Don't fail.
@@ -501,7 +501,7 @@ function warnIfTmuxMissing(): void {
     console.log('');
     console.log(
       c.dim(
-        `  ${sym.info} tmux not detected. Chorus runs headless by default — this is fine.`,
+        `  ${sym.info} tmux not detected. Code Council runs headless by default — this is fine.`,
       ),
     );
     console.log(c.dim('    Optional backup mode: install tmux, then open'));
@@ -546,8 +546,8 @@ async function spawnDaemonAndCockpit(
     stdio: ['ignore', daemonLogFd, daemonLogFd],
     env: {
       ...process.env,
-      CHORUS_DAEMON_PORT: String(ports.daemonPort),
-      CHORUS_COCKPIT_PORT: String(ports.cockpitPort),
+      COUNCIL_DAEMON_PORT: String(ports.daemonPort),
+      COUNCIL_COCKPIT_PORT: String(ports.cockpitPort),
     },
   });
 
@@ -598,7 +598,7 @@ async function spawnDaemonAndCockpit(
           // Tell the cockpit's server-side proxy where the daemon is.
           // Without this the proxy would fall through to the legacy
           // 7707 default and miss our shifted port.
-          CHORUS_DAEMON_URL: `http://127.0.0.1:${ports.daemonPort}`,
+          COUNCIL_DAEMON_URL: `http://127.0.0.1:${ports.daemonPort}`,
           PORT: String(ports.cockpitPort),
         },
       },
@@ -618,7 +618,7 @@ async function spawnDaemonAndCockpit(
       console.log(
         c.dim('    The published install should ship a built UI. Try reinstalling:'),
       );
-      console.log(`    ${c.bold('npm install -g chorus-codes')}`);
+      console.log(`    ${c.bold('npm install -g code-council')}`);
     }
     console.log(
       c.dim(
@@ -640,7 +640,7 @@ async function spawnDaemonAndCockpit(
   console.log(
     header(
       sym.ok,
-      `Chorus started v${pkg.version}`,
+      `Code Council started v${pkg.version}`,
       `daemon PID ${child.pid}`,
     ),
   );
@@ -648,7 +648,7 @@ async function spawnDaemonAndCockpit(
   // confusion (sudo npm install vs nvm-managed npm). Quiet by default
   // — only printed when running from a global install location, since
   // dev checkouts already know what binary they're running.
-  const binPath = resolveChorusBinaryPath();
+  const binPath = resolveCouncilBinaryPath();
   if (binPath && binPath.includes('node_modules')) {
     console.log(`   ${c.dim('from')}  ${c.dim(binPath)}`);
   }
@@ -679,7 +679,7 @@ async function checkForUpdate(): Promise<void> {
     if (!latest) return;
     if (!versionGreater(latest, pkg.version)) return;
     console.log(
-      `   ${c.dim('•')} ${c.cyan(`chorus ${latest}`)} ${c.dim('is available — run')} ${c.cyan('chorus update')}`,
+      `   ${c.dim('•')} ${c.cyan(`council ${latest}`)} ${c.dim('is available — run')} ${c.cyan('council update')}`,
     );
     console.log('');
   } catch {
@@ -694,7 +694,7 @@ async function checkForUpdate(): Promise<void> {
  * the file is in place before any consumer reads it.
  *
  * If the daemon never comes up, write the file anyway with the recorded
- * ports — better stale data than no data, since the next `chorus start`
+ * ports — better stale data than no data, since the next `council start`
  * will detect the dead daemon via PID liveness and overwrite.
  */
 async function waitForDaemonListenerThenRecord(

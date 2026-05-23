@@ -25,8 +25,8 @@ function agyPaths(homeDir = os.homedir()): {
   pluginJsonPath: string;
   mcpConfigPath: string;
 } {
-  const root = path.join(homeDir, '.gemini', 'antigravity-cli');
-  const pluginDir = path.join(root, 'plugins', 'chorus');
+  const root = path.join(homeDir, '.gemini', 'antigravity');
+  const pluginDir = path.join(root, 'plugins', 'council');
   return {
     root,
     pluginDir,
@@ -41,7 +41,7 @@ function normalizeBinaryName(command: string | undefined): string {
 }
 
 function detectedGoogleCli(): { found: boolean; path?: string } | undefined {
-  return detectAllClis().find((cli) => cli.id === 'gemini-cli');
+  return detectAllClis().find((cli) => cli.id === 'antigravity-cli');
 }
 
 function shouldUseAgy(): boolean {
@@ -52,16 +52,16 @@ function shouldUseAgy(): boolean {
   );
 }
 
-function getGeminiStatus(): OrchestratorStatus {
+function getAgyStatus(): OrchestratorStatus {
   if (shouldUseAgy()) {
     const connected = hasAgyMcpServer();
     return {
-      name: 'gemini',
+      name: 'antigravity',
       label: 'Antigravity CLI',
       connected,
       approvedTools: connected ? 1 : 0,
       totalTools: 1,
-      note: 'Registers Chorus as an Antigravity plugin under ~/.gemini/antigravity-cli/plugins/chorus/mcp_config.json.',
+      note: 'Registers Code Council as an Antigravity plugin under ~/.gemini/antigravity/plugins/council/mcp_config.json.',
       supported: true,
       firstCallBehavior: 'prompts_once',
     };
@@ -70,12 +70,12 @@ function getGeminiStatus(): OrchestratorStatus {
   const detected = fs.existsSync(LEGACY_GEMINI_SETTINGS_PATH);
   const connected = detected && hasGeminiMcpServer();
   return {
-    name: 'gemini',
+    name: 'antigravity',
     label: 'Gemini CLI (legacy)',
     connected,
     approvedTools: connected ? 1 : 0,
     totalTools: 1,
-    note: "Registers Chorus as a user-scope MCP server in ~/.gemini/settings.json with --trust set so calls don't prompt.",
+    note: "Registers Code Council as a user-scope MCP server in ~/.gemini/settings.json with --trust set so calls don't prompt.",
     supported: detected,
     firstCallBehavior: 'auto',
   };
@@ -88,10 +88,10 @@ function hasGeminiMcpServer(expectedBinPath?: string): boolean {
       fs.readFileSync(LEGACY_GEMINI_SETTINGS_PATH, 'utf-8'),
     ) as Record<string, unknown>;
     const servers = body.mcpServers as Record<string, unknown> | undefined;
-    const chorus = servers?.chorus as { args?: string[] } | undefined;
-    if (!chorus) return false;
+    const council = servers?.council as { args?: string[] } | undefined;
+    if (!council) return false;
     if (!expectedBinPath) return true;
-    return Array.isArray(chorus.args) && chorus.args.includes(expectedBinPath);
+    return Array.isArray(council.args) && council.args.includes(expectedBinPath);
   } catch {
     return false;
   }
@@ -107,7 +107,7 @@ export function registerAgyMcpPlugin(opts: {
   homeDir?: string;
 }): ConnectResult {
   const paths = agyPaths(opts.homeDir);
-  const configRef = 'plugins/chorus/mcp_config.json';
+  const configRef = 'plugins/council/mcp_config.json';
   if (hasAgyMcpServer(opts.binPath, opts.homeDir)) {
     return {
       added: [],
@@ -129,7 +129,7 @@ export function registerAgyMcpPlugin(opts: {
       pluginJson = {};
     }
   }
-  const nextPluginJson = { ...pluginJson, name: 'chorus' };
+  const nextPluginJson = { ...pluginJson, name: 'council' };
   fs.writeFileSync(
     paths.pluginJsonPath,
     JSON.stringify(nextPluginJson, null, 2) + '\n',
@@ -151,7 +151,7 @@ export function registerAgyMcpPlugin(opts: {
 }
 
 /**
- * Register Chorus with Gemini CLI. `gemini mcp add` writes to
+ * Register Code Council with Gemini CLI. `gemini mcp add` writes to
  * ~/.gemini/settings.json (or per-project) for us — we use --scope user
  * to make it global. Idempotent: skips when already present.
  */
@@ -161,7 +161,7 @@ async function connectGemini(
   if (hasGeminiMcpServer(opts.binPath)) {
     return {
       added: [],
-      alreadyPresent: ['mcpServers.chorus'],
+      alreadyPresent: ['mcpServers.council'],
       configPath: LEGACY_GEMINI_SETTINGS_PATH,
       slashCommand: 'skipped',
       slashCommandPath: '',
@@ -173,7 +173,7 @@ async function connectGemini(
     try {
       await execFileAsync(
         'gemini',
-        ['mcp', 'remove', 'chorus', '-s', 'user'],
+        ['mcp', 'remove', 'council', '-s', 'user'],
         {
         timeout: 30_000,
         shell: process.platform === 'win32',
@@ -191,12 +191,12 @@ async function connectGemini(
       [
         'mcp',
         'add',
-        'chorus',
+        'council',
         'node',
         opts.binPath,
         'mcp',
         '-e',
-        `CHORUS_DAEMON_URL=${daemonUrl}`,
+        `COUNCIL_DAEMON_URL=${daemonUrl}`,
         '-s',
         'user',
         '-t',
@@ -214,7 +214,7 @@ async function connectGemini(
   }
 
   return {
-    added: ['mcpServers.chorus'],
+    added: ['mcpServers.council'],
     alreadyPresent: [],
     configPath: LEGACY_GEMINI_SETTINGS_PATH,
     slashCommand: 'skipped',
@@ -222,10 +222,10 @@ async function connectGemini(
   };
 }
 
-export const geminiOrchestrator: OrchestratorDefinition = {
-  name: 'gemini',
+export const agyOrchestrator: OrchestratorDefinition = {
+  name: 'antigravity',
   label: 'Antigravity CLI',
-  getStatus: getGeminiStatus,
+  getStatus: getAgyStatus,
   detect: () => shouldUseAgy() || fs.existsSync(LEGACY_GEMINI_SETTINGS_PATH),
   connect: async (opts: ConnectOpts) => {
     if (shouldUseAgy()) {

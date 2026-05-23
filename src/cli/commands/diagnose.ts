@@ -1,7 +1,7 @@
 /**
- * `chorus diagnose` — copy-pasteable diagnostic bundle for bug reports.
+ * `council diagnose` — copy-pasteable diagnostic bundle for bug reports.
  *
- * Differs from `chorus doctor`:
+ * Differs from `council doctor`:
  *   - doctor: human-readable PATH/CLI detection report, actionable
  *     ("run X to fix Y").
  *   - diagnose: machine-friendly markdown block. The user pastes this
@@ -30,7 +30,7 @@ import { buildVersionSpawn } from '../../lib/cli-detect.js';
 import { isDaemonHealthy, readDaemonInfo } from '../../lib/daemon-discovery.js';
 import { pkg } from '../shared.js';
 
-const ISSUE_URL = 'https://github.com/chorus-codes/chorus/issues/new';
+const ISSUE_URL = 'https://github.com/code-council/chorus/issues/new';
 
 interface SmokeResult {
   ok: boolean;
@@ -70,7 +70,7 @@ interface VoiceHealth {
 }
 
 interface DiagnoseSnapshot {
-  chorus: { cliVersion: string; runningDaemonVersion: string | null; mismatch: boolean };
+  council: { cliVersion: string; runningDaemonVersion: string | null; mismatch: boolean };
   runtime: { node: string; platform: string; arch: string; release: string };
   install: { binPath: string; mode: 'global-npm' | 'dev-tsx' | 'local-dist' | 'unknown' };
   daemon: {
@@ -107,9 +107,9 @@ function redactHomePaths(s: string): string {
 
 /**
  * Resolve the bin path through any symlinks before classifying. A
- * `sudo npm install -g chorus-codes` plants a symlink at
- * `/usr/bin/chorus` (or `/usr/local/bin/chorus`) pointing into
- * `/usr/lib/node_modules/chorus-codes/bin/chorus.mjs`. Node's
+ * `sudo npm install -g code-council` plants a symlink at
+ * `/usr/bin/council` (or `/usr/local/bin/council`) pointing into
+ * `/usr/lib/node_modules/code-council/bin/council.mjs`. Node's
  * `process.argv[1]` returns the SYMLINK path on Linux, not the
  * resolved target — so the raw path matches none of the
  * `node_modules` / `dist` / `.ts` substrings and `detectInstallMode`
@@ -378,7 +378,7 @@ export function smokeOneCli(bin: string): Promise<SmokeResult> {
  * **Privacy**: `errorMessage` is exposed as `errorMessageBytes` only —
  * raw error strings from LLM APIs frequently echo the user's prompt,
  * template content, file paths, or provider response excerpts back to
- * the caller, and `chorus diagnose` output is meant to be pasted into
+ * the caller, and `council diagnose` output is meant to be pasted into
  * public bug reports. The on-disk JSONL still has the full message;
  * users can attach that file manually if a maintainer needs more.
  */
@@ -424,7 +424,7 @@ export function readLatestAttempt(file: string): {
  * writes no JSONL — the file's mere presence is the signal.
  */
 function gatherErroredParticipants(chatId: string): ErroredParticipant[] {
-  const chatDir = path.join(os.homedir(), '.chorus', 'chats', chatId);
+  const chatDir = path.join(os.homedir(), '.code-council', 'chats', chatId);
   if (!fs.existsSync(chatDir)) return [];
   const out: ErroredParticipant[] = [];
   try {
@@ -454,7 +454,7 @@ function gatherErroredParticipants(chatId: string): ErroredParticipant[] {
 }
 
 async function gather(): Promise<DiagnoseSnapshot> {
-  const chorusDir = path.join(os.homedir(), '.chorus');
+  const chorusDir = path.join(os.homedir(), '.code-council');
   const cliVersion = pkg.version;
 
   // Daemon state — look up daemon.json and probe /health for the
@@ -488,7 +488,7 @@ async function gather(): Promise<DiagnoseSnapshot> {
         try {
           // Mirror the 800ms cap from isDaemonHealthy. Without this,
           // a daemon that passes the first health probe but stalls on
-          // the second response will hang `chorus diagnose` forever —
+          // the second response will hang `council diagnose` forever —
           // the very state we're trying to capture in a bug report.
           const ac = new AbortController();
           const timer = setTimeout(() => ac.abort(), 800);
@@ -581,8 +581,8 @@ async function gather(): Promise<DiagnoseSnapshot> {
   }
 
   // Voice health — count voices by disabled_reason. Surfaces the
-  // auto-disable signal from the voice-failure-tracker (chorus-106)
-  // so reporters know when chorus has silently sidelined a model.
+  // auto-disable signal from the voice-failure-tracker (council-106)
+  // so reporters know when council has sidelined a model.
   // Best-effort: same DB connection as the chats/voices counts above.
   let voiceHealth: VoiceHealth = { total: 0, autoQuota: [], autoMissing: [], userDisabled: 0 };
   try {
@@ -640,7 +640,7 @@ async function gather(): Promise<DiagnoseSnapshot> {
   }
 
   return {
-    chorus: { cliVersion, runningDaemonVersion, mismatch },
+    council: { cliVersion, runningDaemonVersion, mismatch },
     runtime: {
       node: process.versions.node,
       platform: process.platform,
@@ -648,8 +648,8 @@ async function gather(): Promise<DiagnoseSnapshot> {
       release: os.release(),
     },
     install: {
-      // realpath the bin path so symlinks (e.g. /usr/bin/chorus →
-      // /usr/lib/node_modules/chorus-codes/bin/chorus.mjs from a
+      // realpath the bin path so symlinks (e.g. /usr/bin/council →
+      // /usr/lib/node_modules/code-council/bin/council.mjs from a
       // global npm install) resolve before classification.
       binPath: abbreviateHome(resolveBinPath(process.argv[1] ?? '(unknown)')),
       mode: detectInstallMode(resolveBinPath(process.argv[1] ?? '')),
@@ -682,12 +682,12 @@ async function gather(): Promise<DiagnoseSnapshot> {
 export function formatReport(s: DiagnoseSnapshot): string {
   const lines: string[] = [];
   lines.push('```');
-  lines.push('# Chorus diagnose');
+  lines.push('# Code Council diagnose');
   lines.push('');
-  lines.push(`chorus CLI:      ${s.chorus.cliVersion}`);
+  lines.push(`council CLI:      ${s.council.cliVersion}`);
   lines.push(
-    `running daemon:  ${s.chorus.runningDaemonVersion ?? '(not reachable)'}` +
-      (s.chorus.mismatch ? '   ⚠ VERSION MISMATCH — run `chorus stop && chorus start`' : ''),
+    `running daemon:  ${s.council.runningDaemonVersion ?? '(not reachable)'}` +
+      (s.council.mismatch ? '   ⚠ VERSION MISMATCH — run `council stop && council start`' : ''),
   );
   lines.push(`node:            ${s.runtime.node}`);
   lines.push(

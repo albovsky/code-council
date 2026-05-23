@@ -25,7 +25,7 @@ export const CLIS: CliRow[] = [
     hint: "OpenAI — ChatGPT Plus/Pro subscription",
   },
   {
-    id: "gemini-cli",
+    id: "antigravity-cli",
     provider: "google",
     label: "Antigravity CLI",
     hint: "Google — uses AGY, or legacy Gemini CLI when installed",
@@ -52,13 +52,13 @@ export const CLIS: CliRow[] = [
     id: "cursor",
     provider: "cursor",
     label: "Cursor",
-    hint: "Cursor IDE — invoke chorus from inside it",
+    hint: "Cursor IDE — invoke Code Council from inside it",
   },
   {
     id: "windsurf",
     provider: "windsurf",
     label: "Windsurf",
-    hint: "Windsurf IDE — invoke chorus from inside it",
+    hint: "Windsurf IDE — invoke Code Council from inside it",
   },
 ];
 
@@ -79,7 +79,7 @@ export function classifyOpencodeClient(qualified: string): {
   if (tail.includes("claude")) return { lineage: "anthropic", vendor_family: null };
   if (tail.includes("gpt") || /(?:^|[^a-z])o[1-9](?:$|[^a-z0-9])/.test(tail))
     return { lineage: "openai", vendor_family: null };
-  if (tail.includes("gemini")) return { lineage: "google", vendor_family: null };
+  if (tail.includes("antigravity")) return { lineage: "google", vendor_family: null };
   if (tail.includes("deepseek")) return { lineage: "opencode", vendor_family: "deepseek" };
   if (tail.includes("llama") || tail.includes("meta"))
     return { lineage: "opencode", vendor_family: "meta" };
@@ -96,7 +96,7 @@ export function manualBinaryName(cliId: string): string {
       return "claude";
     case "codex-cli":
       return "codex";
-    case "gemini-cli":
+    case "antigravity-cli":
       return "agy";
     case "opencode-cli":
       return "opencode";

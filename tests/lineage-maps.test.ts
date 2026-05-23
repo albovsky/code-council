@@ -4,6 +4,9 @@ import {
   GOOGLE_LEGACY_GEMINI_MODELS,
   lineageLabel,
   lineageDot,
+  uiLineageLabel,
+  uiLineageDot,
+  uiLineageDefaultModel,
 } from '@/lib/lineage-maps';
 
 describe('lineage-maps', () => {
@@ -74,6 +77,60 @@ describe('lineage-maps', () => {
       expect(lineageDot(null as unknown as undefined)).toBe('bg-muted');
     });
   });
+
+  describe('uiLineageLabel', () => {
+    it('returns Antigravity CLI for antigravity', () => {
+      expect(uiLineageLabel('antigravity')).toBe('Antigravity CLI');
+    });
+
+    it('returns Claude for claude', () => {
+      expect(uiLineageLabel('claude')).toBe('Claude');
+    });
+
+    it('returns unknown string as passthrough fallback for unknown lineages', () => {
+      expect(uiLineageLabel('unknown-lineage')).toBe('unknown-lineage');
+    });
+
+    it('returns empty string for undefined', () => {
+      expect(uiLineageLabel(undefined)).toBe('');
+    });
+  });
+
+  describe('uiLineageDot', () => {
+    it('returns bg-blue-400 for antigravity', () => {
+      expect(uiLineageDot('antigravity')).toBe('bg-blue-400');
+    });
+
+    it('returns bg-violet-400 for claude', () => {
+      expect(uiLineageDot('claude')).toBe('bg-violet-400');
+    });
+
+    it('returns bg-muted for unknown lineages', () => {
+      expect(uiLineageDot('unknown-lineage')).toBe('bg-muted');
+    });
+
+    it('returns bg-muted for undefined', () => {
+      expect(uiLineageDot(undefined)).toBe('bg-muted');
+    });
+  });
+
+  describe('uiLineageDefaultModel', () => {
+    it('returns gemini-3.5-flash for antigravity', () => {
+      expect(uiLineageDefaultModel('antigravity')).toBe('gemini-3.5-flash');
+    });
+
+    it('returns claude-opus-4-7 for claude', () => {
+      expect(uiLineageDefaultModel('claude')).toBe('claude-opus-4-7');
+    });
+
+    it('returns undefined for unknown lineages', () => {
+      expect(uiLineageDefaultModel('unknown-lineage')).toBe(undefined);
+    });
+
+    it('returns undefined for undefined', () => {
+      expect(uiLineageDefaultModel(undefined)).toBe(undefined);
+    });
+  });
 });
 
 describe('Google model catalogs', () => {
@@ -94,3 +151,4 @@ describe('Google model catalogs', () => {
     ]);
   });
 });
+

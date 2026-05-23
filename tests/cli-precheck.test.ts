@@ -151,7 +151,7 @@ describe('precheckLineage', () => {
     });
 
     it('passes for AGY installs that use Antigravity keyring auth instead of legacy Gemini OAuth files', async () => {
-      writeFakeCred('.gemini/antigravity-cli/installation_id', 'agy-install-id');
+      writeFakeCred('.gemini/antigravity/installation_id', 'agy-install-id');
 
       const result = await precheckLineage('google');
 

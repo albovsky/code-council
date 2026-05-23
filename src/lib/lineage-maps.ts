@@ -65,7 +65,7 @@ export function lineageDot(lineage: string | undefined): string {
 export type UILineage =
   | "claude"
   | "codex"
-  | "gemini"
+  | "antigravity"
   | "opencode"
   | "kimi"
   | "openrouter"
@@ -75,7 +75,7 @@ export type UILineage =
 export const UI_LINEAGE_LABEL: Record<UILineage, string> = {
   claude: "Claude",
   codex: "Codex",
-  gemini: "Gemini",
+  antigravity: "Antigravity CLI",
   opencode: "OpenCode",
   kimi: "Kimi",
   // Meta-lineage for HTTP-dispatched voices. The real underlying lineage
@@ -95,7 +95,7 @@ export const UI_LINEAGE_LABEL: Record<UILineage, string> = {
 const UI_LINEAGE_DOT: Record<UILineage, string> = {
   claude: "bg-violet-400",
   codex: "bg-orange-400",
-  gemini: "bg-blue-400",
+  antigravity: "bg-blue-400",
   opencode: "bg-emerald-400",
   kimi: "bg-pink-400",
   // Cyan picked over amber — amber reads as "warning/in-progress" in UI
@@ -130,7 +130,7 @@ export function uiLineageDot(lineage: string | undefined): string {
 export const UI_LINEAGE_DEFAULT_MODEL: Record<UILineage, string> = {
   claude: "claude-opus-4-7",
   codex: "gpt-5.5",
-  gemini: "gemini-3.5-flash",
+  antigravity: "gemini-3.5-flash",
   opencode: "kimi-k2.6",
   kimi: "kimi-k2.6",
   // No sensible default for openrouter — user explicitly selects a model.
@@ -195,7 +195,7 @@ export const UI_LINEAGE_AVAILABLE_MODELS: Partial<Record<UILineage, string[]>> =
   // docs (2026-05-19). Legacy Gemini CLI keeps its separate compatibility
   // catalog in GOOGLE_LEGACY_GEMINI_MODELS; seedCliVoices picks the right
   // list from the detected binary name.
-  gemini: [...GOOGLE_AGY_MODELS],
+  antigravity: [...GOOGLE_AGY_MODELS],
   // Kimi list cross-checked against the official kimi-cli docs +
   // source (2026-05-04):
   //   - CHANGELOG.md: kimi-k2.6, kimi-k2-thinking
@@ -255,7 +255,7 @@ export const UI_LINEAGE_BRAND: Record<UILineage, LineageBrand> = {
     ring: "ring-orange-400/40",
     gradient: "bg-gradient-to-b from-orange-500/15 to-card",
   },
-  gemini: {
+  antigravity: {
     dot: "bg-blue-400",
     ring: "ring-blue-400/40",
     gradient: "bg-gradient-to-b from-blue-500/15 to-card",

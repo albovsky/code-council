@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Chorus MCP stdio server.
+ * Code Council MCP stdio server.
  * Exposes 9 tools to orchestrators (Claude Code, Codex, Cursor).
  * Each tool calls the daemon REST API on http://127.0.0.1:7707.
  */
@@ -47,7 +47,7 @@ const mcpVersion: string = (() => {
 })();
 
 const mcpServer = new McpServer({
-  name: "chorus",
+  name: "council",
   version: mcpVersion,
 });
 

@@ -6,18 +6,18 @@ import { pkg } from '../shared.js';
 import { c, header, sym } from '../ui.js';
 
 /**
- * `chorus update` — self-locating npm install.
+ * `council update` — self-locating npm install.
  *
  * Why this exists: a substantial fraction of users hit a PATH/install-
- * location mismatch when they run `sudo npm install -g chorus-codes`.
+ * location mismatch when they run `sudo npm install -g code-council`.
  * Their `chorus` command resolves to a per-user nvm/fnm prefix, but
  * `sudo npm install` writes to root's prefix. The new version is on
  * disk somewhere, but PATH never sees it. They debug for 20 minutes,
  * give up, file an issue.
  *
- * The cure: `chorus update` derives the npm prefix from the *running*
+ * The cure: `council update` derives the npm prefix from the *running*
  * binary's path (process.argv[1] / __dirname), then runs
- * `npm install -g chorus-codes@latest --prefix <derived>`. The update
+ * `npm install -g code-council@latest --prefix <derived>`. The update
  * always lands in the same install location PATH already points at,
  * regardless of whether the original install was via sudo, nvm, brew,
  * or system npm. No manual prefix wrangling.
@@ -51,16 +51,16 @@ export function registerUpdateCommand(program: Command): void {
             console.log(
               header(
                 sym.info,
-                `chorus ${latest} is available`,
+                `council ${latest} is available`,
                 `you have ${current}`,
               ),
             );
-            console.log(`   Run ${c.cyan('chorus update')} to upgrade`);
+            console.log(`   Run ${c.cyan('council update')} to upgrade`);
             console.log('');
           } else {
             console.log('');
             console.log(
-              header(sym.ok, `chorus ${current} is up to date`),
+              header(sym.ok, `council ${current} is up to date`),
             );
             console.log('');
           }
@@ -70,7 +70,7 @@ export function registerUpdateCommand(program: Command): void {
         if (!versionGreater(latest, current)) {
           console.log('');
           console.log(
-            header(sym.ok, `chorus ${current} is already up to date`),
+            header(sym.ok, `council ${current} is already up to date`),
           );
           console.log('');
           return;
@@ -79,7 +79,7 @@ export function registerUpdateCommand(program: Command): void {
         const prefix = detectNpmPrefix();
 
         // Pre-flight writability check. npm's atomic-install algorithm
-        // renames the existing chorus-codes/ folder before unpacking the
+        // renames the existing code-council/ folder before unpacking the
         // new tarball; the rename fails with EACCES whenever a Windows
         // process (Windows Defender, VSCode indexer, Search) holds a
         // handle into the folder. WSL users with nvm installed on a
@@ -93,7 +93,7 @@ export function registerUpdateCommand(program: Command): void {
             console.log(
               header(
                 sym.err,
-                "Can't update chorus at this prefix",
+                "Can't update council at this prefix",
                 probe.reason,
               ),
             );
@@ -105,9 +105,9 @@ export function registerUpdateCommand(program: Command): void {
               `     echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc`,
             );
             console.log(`     source ~/.bashrc`);
-            console.log(`     npm install -g chorus-codes`);
+            console.log(`     npm install -g code-council`);
             console.log('');
-            console.log(c.dim('   After that, future `chorus update` calls work normally.'));
+            console.log(c.dim('   After that, future `council update` calls work normally.'));
             console.log('');
             process.exit(1);
           }
@@ -117,13 +117,13 @@ export function registerUpdateCommand(program: Command): void {
         console.log(
           header(
             sym.pointer,
-            `Updating chorus ${current} → ${latest}`,
+            `Updating council ${current} → ${latest}`,
             prefix ? `prefix ${prefix}` : 'using npm default prefix',
           ),
         );
         console.log('');
 
-        const args = ['install', '-g', `chorus-codes@${latest}`];
+        const args = ['install', '-g', `code-council@${latest}`];
         if (prefix) {
           args.push('--prefix', prefix);
         }
@@ -144,8 +144,8 @@ export function registerUpdateCommand(program: Command): void {
         console.log(
           header(
             sym.ok,
-            `Updated to chorus ${latest}`,
-            'restart any running daemon: chorus stop && chorus start',
+            `Updated to council ${latest}`,
+            'restart any running daemon: council stop && council start',
           ),
         );
         console.log('');
@@ -171,9 +171,9 @@ export function registerUpdateCommand(program: Command): void {
 /**
  * Walk up from the running binary's location to find the npm install
  * prefix. Layout (Linux/macOS):
- *   <prefix>/lib/node_modules/chorus-codes/{dist,bin}/...
+ *   <prefix>/lib/node_modules/code-council/{dist,bin}/...
  * Layout (Windows):
- *   <prefix>/node_modules/chorus-codes/{dist,bin}/...
+ *   <prefix>/node_modules/code-council/{dist,bin}/...
  *
  * Returns null when running from a dev checkout (no node_modules
  * ancestor) or when something exotic — caller passes no --prefix and
@@ -204,7 +204,7 @@ export function detectNpmPrefix(): string | null {
  * "couldn't check" message instead of crashing.
  */
 export async function fetchLatestVersion(
-  packageName = 'chorus-codes',
+  packageName = 'code-council',
 ): Promise<string | null> {
   try {
     const ac = new AbortController();
@@ -281,7 +281,7 @@ export function checkPrefixUsable(
     fs.mkdirSync(targetDir, { recursive: true });
     const probePath = path.join(
       targetDir,
-      `.chorus-update-probe-${process.pid}-${Date.now()}`,
+      `.council-update-probe-${process.pid}-${Date.now()}`,
     );
     fs.writeFileSync(probePath, 'probe');
     fs.unlinkSync(probePath);
@@ -309,10 +309,10 @@ export function checkPrefixUsable(
  * Source of truth: process.argv[1] is the CLI entrypoint Node was
  * invoked with. Resolve through symlinks because `npm install -g`
  * writes a symlink at <prefix>/bin/chorus pointing into
- * <prefix>/lib/node_modules/chorus-codes/bin/chorus.mjs — the
+ * <prefix>/lib/node_modules/code-council/bin/chorus.mjs — the
  * realpath surfaces the install root, which is the actionable bit.
  */
-export function resolveChorusBinaryPath(): string | null {
+export function resolveCouncilBinaryPath(): string | null {
   const entry = process.argv[1];
   if (!entry) return null;
   try {

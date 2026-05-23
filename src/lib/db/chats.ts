@@ -266,7 +266,7 @@ export const chats = {
    * Hard-delete a chat. Removes the row + cascades to phase_events.
    * Atomic via libsql transaction so a partial failure can't leave
    * orphaned phase_events. Caller is responsible for filesystem cleanup
-   * (chat artifacts in ~/.chorus/chats/<id>) and for ensuring no active
+   * (chat artifacts in ~/.code-council/chats/<id>) and for ensuring no active
    * session is running (cancel first if needed).
    */
   async delete(id: string): Promise<void> {

@@ -21,7 +21,7 @@ import { cliPaths } from './cli-paths.js';
 export type DetectableCli =
   | 'claude-code'
   | 'codex-cli'
-  | 'gemini-cli'
+  | 'antigravity-cli'
   | 'opencode-cli'
   | 'kimi-cli'
   | 'grok-cli';
@@ -29,10 +29,7 @@ export type DetectableCli =
 const BINARY_NAMES: Record<DetectableCli, readonly string[]> = {
   'claude-code': ['claude'],
   'codex-cli': ['codex'],
-  // Google is transitioning Gemini CLI users to Antigravity CLI (`agy`).
-  // Keep the internal id stable for voices/templates, but prefer AGY when
-  // both CLIs are installed.
-  'gemini-cli': ['agy', 'gemini'],
+  'antigravity-cli': ['agy', 'gemini'],
   'opencode-cli': ['opencode'],
   'kimi-cli': ['kimi'],
   'grok-cli': ['grok'],
@@ -157,7 +154,7 @@ function fallbackPaths(cli: DetectableCli): string[] {
   if (cli === 'grok-cli') {
     // xAI's installer drops binaries here (curl|bash from x.ai/cli).
     // GROK_BIN_DIR env override is honoured upstream but not by the
-    // chorus detector — second-chance scan is best-effort, users on
+    // council detector — second-chance scan is best-effort, users on
     // custom prefixes should add the dir to PATH.
     dirs.push(path.join(HOME, '.grok', 'bin'));
   }
@@ -230,8 +227,8 @@ const CLI_SIGNATURES: Record<DetectableCli, RegExp> = {
   'claude-code': /\bclaude\b/i,
   'codex-cli': /\bcodex\b/i,
   // Bare version output — "0.40.1" — no CLI name to grep for.
-  'gemini-cli': STARTS_WITH_VERSION,
-  // Bare version output — "1.14.30" — same as gemini.
+  'antigravity-cli': STARTS_WITH_VERSION,
+  // Bare version output — "1.14.30" — same as antigravity-cli.
   'opencode-cli': STARTS_WITH_VERSION,
   'kimi-cli': /\bkimi\b/i,
   // xAI's grok CLI — actual --version output unverified at time of
@@ -412,7 +409,7 @@ function detectOne(cli: DetectableCli): CliDetection {
  * a CLI path on every HTTP poll (e.g. /orchestrators/opencode/models
  * during onboarding), we'd fork ~50 processes/second without a cache.
  *
- * 30s TTL is short enough that a `chorus install <cli>` run from a
+ * 30s TTL is short enough that a `council install <cli>` run from a
  * different shell shows up before the user finishes onboarding, but
  * long enough that a polling UI doesn't keep retriggering scans.
  * Tests can call detectAllClis with `force: true` to bypass.
@@ -443,9 +440,9 @@ export function clearDetectionCache(): void {
  *
  * Layered checks (any failure returns found=false + a reason):
  *   1. Basename matches the expected binary name. Catches the common
- *      paste-the-wrong-tool mistake — e.g. `/usr/bin/npm` for gemini-cli
+ *      paste-the-wrong-tool mistake — e.g. `/usr/bin/npm` for antigravity-cli
  *      passes the bare-version regex but its basename is `npm`, not
- *      `agy` or `gemini`. Both round-1 reviewers (claude + gemini) flagged this
+ *      `agy` or `gemini`. Both round-1 reviewers (claude + antigravity) flagged this
  *      gap when smoke-testing the previous version.
  *   2. File exists.
  *   3. `--version` exits 0 with output that matches the CLI's signature.

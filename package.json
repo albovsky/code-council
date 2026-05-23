@@ -1,16 +1,16 @@
 {
-  "name": "chorus-codes",
+  "name": "code-council",
   "version": "0.8.43",
-  "description": "Driver-agnostic multi-LLM peer review for code decisions. Bring your own CLI; Chorus convenes 2-4 other LLMs to review the work before you ship.",
+  "description": "Driver-agnostic multi-LLM peer review for code decisions. Bring your own CLI; Code Council convenes 2-4 other LLMs to review the work before you ship.",
   "license": "Apache-2.0",
   "author": "99x Agency",
-  "homepage": "https://chorus.codes",
+  "homepage": "https://github.com/code-council/code-council",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chorus-codes/chorus.git"
+    "url": "https://github.com/code-council/code-council.git"
   },
   "bin": {
-    "chorus": "./bin/chorus.mjs"
+    "council": "./bin/council.mjs"
   },
   "publishConfig": {
     "access": "public"
@@ -28,7 +28,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "rm -rf dist .next *.tsbuildinfo && pnpm build && pnpm build:server && rm -rf .next/cache && test -f dist/cli/index.js && test -f dist/daemon/index.js && test -f dist/mcp/index.js",
+    "prepublishOnly": "rm -rf dist .next *.tsbuildinfo && npm run build && npm run build:server && rm -rf .next/cache && test -f dist/cli/index.js && test -f dist/daemon/index.js && test -f dist/mcp/index.js",
     "postinstall": "node scripts/postinstall.mjs"
   },
   "dependencies": {

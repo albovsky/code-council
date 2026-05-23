@@ -20,18 +20,18 @@ import { c, sym, tip } from './ui.js';
 const program = new Command();
 
 program
-  .name('chorus')
+  .name('council')
   .description('Driver-agnostic multi-LLM peer review for code decisions')
   .version(pkg.version);
 
 // Show a quick-start banner before the standard help so first-time
 // users see the setup sequence even when npm's global install hides
-// postinstall stdout. State-aware: chorus.db is the marker — dir alone
-// is not enough, an empty ~/.chorus can exist from a prior aborted
+// postinstall stdout. State-aware: council.db is the marker — dir alone
+// is not enough, an empty ~/.code-council can exist from a prior aborted
 // install.
 program.addHelpText('beforeAll', () => {
-  const chorusDir = path.join(os.homedir(), '.chorus');
-  const dbFile = path.join(chorusDir, 'chorus.db');
+  const chorusDir = path.join(os.homedir(), '.code-council');
+  const dbFile = path.join(chorusDir, 'council.db');
   const daemonPid = path.join(chorusDir, 'daemon.pid');
   const initialised = fs.existsSync(dbFile);
   const running = fs.existsSync(daemonPid);
@@ -39,10 +39,10 @@ program.addHelpText('beforeAll', () => {
   if (!initialised) {
     return [
       '',
-      `  ${sym.rocket} ${c.bold('Welcome to Chorus')} ${c.dim('— two commands to get going:')}`,
+      `  ${sym.rocket} ${c.bold('Welcome to Code Council')} ${c.dim('— two commands to get going:')}`,
       '',
-      `    ${c.cyan('1.')} ${c.bold('chorus init')}     ${c.dim('register MCP with your editors + seed templates + detect CLIs')}`,
-      `    ${c.cyan('2.')} ${c.bold('chorus start')}    ${c.dim('bring up the daemon + cockpit')}`,
+      `    ${c.cyan('1.')} ${c.bold('council init')}     ${c.dim('register MCP with your editors + seed templates + detect CLIs')}`,
+      `    ${c.cyan('2.')} ${c.bold('council start')}    ${c.dim('bring up the daemon + cockpit')}`,
       '',
     ].join('\n');
   }
@@ -51,7 +51,7 @@ program.addHelpText('beforeAll', () => {
       '',
       `  ${sym.pointer} ${c.bold('Daemon is stopped.')} ${c.dim('Bring it back up:')}`,
       '',
-      `    ${c.bold('chorus start')}`,
+      `    ${c.bold('council start')}`,
       '',
     ].join('\n');
   }
@@ -70,7 +70,7 @@ registerAuditCommand(program);
 
 program
   .command('ui')
-  .description('Open the Chorus web UI in default browser')
+  .description('Open the Code Council web UI in default browser')
   .action(async () => {
     try {
       const env = detectRuntimeEnv();
@@ -95,7 +95,7 @@ program
 program
   .command('connect [orchestrator]')
   .description(
-    'Pre-approve all Chorus MCP tools in your orchestrator (default: claude)',
+    'Pre-approve all Code Council MCP tools in your orchestrator (default: claude)',
   )
   .action(async (orchestrator?: string) => {
     const { runConnect } = await import('./connect.js');

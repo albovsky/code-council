@@ -228,7 +228,7 @@ export default function PersonasPage() {
               worldview, wildly different findings. Use any of them via the{" "}
               <code className="font-mono text-foreground/80">invoke_persona</code> MCP
               tool from inside Claude Code, Cursor, Codex, or any editor with
-              chorus wired up.
+              Code Council wired up.
             </>
           }
           action={<PersonaDialog onSaved={(id) => refresh(id)} />}

@@ -22,7 +22,7 @@ import { c, header, sym } from '../ui.js';
  * SIGTERM keeps running while we forget about it (the bug behind the
  * "stale next-server serving 500s" incident on 2026-05-03).
  *
- * v0.8: PID lookup goes through `~/.chorus/daemon.json` first, falling
+ * v0.8: PID lookup goes through `~/.code-council/daemon.json` first, falling
  * back to the legacy daemon.pid / web.pid files for compat with
  * v0.7-and-earlier installs. Belt-and-braces port sweep targets the
  * recorded ports (or defaults if no daemon.json).
@@ -30,10 +30,10 @@ import { c, header, sym } from '../ui.js';
 export function registerStopCommand(program: Command): void {
   program
     .command('stop')
-    .description('Stop the Chorus daemon and cockpit')
+    .description('Stop the Code Council daemon and cockpit')
     .action(async () => {
       try {
-        const chorusDir = path.join(os.homedir(), '.chorus');
+        const chorusDir = path.join(os.homedir(), '.code-council');
         const daemonPidFile = path.join(chorusDir, 'daemon.pid');
         const webPidFile = path.join(chorusDir, 'web.pid');
 
@@ -54,13 +54,13 @@ export function registerStopCommand(program: Command): void {
           !cockpitPortInUse
         ) {
           console.log('');
-          console.log(header(sym.info, 'Chorus is not running', 'nothing to stop'));
+          console.log(header(sym.info, 'Code Council is not running', 'nothing to stop'));
           console.log('');
           return;
         }
 
         console.log('');
-        console.log(header(sym.pointer, 'Stopping Chorus...'));
+        console.log(header(sym.pointer, 'Stopping Code Council...'));
         console.log('');
 
         // Prefer daemon.json (v0.8), fall back to pidfiles (v0.7).
@@ -82,7 +82,7 @@ export function registerStopCommand(program: Command): void {
 
         console.log('');
       } catch (error) {
-        console.error(`${sym.err} ${c.red('Error stopping chorus:')}`, error);
+        console.error(`${sym.err} ${c.red('Error stopping Code Council:')}`, error);
         process.exit(1);
       }
     });

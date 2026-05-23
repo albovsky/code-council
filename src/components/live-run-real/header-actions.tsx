@@ -33,7 +33,7 @@ export function HeaderActions({
       });
       if (!res.ok) {
         window.alert(
-          "Couldn't start a new run — Chorus didn't respond. Try restarting it from your terminal: chorus start",
+          "Couldn't start a new run — Code Council didn't respond. Try restarting it from your terminal: council start",
         );
         setRetrying(false);
         return;
@@ -48,7 +48,7 @@ export function HeaderActions({
       // surfacing it, the button just stops spinning and the user has
       // no idea why nothing happened.
       if (!body.ok) {
-        const msg = body.error?.message ?? "Unknown error from Chorus.";
+        const msg = body.error?.message ?? "Unknown error from Code Council.";
         window.alert(`Couldn't start a new run: ${msg}`);
         setRetrying(false);
         return;
@@ -61,7 +61,7 @@ export function HeaderActions({
         // ok:true with no slug/id is a daemon-side bug, but we still
         // need to unstick the button.
         window.alert(
-          "Chorus accepted the retry but didn't return a chat id. Refresh and try again.",
+          "Code Council accepted the retry but didn't return a chat id. Refresh and try again.",
         );
         setRetrying(false);
       }
@@ -89,7 +89,7 @@ export function HeaderActions({
         router.refresh();
       } else {
         window.alert(
-          "Couldn't delete this chat — Chorus didn't respond. Try restarting it from your terminal: chorus start",
+          "Couldn't delete this chat — Code Council didn't respond. Try restarting it from your terminal: council start",
         );
         setDeleting(false);
       }

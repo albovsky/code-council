@@ -157,6 +157,37 @@ export function adaptTemplate(
           isComplete = false;
         }
       }
+
+      // Trim duplicate reviewer slots: if the template has more slots
+      // than the user has unique enabled voices, the fallback logic in
+      // assignSlot fills extra slots with repeated (lineage, model)
+      // pairs. Remove those so the user only sees one reviewer window
+      // per unique voice they actually have enabled.
+      //
+      // Example: template has 6 slots, user has 2 voices →
+      //   before: [agy/gemini, codex/gpt, agy/gemini, codex/gpt, agy/gemini, codex/gpt]
+      //   after:  [agy/gemini, codex/gpt]
+      const seen = new Set<string>();
+      phase.reviewer.candidates = phase.reviewer.candidates.filter((slot) => {
+        if (!slot.lineage) return true;
+        const key = `${slot.lineage}:${(slot.models ?? []).join(',')}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      if (typeof phase.reviewer.require === 'number') {
+        const maxSatisfiable = phase.reviewer.crossLineage
+          ? new Set(
+              phase.reviewer.candidates
+                .map((slot) => slot.lineage)
+                .filter((lineage): lineage is string => Boolean(lineage)),
+            ).size
+          : phase.reviewer.candidates.length;
+        if (phase.reviewer.require > maxSatisfiable) {
+          phase.reviewer.require = maxSatisfiable;
+        }
+      }
     }
 
     if (phase.synthesizer) {

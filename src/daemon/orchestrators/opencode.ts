@@ -82,7 +82,7 @@ function getOpencodeStatus(): OrchestratorStatus {
   const connected =
     detected &&
     Boolean(
-      config.mcp && (config.mcp as Record<string, unknown>).chorus,
+      config.mcp && (config.mcp as Record<string, unknown>).council,
     );
   return {
     name: 'opencode',
@@ -90,14 +90,14 @@ function getOpencodeStatus(): OrchestratorStatus {
     connected,
     approvedTools: connected ? 1 : 0,
     totalTools: 1,
-    note: 'Registers Chorus as a local MCP server in ~/.config/opencode/opencode.json with `enabled: true` so the agent can call its tools.',
+    note: 'Registers Code Council as a local MCP server in ~/.config/opencode/opencode.json with `enabled: true` so the agent can call its tools.',
     supported: detected,
     firstCallBehavior: 'auto',
   };
 }
 
 /**
- * Register Chorus with OpenCode. `opencode mcp add` is interactive (no
+ * Register Code Council with OpenCode. `opencode mcp add` is interactive (no
  * flags for non-tty use), so we patch the user-scope config directly.
  * Idempotent.
  */
@@ -107,7 +107,7 @@ async function connectOpencode(
   const { config } = readOpencodeConfig();
   const mcp = (config.mcp ?? {}) as Record<string, unknown>;
 
-  const existing = mcp.chorus as { command?: string[] } | undefined;
+  const existing = mcp.council as { command?: string[] } | undefined;
   const existingBinMatches =
     existing &&
     Array.isArray(existing.command) &&
@@ -137,7 +137,7 @@ async function connectOpencode(
   if (existingBinMatches && !bashChanged) {
     return {
       added: [],
-      alreadyPresent: ['mcp.chorus', 'permission.bash'],
+      alreadyPresent: ['mcp.council', 'permission.bash'],
       configPath: OPENCODE_USER_CONFIG_PATH,
       slashCommand: 'skipped',
       slashCommandPath: '',
@@ -145,10 +145,10 @@ async function connectOpencode(
   }
 
   const daemonUrl = opts.daemonUrl ?? DEFAULT_DAEMON_URL;
-  mcp.chorus = {
+  mcp.council = {
     type: 'local',
     command: ['node', opts.binPath, 'mcp'],
-    environment: { CHORUS_DAEMON_URL: daemonUrl },
+    environment: { COUNCIL_DAEMON_URL: daemonUrl },
     enabled: true,
   };
 
@@ -170,7 +170,7 @@ async function connectOpencode(
   );
 
   const added: string[] = [];
-  if (!existingBinMatches) added.push('mcp.chorus');
+  if (!existingBinMatches) added.push('mcp.council');
   if (bashChanged) added.push('permission.bash');
 
   return {

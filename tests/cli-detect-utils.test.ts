@@ -159,7 +159,7 @@ describe('validateCliPath — basename gate', () => {
 
   it('accepts agy as the Google-lineage CLI binary during the Gemini CLI transition', () => {
     const staged = stageBinary('agy', '1.0.0');
-    const result = validateCliPath('gemini-cli', staged);
+    const result = validateCliPath('antigravity-cli', staged);
     expect(result.found).toBe(true);
     expect(result.path).toBe(staged);
     expect(result.source).toBe('manual');
@@ -167,7 +167,7 @@ describe('validateCliPath — basename gate', () => {
 
   it('still accepts the legacy gemini binary for the Google-lineage CLI', () => {
     const staged = stageBinary('gemini', '0.42.0');
-    const result = validateCliPath('gemini-cli', staged);
+    const result = validateCliPath('antigravity-cli', staged);
     expect(result.found).toBe(true);
     expect(result.path).toBe(staged);
     expect(result.source).toBe('manual');

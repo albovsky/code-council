@@ -13,7 +13,7 @@ export default async function PermissionsPage() {
         <header className="space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight">Permissions & sandbox</h1>
           <p className="text-sm text-muted-foreground">
-            Controls what chorus-spawned reviewers can do on your machine. Settings here apply
+            Controls what Code Council-spawned reviewers can do on your machine. Settings here apply
             to every reviewer launched by every chat — they don&apos;t override per-template config.
           </p>
         </header>

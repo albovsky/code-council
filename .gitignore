@@ -24,6 +24,10 @@ web.pid
 auth-token
 no-telemetry
 
+# Local Antigravity CLI probes and per-run state.
+.antigravitycli/
+agy_models_output.txt
+
 # Build artifacts
 *.tsbuildinfo
 next-env.d.ts

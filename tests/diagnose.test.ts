@@ -2,7 +2,7 @@
  * Diagnose command tests — focuses on the pure helpers and the format
  * output. The full `gather()` function does network + DB + fs reads
  * that are awkward to fake in unit tests; those paths are covered
- * implicitly via integration (`chorus diagnose` run by hand) and via
+ * implicitly via integration (`council diagnose` run by hand) and via
  * the formatReport assertions below using a fixture snapshot.
  */
 
@@ -24,44 +24,44 @@ const {
 
 describe('detectInstallMode', () => {
   it('classifies node_modules path as global-npm', () => {
-    expect(detectInstallMode('/usr/local/lib/node_modules/chorus-codes/bin/chorus.mjs'))
+    expect(detectInstallMode('/usr/local/lib/node_modules/code-council/bin/council.mjs'))
       .toBe('global-npm');
   });
 
   it('classifies .ts source as dev-tsx', () => {
-    expect(detectInstallMode('/home/dev/chorus/src/cli/index.ts')).toBe('dev-tsx');
+    expect(detectInstallMode('/home/dev/code-council/src/cli/index.ts')).toBe('dev-tsx');
   });
 
   it('classifies dist build as local-dist', () => {
-    expect(detectInstallMode('/home/dev/chorus/dist/cli/index.js')).toBe('local-dist');
+    expect(detectInstallMode('/home/dev/code-council/dist/cli/index.js')).toBe('local-dist');
   });
 
   it('classifies windows-style dist path', () => {
-    expect(detectInstallMode('C:\\proj\\chorus\\dist\\cli\\index.js')).toBe('local-dist');
+    expect(detectInstallMode('C:\\proj\\code-council\\dist\\cli\\index.js')).toBe('local-dist');
   });
 
   it('returns unknown for unrecognized paths', () => {
-    expect(detectInstallMode('/opt/random/chorus.js')).toBe('unknown');
+    expect(detectInstallMode('/opt/random/council.js')).toBe('unknown');
   });
 });
 
 describe('abbreviateHome', () => {
   it('replaces home prefix with ~', () => {
     const home = os.homedir();
-    expect(abbreviateHome(`${home}/.chorus/daemon.log`)).toBe('~/.chorus/daemon.log');
+    expect(abbreviateHome(`${home}/.code-council/daemon.log`)).toBe('~/.code-council/daemon.log');
   });
 
   it('leaves non-home paths intact', () => {
-    expect(abbreviateHome('/var/log/chorus.log')).toBe('/var/log/chorus.log');
+    expect(abbreviateHome('/var/log/council.log')).toBe('/var/log/council.log');
   });
 });
 
 describe('formatReport', () => {
   it('renders a complete snapshot with version mismatch warning', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.26', runningDaemonVersion: '0.8.25', mismatch: true },
+      council: { cliVersion: '0.8.26', runningDaemonVersion: '0.8.25', mismatch: true },
       runtime: { node: '25.2.1', platform: 'win32', arch: 'x64', release: '10.0.0' },
-      install: { binPath: 'C:\\Users\\u\\AppData\\bin\\chorus.mjs', mode: 'global-npm' },
+      install: { binPath: 'C:\\Users\\u\\AppData\\bin\\council.mjs', mode: 'global-npm' },
       daemon: {
         daemonJson: '{\n  "daemonPort": 7707\n}',
         daemonPidAlive: true,
@@ -78,10 +78,10 @@ describe('formatReport', () => {
       recentFailedChats: [],
     });
 
-    expect(out).toContain('chorus CLI:      0.8.26');
+    expect(out).toContain('council CLI:      0.8.26');
     expect(out).toContain('running daemon:  0.8.25');
     expect(out).toContain('VERSION MISMATCH');
-    expect(out).toContain('chorus stop && chorus start');
+    expect(out).toContain('council stop && council start');
     expect(out).toContain('node:            25.2.1');
     expect(out).toContain('platform:        win32');
     expect(out).toContain('install mode:    global-npm');
@@ -98,9 +98,9 @@ describe('formatReport', () => {
 
   it('omits the mismatch warning when versions match', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.26', runningDaemonVersion: '0.8.26', mismatch: false },
+      council: { cliVersion: '0.8.26', runningDaemonVersion: '0.8.26', mismatch: false },
       runtime: { node: '20.0.0', platform: 'linux', arch: 'x64', release: '6.8' },
-      install: { binPath: '/usr/lib/node_modules/chorus-codes/bin/chorus.mjs', mode: 'global-npm' },
+      install: { binPath: '/usr/lib/node_modules/code-council/bin/council.mjs', mode: 'global-npm' },
       daemon: { daemonJson: '{}', daemonPidAlive: true, healthyOnPort: 7707 },
       db: { chats: 0, voices: 0 },
       logs: { daemonTail: '', webTail: '' },
@@ -114,7 +114,7 @@ describe('formatReport', () => {
 
   it('handles daemon-not-reachable case', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.26', runningDaemonVersion: null, mismatch: false },
+      council: { cliVersion: '0.8.26', runningDaemonVersion: null, mismatch: false },
       runtime: { node: '20', platform: 'linux', arch: 'x64', release: '6' },
       install: { binPath: '/x', mode: 'unknown' },
       daemon: { daemonJson: '(missing)', daemonPidAlive: null, healthyOnPort: null },
@@ -132,7 +132,7 @@ describe('formatReport', () => {
 
   it('renders a crash preview when present', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.26', runningDaemonVersion: '0.8.26', mismatch: false },
+      council: { cliVersion: '0.8.26', runningDaemonVersion: '0.8.26', mismatch: false },
       runtime: { node: '20', platform: 'linux', arch: 'x64', release: '6' },
       install: { binPath: '/x', mode: 'unknown' },
       daemon: { daemonJson: '{}', daemonPidAlive: true, healthyOnPort: 7707 },
@@ -141,7 +141,7 @@ describe('formatReport', () => {
       crashes: {
         count: 2,
         latest: {
-          file: '~/.chorus/crashes/2026-05-08T10-00-00.log',
+          file: '~/.code-council/crashes/2026-05-08T10-00-00.log',
           preview: 'Error: boom\n  at foo (bar.js:1:1)',
         },
       },
@@ -156,7 +156,7 @@ describe('formatReport', () => {
 
   it('renders CLI smoke results inline with detection rows', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
+      council: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
       runtime: { node: '20', platform: 'linux', arch: 'x64', release: '6' },
       install: { binPath: '/x', mode: 'unknown' },
       daemon: { daemonJson: '{}', daemonPidAlive: true, healthyOnPort: 7707 },
@@ -180,7 +180,7 @@ describe('formatReport', () => {
 
   it('renders voice health summary with auto-disabled IDs', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
+      council: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
       runtime: { node: '20', platform: 'linux', arch: 'x64', release: '6' },
       install: { binPath: '/x', mode: 'unknown' },
       daemon: { daemonJson: '{}', daemonPidAlive: true, healthyOnPort: 7707 },
@@ -206,7 +206,7 @@ describe('formatReport', () => {
 
   it('renders recent failed chats with errored participant + errorKind (no raw message)', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
+      council: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
       runtime: { node: '20', platform: 'linux', arch: 'x64', release: '6' },
       install: { binPath: '/x', mode: 'unknown' },
       daemon: { daemonJson: '{}', daemonPidAlive: true, healthyOnPort: 7707 },
@@ -248,7 +248,7 @@ describe('formatReport', () => {
 
   it('renders timed-out smoke distinctly from non-zero exit', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
+      council: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
       runtime: { node: '20', platform: 'linux', arch: 'x64', release: '6' },
       install: { binPath: '/x', mode: 'unknown' },
       daemon: { daemonJson: '{}', daemonPidAlive: true, healthyOnPort: 7707 },
@@ -271,7 +271,7 @@ describe('formatReport', () => {
 
   it('omits new sections gracefully when arrays are empty', () => {
     const out = formatReport({
-      chorus: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
+      council: { cliVersion: '0.8.31', runningDaemonVersion: '0.8.31', mismatch: false },
       runtime: { node: '20', platform: 'linux', arch: 'x64', release: '6' },
       install: { binPath: '/x', mode: 'unknown' },
       daemon: { daemonJson: '{}', daemonPidAlive: true, healthyOnPort: 7707 },
@@ -289,7 +289,7 @@ describe('formatReport', () => {
 
 describe('readLatestAttempt', () => {
   it('returns errorKind + errorMessageBytes (NOT the raw message) from last JSONL row', () => {
-    const tmp = path.join(os.tmpdir(), `chorus-attempts-${Date.now()}-${Math.random()}`);
+    const tmp = path.join(os.tmpdir(), `council-attempts-${Date.now()}-${Math.random()}`);
     fs.mkdirSync(tmp, { recursive: true });
     const file = path.join(tmp, '_attempts.jsonl');
     const longMessage = 'Not authenticated — please run `opencode login` to refresh credentials';
@@ -320,7 +320,7 @@ describe('readLatestAttempt', () => {
   });
 
   it('returns null for empty file', () => {
-    const tmp = path.join(os.tmpdir(), `chorus-attempts-empty-${Date.now()}-${Math.random()}`);
+    const tmp = path.join(os.tmpdir(), `council-attempts-empty-${Date.now()}-${Math.random()}`);
     fs.mkdirSync(tmp, { recursive: true });
     const file = path.join(tmp, '_attempts.jsonl');
     fs.writeFileSync(file, '');
@@ -332,7 +332,7 @@ describe('readLatestAttempt', () => {
   });
 
   it('skips malformed lines and returns the last valid one', () => {
-    const tmp = path.join(os.tmpdir(), `chorus-attempts-bad-${Date.now()}-${Math.random()}`);
+    const tmp = path.join(os.tmpdir(), `council-attempts-bad-${Date.now()}-${Math.random()}`);
     fs.mkdirSync(tmp, { recursive: true });
     const file = path.join(tmp, '_attempts.jsonl');
     fs.writeFileSync(
@@ -401,26 +401,26 @@ describe('resolveBinPath', () => {
   it('resolves a symlink to its real target', () => {
     // Build a real symlink chain in /tmp so we cover the actual
     // realpath path (no mocks). This is the install-mode bug
-    // reported on /usr/bin/chorus → node_modules/.../chorus.mjs.
-    const tmp = path.join(os.tmpdir(), `chorus-realpath-${Date.now()}-${Math.random()}`);
+    // reported on /usr/bin/council → node_modules/.../council.mjs.
+    const tmp = path.join(os.tmpdir(), `council-realpath-${Date.now()}-${Math.random()}`);
     fs.mkdirSync(tmp, { recursive: true });
-    const realFile = path.join(tmp, 'fake-chorus.mjs');
+    const realFile = path.join(tmp, 'fake-council.mjs');
     fs.writeFileSync(realFile, 'placeholder');
-    const link = path.join(tmp, 'chorus-link');
+    const link = path.join(tmp, 'council-link');
     fs.symlinkSync(realFile, link);
     try {
       const resolved = resolveBinPath(link);
       // realpath strips symlinks (and may resolve /private/var on
       // macOS) — assert the basename matches the real file rather
       // than equality, so the test is portable.
-      expect(path.basename(resolved)).toBe('fake-chorus.mjs');
+      expect(path.basename(resolved)).toBe('fake-council.mjs');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
 
   it('falls back to the raw path when realpath throws (broken symlink)', () => {
-    const ghost = '/tmp/chorus-does-not-exist-' + Math.random();
+    const ghost = '/tmp/council-does-not-exist-' + Math.random();
     expect(resolveBinPath(ghost)).toBe(ghost);
   });
 
@@ -431,11 +431,11 @@ describe('resolveBinPath', () => {
 
 describe('detectInstallMode after realpath', () => {
   it('classifies a globally-installed bin as global-npm once symlink is followed', () => {
-    // Simulate the full bug: raw path is /usr/bin/chorus (returns
+    // Simulate the full bug: raw path is /usr/bin/council (returns
     // 'unknown'), but realpath target is in node_modules. With the
     // fix, gather() resolves first then classifies.
     const realLikePath =
-      '/usr/lib/node_modules/chorus-codes/bin/chorus.mjs';
+      '/usr/lib/node_modules/code-council/bin/council.mjs';
     expect(detectInstallMode(realLikePath)).toBe('global-npm');
   });
 });

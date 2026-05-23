@@ -73,7 +73,7 @@ interface ChatMeta {
  */
 export async function runChat(opts: PhaseRunnerOptions): Promise<void> {
   const { chatId, template, work, artifact, repoPath, attachedFiles, onEvent, abortSignal, tmuxMgr, errorDetector } = opts;
-  const chatDir = path.join(os.homedir(), '.chorus', 'chats', chatId);
+  const chatDir = path.join(os.homedir(), '.code-council', 'chats', chatId);
 
   // Pack attached files into a single block once per chat. Both doer +
   // every reviewer get the same block — they're auditing the same artifacts.

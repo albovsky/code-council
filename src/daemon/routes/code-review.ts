@@ -4,6 +4,7 @@ import { chats, phaseEvents, templates } from '../../lib/db/index.js';
 import {
   CodeReviewScopeError,
   resolveCodeReviewScope,
+  getCodeReviewContextData,
 } from '../../lib/git-code-review-scope.js';
 import { chatLogger, logger } from '../../lib/logger.js';
 import {
@@ -42,7 +43,8 @@ export function registerCodeReviewRoutes(
 
   fastify.get<{ Reply: ApiResponse<object> }>('/code-review/context', async () => {
     const repoPath = process.env.CHORUS_REPO_PATH || process.cwd();
-    return successResponse({ repoPath });
+    const data = await getCodeReviewContextData(repoPath);
+    return successResponse(data);
   });
 
   fastify.post<{

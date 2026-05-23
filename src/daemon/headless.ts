@@ -115,7 +115,7 @@ const HEARTBEAT_INTERVAL_MS = 5_000;       // progress event for non-streaming C
  * Where we persist child PIDs across daemon restarts so the reaper can find
  * orphans. One file per spawn, deleted on clean exit.
  */
-const PID_DIR = path.join(os.homedir(), '.chorus', 'pids');
+const PID_DIR = path.join(os.homedir(), '.code-council', 'pids');
 
 function ensurePidDir(): void {
   if (!fs.existsSync(PID_DIR)) fs.mkdirSync(PID_DIR, { recursive: true });
@@ -308,6 +308,10 @@ export function spawnHeadless(opts: SpawnHeadlessOptions): HeadlessRun {
   });
 
   if (child.pid !== undefined) {
+    // Suppress EPIPE unhandled error events on child.stdin so that early exits
+    // of a spawned CLI never crash the parent daemon process.
+    child.stdin.on('error', () => { /* ignore EPIPE/broken pipe */ });
+
     registerPid({
       pid: child.pid,
       cli: opts.cli,

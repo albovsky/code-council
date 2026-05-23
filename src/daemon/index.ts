@@ -96,8 +96,8 @@ async function main(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
      
     console.error(
-      `\n[chorus] Could not open database. Run \`chorus init\` first, ` +
-        `or check permissions on ~/.chorus/chorus.db.\n  detail: ${msg}\n`,
+      `\n[council] Could not open database. Run \`council init\` first, ` +
+        `or check permissions on ~/.code-council/council.db.\n  detail: ${msg}\n`,
     );
     process.exit(1);
   }

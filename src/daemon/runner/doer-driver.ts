@@ -268,7 +268,7 @@ export async function runDoer(
   // Acquire session — fresh per chat by default; reuses across rounds when
   // template policy says so (shareSessionAcrossRounds, default true).
   const perms = await getPermissions();
-  const sessionName = sanitizeName(`chorus-${chatId}-${phase.id}-doer-${agentName}`);
+  const sessionName = sanitizeName(`council-${chatId}-${phase.id}-doer-${agentName}`);
   const session = await tmuxMgr.acquire({
     chatId,
     phaseId: phase.id,

@@ -591,7 +591,7 @@ async function runReviewer(
   // makes sense.
   const perms = await getPermissions();
   const sessionName = sanitizeName(
-    `chorus-${chatId}-${phase.id}-reviewer-${agentName}-${reviewerIdx}`,
+    `council-${chatId}-${phase.id}-reviewer-${agentName}-${reviewerIdx}`,
   );
   const session = await tmuxMgr.acquire({
     chatId,

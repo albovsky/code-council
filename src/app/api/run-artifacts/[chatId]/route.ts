@@ -52,7 +52,7 @@ interface SwapEntry {
 const AGENT_TO_LINEAGE: Record<string, string> = {
   "claude-code": "claude",
   "codex-cli": "codex",
-  "gemini-cli": "antigravity",
+  "antigravity-cli": "antigravity",
   "opencode-cli": "opencode",
   "kimi-cli": "kimi",
 };

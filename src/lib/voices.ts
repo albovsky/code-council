@@ -271,6 +271,12 @@ export async function seedCliVoices(): Promise<{
       if (before) updated++;
       else added++;
 
+      // If a separate row exists for the default model, delete it to prevent duplicates.
+      const defaultModelId = `${provider}:${latestModel}`;
+      if (await voices.getById(defaultModelId)) {
+        await voices.delete(defaultModelId);
+      }
+
       // Reconcile non-default curated/discovered models on EVERY boot —
       // not just first boot. Why: when the catalog changes (new model
       // added in lineage-maps.ts, codex live probe surfaces a new slug),

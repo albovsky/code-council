@@ -108,6 +108,7 @@ export function ParticipantCard({
           : "working";
 
   const ui = displayLineage(participant);
+  const showAgyQuotaPill = isAntigravityQuotaFailure(participant, failure);
 
   return (
     <div
@@ -365,6 +366,15 @@ export function ParticipantCard({
       <div className="flex items-center justify-between gap-3 border-t border-border bg-card/60 px-4 py-2 font-mono text-[10px] text-muted-foreground">
         <span className="truncate">{participant.binaryUsed ?? participant.agentName}</span>
         <span className="flex shrink-0 items-center gap-2">
+          {showAgyQuotaPill && (
+            <span
+              title={failure?.message}
+              className="inline-flex items-center gap-1 rounded-full border border-amber-500/35 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-amber-300"
+            >
+              <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+              quota reached
+            </span>
+          )}
           {participant.durationMs !== undefined && (
             <span title="Wall-clock time the CLI took to finish.">
               {formatDuration(participant.durationMs)}
@@ -517,6 +527,17 @@ function parseFailureSummary(
     ...(cta ? { cta } : {}),
     ...(resetAt ? { resetAt } : {}),
   };
+}
+
+function isAntigravityQuotaFailure(
+  participant: ParticipantSnapshot,
+  failure: ReturnType<typeof parseFailureSummary>,
+): boolean {
+  if (failure?.kind !== "quota_exhausted") return false;
+  return (
+    participant.binaryUsed === "antigravity-cli" ||
+    participant.agentName === "antigravity-cli"
+  );
 }
 
 function formatResetAt(ms: number): string {

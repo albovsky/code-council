@@ -200,6 +200,20 @@ describe('parseGeminiExit — stderr-driven quota detection', () => {
   });
 });
 
+describe('agyExitEvents — Antigravity quota detection', () => {
+  it('emits quota_exhausted for the individual quota message', async () => {
+    const { agyExitEvents } = await import('@/daemon/agents/agy');
+    const stderr =
+      '\u26a0 Individual quota reached. Contact your administrator to enable overages.\n' +
+      'Resets in 3h43m1s.';
+    const events = agyExitEvents('', stderr, 1);
+    expect(events).toHaveLength(1);
+    expect((events[0] as { kind: string }).kind).toBe('quota_exhausted');
+    expect((events[0] as { message: string }).message).toMatch(/Antigravity quota reached/);
+    expect((events[0] as { message: string }).message).toMatch(/3h43m1s/);
+  });
+});
+
 describe('parseOpencodeExit — single-blob fallback (older opencode builds)', () => {
   it('lifts message field into finalText', () => {
     const events = parseOpencodeExit('{"message":"Reviewed: looks good","cost":0.0}');

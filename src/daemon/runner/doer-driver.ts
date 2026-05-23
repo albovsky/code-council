@@ -318,6 +318,18 @@ export async function runDoer(
   const pollHandle = setInterval(() => {
     try {
       const pane = tmuxMgr.capturePane(session.name);
+      onEvent({
+        chatId,
+        type: 'phase_progress',
+        payload: {
+          phaseId: phase.id,
+          round,
+          role: 'doer',
+          agent: agentName,
+          output: pane,
+        },
+        ts: Date.now(),
+      });
       const err = errorDetector.inspect(session.name, phase.doer.lineage, pane);
       if (err) {
         const recoveryKeys =

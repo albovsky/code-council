@@ -17,6 +17,7 @@ import type { TemplateSchema } from '../lib/template-schema.js';
 import { ErrorDetector } from './error-detector.js';
 import * as participantAborts from './participant-aborts.js';
 import { runChat } from './runner.js';
+import type { RunnerEvent } from './runner/types.js';
 import type { TmuxManager } from './tmux-types.js';
 
 export interface Subscriber {
@@ -101,6 +102,14 @@ interface RunWithMultiplexArgs {
   errorDetector: ErrorDetector;
 }
 
+interface RunWithEventMultiplexArgs {
+  chatId: string;
+  execute: (args: {
+    abortSignal: AbortSignal;
+    onEvent: Parameters<typeof runChat>[0]['onEvent'];
+  }) => Promise<void>;
+}
+
 const VALID_PHASE_KINDS = [
   'plan',
   'spec',
@@ -113,17 +122,30 @@ const VALID_PHASE_KINDS = [
 ] as const;
 type PhaseKind = (typeof VALID_PHASE_KINDS)[number];
 
-const VALID_CHAT_STATUSES = [
-  'drafting',
-  'reviewing',
-  'approved',
-  'merged',
-  'blocked',
-  'cancelled',
-  'failed',
-  'no_review',
-] as const;
-type ChatStatus = (typeof VALID_CHAT_STATUSES)[number];
+type ChatStatus =
+  | 'drafting'
+  | 'reviewing'
+  | 'approved'
+  | 'merged'
+  | 'blocked'
+  | 'cancelled'
+  | 'failed'
+  | 'no_review';
+
+function normalizeChatDoneForAbort(
+  event: RunnerEvent,
+  aborted: boolean,
+): RunnerEvent {
+  if (!aborted || event.type !== 'chat_done') return event;
+  return {
+    ...event,
+    payload: {
+      ...event.payload,
+      status: 'cancelled',
+      verdict: 'failed',
+    },
+  };
+}
 
 function parseAttachedFiles(raw: string | null | undefined): string[] | undefined {
   if (!raw) return undefined;
@@ -138,9 +160,8 @@ function parseAttachedFiles(raw: string | null | undefined): string[] | undefine
   return undefined;
 }
 
-export function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
-  const { chatId, template, chat, tmuxMgr, errorDetector } = args;
-
+export function runWithEventMultiplex(args: RunWithEventMultiplexArgs): ActiveRun {
+  const { chatId } = args;
   // Explicit cancellation goes through POST /chats/:id/cancel which calls
   // entry.abortController.abort(). Closing an SSE does NOT abort.
   const abortController = new AbortController();
@@ -158,7 +179,8 @@ export function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
     return p;
   };
 
-  const onEvent: Parameters<typeof runChat>[0]['onEvent'] = (event) => {
+  const onEvent: Parameters<typeof runChat>[0]['onEvent'] = (rawEvent) => {
+    const event = normalizeChatDoneForAbort(rawEvent, abortController.signal.aborted);
     const line = `data: ${JSON.stringify(event)}\n\n`;
     const toRemove: Subscriber[] = [];
     for (const sub of Array.from(subscribers)) {
@@ -337,16 +359,8 @@ export function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
     }
   };
 
-  const promise = runChat({
-    chatId,
-    template,
-    work: chat.work,
-    artifact: chat.artifact ?? undefined,
-    repoPath: chat.repo_path ?? undefined,
-    attachedFiles: parseAttachedFiles(chat.attached_files),
+  const promise = args.execute({
     abortSignal: abortController.signal,
-    tmuxMgr,
-    errorDetector,
     onEvent,
   }).finally(async () => {
     // Drain pending DB writes BEFORE releasing the slot. Without this,
@@ -383,6 +397,25 @@ export function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
   const entry: ActiveRun = { promise, subscribers, abortController };
   activeRuns.set(chatId, entry);
   return entry;
+}
+
+export function runWithMultiplex(args: RunWithMultiplexArgs): ActiveRun {
+  const { chatId, template, chat, tmuxMgr, errorDetector } = args;
+  return runWithEventMultiplex({
+    chatId,
+    execute: ({ abortSignal, onEvent }) => runChat({
+      chatId,
+      template,
+      work: chat.work,
+      artifact: chat.artifact ?? undefined,
+      repoPath: chat.repo_path ?? undefined,
+      attachedFiles: parseAttachedFiles(chat.attached_files),
+      abortSignal,
+      tmuxMgr,
+      errorDetector,
+      onEvent,
+    }),
+  });
 }
 
 /**

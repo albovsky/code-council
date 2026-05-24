@@ -26,6 +26,7 @@ import type {
   ParticipantWarning,
   RoundSnapshot,
   TriageSnapshot,
+  ThermoRunPlan,
 } from "../run-viewer/types";
 import { enrichRounds } from "./enrich-rounds";
 import { HeaderActions } from "./header-actions";
@@ -73,6 +74,7 @@ interface Props {
    * status='approved' but verdict='request_changes', the run finished
    * but reviewers said no — header must reflect that, not green-stamp it. */
   initialVerdict?: string;
+  initialThermoPlan?: ThermoRunPlan | null;
   /** Demo-only — see DemoDataSource. */
   demoDataSource?: DemoDataSource;
 }
@@ -88,6 +90,7 @@ export function LiveRunReal({
   initialPrUrl,
   initialShipError,
   initialVerdict,
+  initialThermoPlan,
   demoDataSource,
 }: Props) {
   const [status, setStatus] = useState(initialStatus);
@@ -135,6 +138,9 @@ export function LiveRunReal({
   //     the SSE is closed because the chat went terminal)
   const [fallbackSwaps, setFallbackSwaps] = useState<FallbackSwap[]>([]);
   const [triage, setTriage] = useState<TriageSnapshot | null>(null);
+  const [thermoPlan, setThermoPlan] = useState<ThermoRunPlan | null>(
+    initialThermoPlan ?? null,
+  );
   // Dedup key includes phaseId + role + agent so a future multi-phase
   // template can't collapse two distinct swaps that happen to share the
   // (round, agent, fromLineage, fromModel) tuple. Today's review-only
@@ -179,9 +185,11 @@ export function LiveRunReal({
           rounds: RoundSnapshot[];
           swaps?: FallbackSwap[];
           triage?: TriageSnapshot | null;
+          thermoPlan?: ThermoRunPlan | null;
         };
         setRounds(data.rounds);
         setTriage(data.triage ?? null);
+        setThermoPlan(data.thermoPlan ?? null);
         if (Array.isArray(data.swaps) && data.swaps.length > 0) {
           mergeSwapsFromArtifacts(data.swaps);
         }
@@ -224,6 +232,17 @@ export function LiveRunReal({
             const snapshot = demoDataSource.fetchArtifacts();
             setRounds(snapshot.rounds);
             if (Array.isArray(snapshot.swaps)) mergeSwapsFromArtifacts(snapshot.swaps);
+          } else {
+            fetch(`/api/run-artifacts/${chatId}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((data) => {
+                if (!data) return;
+                setRounds(data.rounds);
+                setTriage(data.triage ?? null);
+                setThermoPlan(data.thermoPlan ?? null);
+                if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
+              })
+              .catch(() => {});
           }
         }
 
@@ -336,6 +355,7 @@ export function LiveRunReal({
                 if (!data) return;
                 setRounds(data.rounds);
                 setTriage(data.triage ?? null);
+                setThermoPlan(data.thermoPlan ?? null);
                 if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
               })
               .catch(() => {});
@@ -347,7 +367,19 @@ export function LiveRunReal({
           // terminal state ('completed' / 'merged' / 'blocked' /
           // 'no_review'). Prefer that over verdict for the UI.
           const finalStatus = e.payload.status as string | undefined;
-          if (finalStatus === "merged") setStatus("merged");
+          if (finalStatus === "non_resumable") {
+            setStatus("failed");
+            const finalVerdict = e.payload.verdict as string | undefined;
+            if (typeof finalVerdict === "string" && finalVerdict.length > 0) {
+              setVerdict(finalVerdict);
+            }
+            const error = e.payload.error as { message?: unknown } | undefined;
+            setShipError(
+              typeof error?.message === "string"
+                ? error.message
+                : "Thermo run is not resumable.",
+            );
+          } else if (finalStatus === "merged") setStatus("merged");
           else if (finalStatus === "blocked") setStatus("blocked");
           else if (finalStatus === "no_review") setStatus("no_review");
           else if (finalStatus === "failed") setStatus("failed");
@@ -380,6 +412,7 @@ export function LiveRunReal({
                 if (!data) return;
                 setRounds(data.rounds);
                 setTriage(data.triage ?? null);
+                setThermoPlan(data.thermoPlan ?? null);
                 if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
               })
               .catch(() => {});
@@ -405,6 +438,7 @@ export function LiveRunReal({
       .then((data) => {
         if (cancelled || !data) return;
         setTriage(data.triage ?? null);
+        setThermoPlan(data.thermoPlan ?? null);
         if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
       })
       .catch(() => {
@@ -541,6 +575,7 @@ export function LiveRunReal({
         completedPhaseCount={completedPhaseCount}
         rounds={rounds}
         enrichedRounds={enrichedRounds}
+        thermoPlan={thermoPlan}
         prUrl={prUrl}
         shipError={shipError}
       />

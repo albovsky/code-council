@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { GitPullRequestArrow, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { CliStatusPanel } from "@/components/cli-status-panel";
 import { HomeStatsCards } from "@/components/home-stats-cards";
 import { PageHeader } from "@/components/page-header";
-import { CodeReviewLauncher } from "@/app/code-review/code-review-launcher";
 
 export const dynamic = "force-dynamic";
 
@@ -117,17 +116,14 @@ function EmptyHero() {
   return (
     <section className="rounded-xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-6 sm:p-10">
       <div className="grid h-12 w-12 place-items-center rounded-lg bg-primary/15 text-primary">
-        <GitPullRequestArrow className="h-6 w-6" />
+        <Sparkles className="h-6 w-6" />
       </div>
       <h1 className="mt-5 text-2xl font-semibold tracking-tight">
-        Code Review
+        Welcome to Code Council
       </h1>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-        Review the current worktree, or compare the current branch against main.
+        Connect your reviewer fleet, browse templates, and track recent runs from here.
       </p>
-      <div className="mt-6 max-w-3xl">
-        <CodeReviewLauncher />
-      </div>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <Link
           href="/templates"
@@ -159,10 +155,6 @@ function ActiveHome({ stats }: ActiveHomeProps) {
           </Link>
         }
       />
-
-      <section className="mb-8">
-        <CodeReviewLauncher />
-      </section>
 
       <section>
         <HomeStatsCards stats={stats} />

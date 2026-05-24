@@ -10,6 +10,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import type { ThermoParticipantMetadata } from "@/lib/thermo-run-types";
+import {
+  readThermoParticipantMetadata,
+  readThermoRunPlanByChatId,
+} from "@/lib/server/thermo-run-artifacts";
 
 interface ParticipantSnapshot {
   participant: string;
@@ -21,6 +26,7 @@ interface ParticipantSnapshot {
   findingsPreview?: string[];
   binaryUsed?: string;
   modelUsed?: string;
+  thermo?: ThermoParticipantMetadata;
 }
 
 interface RoundSnapshot {
@@ -283,6 +289,11 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
             /* sidecar is informational; ignore parse errors */
           }
         }
+        const thermo = readThermoParticipantMetadata(
+          path.join(roundDir, d.name),
+          answer,
+          modelUsed,
+        );
         return {
           participant: d.name,
           role,
@@ -295,6 +306,7 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
           modelUsed,
           durationMs,
           usage,
+          thermo,
         };
       });
 
@@ -339,5 +351,6 @@ export async function GET(
   const rounds = readChatRounds(chatId);
   const swaps = readChatSwaps(chatId);
   const triage = readTriage(chatId);
-  return Response.json({ rounds, swaps, triage });
+  const thermoPlan = readThermoRunPlanByChatId(chatId);
+  return Response.json({ rounds, swaps, triage, thermoPlan });
 }

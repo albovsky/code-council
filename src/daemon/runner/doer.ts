@@ -241,6 +241,14 @@ export async function runDoerHeadless(args: {
           },
           ts: Date.now(),
         });
+        try {
+          await recordHealth({
+            lineage: phase.doer.lineage as CliLineage,
+            status: 'healthy',
+          });
+        } catch (healthErr: unknown) {
+          console.error(`[chorus] recordHealth failed for ${phase.doer.lineage}:`, healthErr);
+        }
       } else if (event.type === 'error') {
         errored = true;
         // Mirror reviewer.ts: persist OpenRouter HTTP-error state into

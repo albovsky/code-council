@@ -5,6 +5,11 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { LiveRunReal } from "@/components/live-run-real";
 import { getChat, getTemplate, DaemonError } from "@/lib/api";
+import type { ThermoParticipantMetadata } from "@/components/run-viewer/types";
+import {
+  readThermoParticipantMetadata,
+  readThermoRunPlanByChatId,
+} from "@/lib/server/thermo-run-artifacts";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +79,7 @@ interface ParticipantSnapshot {
     cachedInputTokens?: number;
     costUsd?: number;
   };
+  thermo?: ThermoParticipantMetadata;
 }
 
 interface RoundSnapshot {
@@ -182,6 +188,11 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
             /* informational sidecar; ignore parse errors */
           }
         }
+        const thermo = readThermoParticipantMetadata(
+          path.join(roundDir, d.name),
+          answer,
+          modelUsed,
+        );
         return {
           participant: d.name,
           role,
@@ -194,6 +205,7 @@ function readChatRounds(chatId: string): RoundSnapshot[] {
           modelUsed,
           durationMs,
           usage,
+          thermo,
         };
       });
 
@@ -212,6 +224,7 @@ export default async function RunPage({ params }: RunPageProps) {
   }
 
   const initialRounds = readChatRounds(chat.id);
+  const initialThermoPlan = readThermoRunPlanByChatId(chat.id);
 
   return (
     <AppShell>
@@ -219,6 +232,7 @@ export default async function RunPage({ params }: RunPageProps) {
         chatId={chat.id}
         initialStatus={chat.status}
         initialRounds={initialRounds}
+        initialThermoPlan={initialThermoPlan}
         template={template}
         templateId={chat.templateId}
         work={chat.work}

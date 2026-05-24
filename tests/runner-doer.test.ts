@@ -20,6 +20,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { runDoerHeadless } from '../src/daemon/runner';
 import { _resetDbForTests } from '../src/lib/db/connection';
+import { getHealth } from '../src/lib/cli-health';
 import type { StandardPhase } from '../src/lib/template-schema';
 import type { RunnerEvent } from '../src/daemon/runner';
 import { makeFakeShim, happyPathEvents } from './helpers/fake-agent-shim';
@@ -109,6 +110,16 @@ describe('runDoerHeadless', () => {
     const handle = makeFakeShim({ events: happyPathEvents('done\n## DONE') });
     await callDoer(handle);
     expect(handle.calls[0].options.model).toBe('claude-opus-4-7');
+  });
+
+  it('records the doer lineage as healthy after a successful run', async () => {
+    const handle = makeFakeShim({ events: happyPathEvents('done\n## DONE') });
+    await callDoer(handle);
+
+    await expect(getHealth('anthropic')).resolves.toMatchObject({
+      lineage: 'anthropic',
+      status: 'healthy',
+    });
   });
 
   it('honours modelOverride over phase.doer.models[0] (per-attempt fallback)', async () => {

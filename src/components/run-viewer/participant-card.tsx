@@ -31,6 +31,19 @@ function displayLineage(p: ParticipantSnapshot): ReviewerLineage {
   return p.lineage;
 }
 
+function thermoRoleLabel(role: NonNullable<ParticipantSnapshot["thermo"]>["role"]): string {
+  switch (role) {
+    case "primary":
+      return "Primary";
+    case "validator":
+      return "Adversarial";
+    case "synthesizer":
+      return "Synthesis";
+    case "auditor":
+      return "Audit";
+  }
+}
+
 /**
  * One reviewer/doer card in the run grid.
  *
@@ -109,6 +122,12 @@ export function ParticipantCard({
 
   const ui = displayLineage(participant);
   const showAgyQuotaPill = isAntigravityQuotaFailure(participant, failure);
+  const thermo = participant.thermo;
+  const roleLabel = thermo ? thermoRoleLabel(thermo.role) : participant.role;
+  const domainLabel = thermo?.domain.replaceAll("_", " ");
+  const tierLabel = thermo?.tier
+    .replace("_PLUS", "+")
+    .replace("_MINUS", "-");
 
   return (
     <div
@@ -133,8 +152,16 @@ export function ParticipantCard({
               state === "working" ? "animate-pulse-soft" : ""
             }`}
           />
-          <span className="font-medium capitalize text-foreground">{participant.role}</span>
+          <span className="font-medium capitalize text-foreground">{roleLabel}</span>
           <span className="text-muted-foreground">·</span>
+          {domainLabel && (
+            <>
+              <span className="truncate uppercase tracking-wider text-muted-foreground">
+                {domainLabel}
+              </span>
+              <span className="text-muted-foreground/60">·</span>
+            </>
+          )}
           <span className="uppercase tracking-wider text-muted-foreground">
             {uiLineageLabel(ui)}
           </span>
@@ -143,6 +170,14 @@ export function ParticipantCard({
               <span className="text-muted-foreground/60">·</span>
               <span className="truncate font-mono text-muted-foreground">
                 {participant.modelUsed ?? participant.model}
+              </span>
+            </>
+          )}
+          {tierLabel && (
+            <>
+              <span className="text-muted-foreground/60">·</span>
+              <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 font-mono text-[10px] text-primary">
+                Tier {tierLabel}
               </span>
             </>
           )}
@@ -202,6 +237,17 @@ export function ParticipantCard({
           <StateBadge state={state} />
         </div>
       </div>
+
+      {thermo && (
+        <div className="border-b border-border/70 bg-card/35 px-4 py-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {thermo.phaseLabel}
+          </div>
+          <div className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+            {thermo.check}
+          </div>
+        </div>
+      )}
 
       {swaps && swaps.length > 0 && (() => {
         // Only the LAST entry's `to` voice actually produced an answer;

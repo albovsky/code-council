@@ -7,117 +7,51 @@
  *   - which ones are quota-exhausted (and when they reset)
  *   - which ones are auth-broken
  *
- * Server component. Fetches both /orchestrators (connection state) and
- * /cli/health (recent failure state) and merges them.
+ * Server component. Fetches voices plus /cli/health and merges them.
+ * Voice loading controls rendering; health loading is best-effort.
  */
 
-import {
-  CheckCircle2,
-  AlertTriangle,
-  Clock,
-  CircleHelp,
-  Plug,
-} from "lucide-react";
+import { Plug } from "lucide-react";
 import { fetchFromDaemon } from "@/lib/api/client";
 import type { ListEnvelope } from "@/lib/types";
 import { lineageDot } from "@/lib/lineage-maps";
 import type { Voice } from "@/lib/api/voices";
+import type { CliHealth } from "@/lib/api/cli-health";
+import { CliHealthBadge } from "@/components/cli-health-badge";
+import {
+  rankReviewVoices,
+  type ReviewModelTier,
+} from "@/lib/review-model-tiering";
 import Link from "next/link";
 
-interface OrchestratorStatus {
-  name: string;
-  label: string;
-  connected: boolean;
-  supported: boolean;
-}
-
-interface CliHealth {
-  lineage: string;
-  status: "healthy" | "quota_exhausted" | "auth_invalid" | "rate_limited" | "unknown";
-  message?: string;
-  resetAt?: number;
-  updatedAt: number;
-}
-
-// Map orchestrator name → underlying lineage tag for health lookup.
-const ORCHESTRATOR_TO_LINEAGE: Record<string, string> = {
-  claude: "anthropic",
-  codex: "openai",
-  antigravity: "google",
-  opencode: "opencode",
-  kimi: "moonshot",
-  grok: "grok",
-};
-
-// Map orchestrator name → voices.provider value for the fleet-card lookup.
-// Single-model CLIs use immutable IDs equal to their provider (e.g.
-// 'claude-code'). The fleet card filters voices by provider to render its
-// per-model toggle list.
-const ORCHESTRATOR_TO_PROVIDER: Record<string, string> = {
-  claude: "claude-code",
-  codex: "codex-cli",
-  antigravity: "antigravity-cli",
-  kimi: "kimi-cli",
-  opencode: "opencode-cli",
-  grok: "grok-cli",
-};
-
-function formatResetIn(resetAt?: number): string | null {
-  if (!resetAt) return null;
-  const ms = resetAt - Date.now();
-  if (ms <= 0) return "now";
-  const mins = Math.round(ms / 60000);
-  if (mins < 60) return `in ${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `in ${hours}h`;
-  const days = Math.round(hours / 24);
-  return `in ${days}d`;
-}
-
-function statusBadge(health: CliHealth): React.ReactNode {
-  switch (health.status) {
-    case "quota_exhausted":
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
-          <Clock className="h-3 w-3" />
-          Quota exhausted
-          {health.resetAt && (
-            <span className="ml-1 text-amber-200/70">
-              {formatResetIn(health.resetAt)}
-            </span>
-          )}
-        </span>
-      );
-    case "auth_invalid":
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
-          <AlertTriangle className="h-3 w-3" />
-          Auth broken
-        </span>
-      );
-    case "rate_limited":
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
-          <Clock className="h-3 w-3" />
-          Rate-limited
-        </span>
-      );
-    case "healthy":
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
-          <CheckCircle2 className="h-3 w-3" />
-          Healthy
-        </span>
-      );
-    case "unknown":
+function tierLabel(tier: ReviewModelTier): string {
+  switch (tier) {
+    case "A_PLUS":
+      return "A+";
+    case "A_MINUS":
+      return "A-";
+    case "B_PLUS":
+      return "B+";
+    case "B_MINUS":
+      return "B-";
     default:
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-          <CircleHelp className="h-3 w-3" />
-          Untested
-        </span>
-      );
+      return tier;
   }
+}
+
+function tierBadge(tier: ReviewModelTier): React.ReactNode {
+  const tone =
+    tier.startsWith("A")
+      ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-300"
+      : tier.startsWith("B")
+        ? "border-sky-400/25 bg-sky-500/10 text-sky-300"
+        : "border-zinc-400/20 bg-muted text-muted-foreground";
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${tone}`}>
+      Tier {tierLabel(tier)}
+    </span>
+  );
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -131,18 +65,9 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 export async function CliStatusPanel() {
-  let orchestrators: OrchestratorStatus[] = [];
   let healths: CliHealth[] = [];
   let allVoices: Voice[] = [];
   let openrouterVoices: Voice[] = [];
-  try {
-    const env = await fetchFromDaemon<ListEnvelope<OrchestratorStatus>>(
-      "/orchestrators",
-    );
-    orchestrators = env.items;
-  } catch {
-    return null;
-  }
   try {
     const env = await fetchFromDaemon<ListEnvelope<CliHealth>>("/cli/health");
     healths = env.items;
@@ -169,10 +94,10 @@ export async function CliStatusPanel() {
   for (const h of healths) healthByLineage[h.lineage] = h;
 
   // Filter and collect all enabled models across active CLI and API connections
-  const enabledVoices = [
+  const enabledVoices = rankReviewVoices([
     ...allVoices.filter((v) => v.enabled),
     ...openrouterVoices.filter((v) => v.enabled),
-  ];
+  ]);
 
   if (enabledVoices.length === 0) return null;
 
@@ -191,7 +116,8 @@ export async function CliStatusPanel() {
         </Link>
       </div>
       <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {enabledVoices.map((v) => {
+        {enabledVoices.map((ranked) => {
+          const v = ranked.voice;
           const lineage = v.lineage;
           const healthKey = v.provider === "openrouter" ? "openrouter" : v.lineage;
           const health = healthByLineage[healthKey] ?? {
@@ -218,8 +144,9 @@ export async function CliStatusPanel() {
                   </div>
                 </div>
               </div>
-              <div className="shrink-0">
-                {statusBadge(health)}
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                {tierBadge(ranked.tier)}
+                <CliHealthBadge voiceId={v.id} initialHealth={health} />
               </div>
             </div>
           );

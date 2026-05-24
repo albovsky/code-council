@@ -190,6 +190,11 @@ export function OrchestratorCard({ initial, voices: initialVoices }: Props) {
           </div>
         )}
 
+        {isConnected && status.firstCallBehavior === "prompts_once" && (
+          <p className="text-[11px] text-amber-300/90">
+            ⚠ First council.* call will show a one-time prompt — click &quot;Always allow&quot;.
+          </p>
+        )}
 
         {supportsModels && (
           <div className="space-y-2">

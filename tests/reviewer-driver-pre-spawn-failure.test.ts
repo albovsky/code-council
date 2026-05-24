@@ -122,4 +122,40 @@ describe('runReviewers — pre-spawn precheck failure', () => {
     expect(warning).toBeDefined();
     expect((warning?.payload as { reason?: string })?.reason).toBe('cli_missing');
   });
+
+  it('runSingleReviewerWithPrompt separates candidate index from participant display index', async () => {
+    const { runSingleReviewerWithPrompt } = await import('../src/daemon/runner/reviewer-driver');
+    type RunSingleArgs = Parameters<typeof runSingleReviewerWithPrompt>[0];
+    const fakeTmux = {} as RunSingleArgs['tmuxMgr'];
+    const fakeErrorDetector = {} as RunSingleArgs['errorDetector'];
+
+    const result = await runSingleReviewerWithPrompt({
+      chatDir,
+      chatId: 'test-chat',
+      phase,
+      phaseIdx: 0,
+      round: 1,
+      candidateIdx: 0,
+      reviewerIdx: 5,
+      askContent: 'prebuilt review ask',
+      tmuxMgr: fakeTmux,
+      errorDetector: fakeErrorDetector,
+      onEvent: (e) => events.push(e),
+      abortSignal: new AbortController().signal,
+    });
+
+    expect(result.result).toBeNull();
+    expect(result.answerFile).toBe(path.join(chatDir, 'round-1', 'reviewer-codex-cli-5', 'answer.md'));
+    const answer = fs.readFileSync(result.answerFile, 'utf-8');
+    expect(answer).toMatch(/\*\*Lineage:\*\* openai/);
+    expect(answer).toMatch(/\*\*Model:\*\* gpt-5\.5/);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'phase_start',
+      payload: expect.objectContaining({ agent: 'codex-cli-5' }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'cli_warning',
+      payload: expect.objectContaining({ agent: 'codex-cli-5', reason: 'cli_missing' }),
+    }));
+  });
 });

@@ -84,6 +84,7 @@ const CHORUS_BIN_PATH = path.resolve(__dirname, '..', '..', 'bin', 'chorus.mjs')
 // Singletons shared across the daemon lifetime.
 let tmuxMgr: TmuxManagerImpl;
 let stopReaper: (() => void) | null = null;
+let stopErrorDetectorCleanup: (() => void) | null = null;
 const errorDetector = new ErrorDetector();
 
 async function main(): Promise<void> {
@@ -260,6 +261,11 @@ async function main(): Promise<void> {
     },
   );
 
+  const errorDetectorCleanupInterval = setInterval(() => {
+    errorDetector.cleanup(30 * 60 * 1000);
+  }, 5 * 60 * 1000);
+  stopErrorDetectorCleanup = () => clearInterval(errorDetectorCleanupInterval);
+
   // ─── Graceful shutdown ──────────────────────────────────────────────
   const shutdown = async (signal: string) => {
     if (activeRunsCount() > 0) {
@@ -280,6 +286,7 @@ async function main(): Promise<void> {
       }
     }
     if (stopReaper) stopReaper();
+    if (stopErrorDetectorCleanup) stopErrorDetectorCleanup();
     await fastify.close();
     process.exit(0);
   };

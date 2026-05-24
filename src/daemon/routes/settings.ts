@@ -159,9 +159,13 @@ export function registerSettingsRoutes(fastify: FastifyInstance): void {
     Reply: ApiResponse<object>;
   }>('/settings/concurrency', async (request) => {
     try {
-      const { getConcurrency, setConcurrency, ConcurrencySchema } = await import(
-        '../../lib/settings/concurrency.js'
-      );
+      const {
+        getConcurrency,
+        setConcurrency,
+        ConcurrencySchema,
+        CLI_LINEAGES,
+        _defaults,
+      } = await import('../../lib/settings/concurrency.js');
       const current = await getConcurrency();
       const body = request.body ?? {};
       // Merge incoming patch with current state — partial PUTs are
@@ -173,7 +177,11 @@ export function registerSettingsRoutes(fastify: FastifyInstance): void {
       };
       const validated = ConcurrencySchema.parse(merged);
       await setConcurrency(validated);
-      return successResponse(validated);
+      return successResponse({
+        ...validated,
+        cliLineages: CLI_LINEAGES,
+        defaults: _defaults,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('validation', message);

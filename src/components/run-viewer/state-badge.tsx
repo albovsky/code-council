@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Loader2, XCircle } from "lucide-react";
 import type { ParticipantState } from "./types";
 
 /**
@@ -18,12 +18,18 @@ export function StateBadge({ state }: { state: ParticipantState }) {
     case "errored":
       return (
         <span className="flex items-center gap-1 rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-          <AlertTriangle className="h-3 w-3" /> ERRORED
+          <AlertTriangle className="h-3 w-3" /> FAILED
+        </span>
+      );
+    case "cancelled":
+      return (
+        <span className="flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <XCircle className="h-3 w-3" /> CANCELLED
         </span>
       );
     case "working":
       return (
-        <span className="flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+        <span className="flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
           <Loader2 className="h-3 w-3 animate-spin" /> WORKING
         </span>
       );

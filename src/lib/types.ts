@@ -283,6 +283,11 @@ export interface Settings {
    */
   "opencode.enabled_models"?: string[];
   /**
+   * Code Review page per-run agent exclusions. These do not disable the
+   * underlying connection; they only remove voices from Fast/Thermo launch.
+   */
+  "code_review.disabled_voice_ids"?: string[];
+  /**
    * Per-CLI enabled-models lists for the home-page fleet cards.
    * `<ui-lineage>.enabled_models` (e.g. `claude.enabled_models`,
    * `codex.enabled_models`, `gemini.enabled_models`,

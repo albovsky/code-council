@@ -2,11 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {
+  ThermoDomain,
   ThermoParticipantMetadata,
   ThermoParticipantRole,
   ThermoPhaseGroup,
   ThermoRunPlan,
 } from "@/lib/thermo-run-types";
+import { parseThermoDomain } from "@/lib/thermo-run-types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
@@ -37,13 +39,13 @@ export function parseThermoParticipantMetadata(
   if (value.kind !== "thermo") return undefined;
   if (!isPhaseGroup(value.phaseGroup)) return undefined;
   if (!isRole(value.role)) return undefined;
+  const domain = parseThermoDomain(value.domain) ?? "final_synthesis";
 
   const requiredStrings = [
     "phaseId",
     "phaseLabel",
     "description",
     "check",
-    "domain",
     "voiceId",
     "provider",
     "modelId",
@@ -52,8 +54,41 @@ export function parseThermoParticipantMetadata(
   for (const key of requiredStrings) {
     if (typeof value[key] !== "string") return undefined;
   }
+  const phaseId = value.phaseId;
+  const phaseLabel = value.phaseLabel;
+  const description = value.description;
+  const check = value.check;
+  const voiceId = value.voiceId;
+  const provider = value.provider;
+  const modelId = value.modelId;
+  const tier = value.tier;
+  if (
+    typeof phaseId !== "string" ||
+    typeof phaseLabel !== "string" ||
+    typeof description !== "string" ||
+    typeof check !== "string" ||
+    typeof voiceId !== "string" ||
+    typeof provider !== "string" ||
+    typeof modelId !== "string" ||
+    typeof tier !== "string"
+  ) {
+    return undefined;
+  }
 
-  return value as unknown as ThermoParticipantMetadata;
+  return {
+    kind: "thermo",
+    phaseGroup: value.phaseGroup,
+    phaseId,
+    phaseLabel,
+    description,
+    check,
+    domain,
+    role: value.role,
+    voiceId,
+    provider,
+    modelId,
+    tier,
+  };
 }
 
 export function readThermoParticipantMetadata(
@@ -143,7 +178,7 @@ function roleForPhaseGroup(phaseGroup: ThermoPhaseGroup): ThermoParticipantRole 
   return "primary";
 }
 
-function inferLegacyThermoDomain(header: string): string {
+function inferLegacyThermoDomain(header: string): ThermoDomain {
   const explicit = header.match(
     /(?:\*\*Domain:\*\*|^Domain:|^## Domain\s*\n)\s*([^\n]+)/im,
   )?.[1];
@@ -153,7 +188,7 @@ function inferLegacyThermoDomain(header: string): string {
   return normalizeLegacyThermoDomain(explicit ?? heading ?? "final_synthesis");
 }
 
-function normalizeLegacyThermoDomain(value: string): string {
+function normalizeLegacyThermoDomain(value: string): ThermoDomain {
   const normalized = value.toLowerCase();
   if (normalized.includes("architecture")) return "architecture";
   if (normalized.includes("security")) return "security";
@@ -164,10 +199,11 @@ function normalizeLegacyThermoDomain(value: string): string {
     return "docs";
   }
   if (normalized.includes("adversarial_noise")) return "adversarial_noise";
-  return "final_synthesis";
+  if (normalized.includes("synthesis_audit")) return "synthesis_audit";
+  return parseThermoDomain(normalized) ?? "final_synthesis";
 }
 
-function legacyDomainCheck(domain: string): string {
+function legacyDomainCheck(domain: ThermoDomain): string {
   switch (domain) {
     case "architecture":
       return "Architecture, maintainability, module boundaries, abstractions, and long-term change risk.";
@@ -190,9 +226,15 @@ export function readThermoRunPlan(chatDir: string): ThermoRunPlan | null {
   const planPath = path.join(chatDir, "_thermo-plan.json");
   if (!fs.existsSync(planPath)) return null;
   try {
-    const parsed = JSON.parse(fs.readFileSync(planPath, "utf-8")) as ThermoRunPlan;
+    const parsed = JSON.parse(fs.readFileSync(planPath, "utf-8")) as Partial<ThermoRunPlan>;
     if (Array.isArray(parsed.phases) && Array.isArray(parsed.domains)) {
-      return parsed;
+      return {
+        phases: parsed.phases,
+        domains: parsed.domains.map((domain) => ({
+          ...domain,
+          domain: parseThermoDomain(domain.domain) ?? "final_synthesis",
+        })),
+      };
     }
   } catch {
     /* informational sidecar; ignore parse errors */

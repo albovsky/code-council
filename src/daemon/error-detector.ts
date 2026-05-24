@@ -14,6 +14,7 @@ export type CliErrorKind =
   | 'permission_prompt'      // any CLI: "Allow this tool? / Always allow" dialog. Recoverable via shim.recoverKeys (Layer 2 of perm model)
   | 'survey_prompt'          // agy: "How's the CLI experience so far?" survey. Recoverable via shim.recoverKeys
   | 'cold_start_timeout'     // CLI never showed its prompt within cold_start_timeout_s
+  | 'reviewer_spawn_failed'  // reviewer setup/spawn threw before a valid result could be produced
   | 'tmux_dead'              // session no longer exists per tmux has-session
   | 'unknown';               // catch-all
 
@@ -23,6 +24,10 @@ export interface CliError {
   message: string;           // user-friendly one-liner for the run header
   cta?: string;              // recommended action (e.g. 'Re-authenticate codex')
   detail?: string;           // raw line that triggered the match
+  permissionRequest?: {
+    summary?: string;
+    command?: string;
+  };
   resetAt?: number;          // ms-epoch when retry is plausible (quota only)
 }
 
@@ -62,6 +67,51 @@ function parseResetDuration(duration?: string): number | undefined {
     }
   }
   return ms > 0 ? Date.now() + ms : undefined;
+}
+
+function stripTuiLine(line: string): string {
+  return line
+    .replace(/^\s*┃\s?/, '')
+    .replace(/^\s*│\s?/, '')
+    .trimEnd();
+}
+
+function extractPermissionRequest(paneText: string): {
+  summary?: string;
+  command?: string;
+} | undefined {
+  const lines = paneText.split('\n').map(stripTuiLine);
+  const start = lines.findIndex((line) => /Permission required/i.test(line));
+  if (start < 0) return undefined;
+
+  let summary: string | undefined;
+  let command: string | undefined;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/Allow once\s+(?:Always allow|Allow always)\s+Reject/i.test(line)) break;
+    if (!summary) {
+      const match = /^#\s*(.+)$/.exec(line);
+      if (match) summary = match[1].trim();
+    }
+    if (!command) {
+      const match = /^\$\s*(.+)$/.exec(line);
+      if (match) command = match[1].trim();
+    }
+  }
+
+  if (!summary && !command) return undefined;
+  return { summary, command };
+}
+
+function formatPermissionDetail(
+  fallback: string,
+  request?: { summary?: string; command?: string },
+): string {
+  if (!request) return fallback;
+  const parts: string[] = [];
+  if (request.summary) parts.push(`# ${request.summary}`);
+  if (request.command) parts.push(`$ ${request.command}`);
+  return parts.length > 0 ? parts.join('\n') : fallback;
 }
 
 /**
@@ -353,12 +403,14 @@ export class ErrorDetector {
         ? /Allow once\s+(?:Always allow|Allow always)\s+Reject/i.exec(paneText)
         : /(\b|△ ?)(Always allow|Allow always|Allow this|Allow once|Approve this call|Approve and run|\[a\]llow)\b/i.exec(paneText);
       if (promptMatch) {
+        const permissionRequest = extractPermissionRequest(paneText);
         return {
           kind: 'permission_prompt',
           lineage,
           message: `${lineage} is showing an approval dialog.`,
           cta: 'Runner auto-recovers via shim.recoverKeys; if missing, click "Always allow" manually.',
-          detail: promptMatch[0],
+          detail: formatPermissionDetail(promptMatch[0], permissionRequest),
+          ...(permissionRequest ? { permissionRequest } : {}),
         };
       }
     }

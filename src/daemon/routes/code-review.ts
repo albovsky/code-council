@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'yaml';
-import { chats, phaseEvents, templates, voices } from '../../lib/db/index.js';
+import { chats, phaseEvents, settings, templates, voices } from '../../lib/db/index.js';
 import {
   DEFAULT_CODE_REVIEW_MODE,
   isCodeReviewMode,
@@ -34,6 +34,7 @@ import type { TmuxManager } from '../tmux-types.js';
 
 const TEMPLATE_ID = 'branch-code-review';
 const THERMO_TEMPLATE_ID = 'branch-code-review-thermo';
+const CODE_REVIEW_DISABLED_VOICE_IDS_SETTING_KEY = 'code_review.disabled_voice_ids';
 
 interface RegisterCodeReviewRoutesArgs {
   tmuxMgr?: TmuxManager;
@@ -119,6 +120,54 @@ async function getCodeReviewTemplateConfig(options: { refreshBuiltin: boolean })
   return { templateRow, parsedTemplate, firstPhase };
 }
 
+function parseSkippedVoiceIds(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error('skippedVoiceIds must be an array of voice ids.');
+  }
+
+  return [...new Set(value.filter((item): item is string => typeof item === 'string'))];
+}
+
+function normalizeSkippedVoiceIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is string => typeof item === 'string'))];
+}
+
+async function getSavedSkippedVoiceIds(): Promise<string[]> {
+  try {
+    return normalizeSkippedVoiceIds(
+      await settings.get(CODE_REVIEW_DISABLED_VOICE_IDS_SETTING_KEY),
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function resolveSkippedVoiceIds(requestValue: unknown): Promise<string[]> {
+  const requested = parseSkippedVoiceIds(requestValue);
+  if (requested.length > 0) return requested;
+  return getSavedSkippedVoiceIds();
+}
+
+async function buildPerRunCodeReviewTemplate(skippedVoiceIds: string[]) {
+  if (skippedVoiceIds.length === 0) return null;
+
+  const templatePath = path.join(process.cwd(), 'templates', `${TEMPLATE_ID}.yaml`);
+  if (!fs.existsSync(templatePath)) return null;
+
+  const skipped = new Set(skippedVoiceIds);
+  const currentVoices = await voices.list();
+  const activeVoices = currentVoices.filter((voice) => !skipped.has(voice.id));
+  if (!activeVoices.some((voice) => voice.enabled)) return null;
+
+  const canonicalYaml = fs.readFileSync(templatePath, 'utf-8');
+  const adapted = adaptTemplate(canonicalYaml, activeVoices);
+  if (!adapted.isComplete) return null;
+
+  return TemplateSchema.parse(yaml.parse(adapted.yaml));
+}
+
 export function registerCodeReviewRoutes(
   fastify: FastifyInstance,
   args: RegisterCodeReviewRoutesArgs = {},
@@ -135,12 +184,23 @@ export function registerCodeReviewRoutes(
   });
 
   fastify.post<{
-    Body: { repoPath?: string; mode?: CodeReviewMode };
+    Body: { repoPath?: string; mode?: CodeReviewMode; skippedVoiceIds?: string[] };
     Reply: ApiResponse<object>;
   }>('/code-review', async (request, reply) => {
     const repoPath =
       request.body?.repoPath || process.env.CHORUS_REPO_PATH || process.cwd();
     const mode = request.body?.mode ?? DEFAULT_CODE_REVIEW_MODE;
+    let skippedVoiceIds: string[];
+
+    try {
+      skippedVoiceIds = await resolveSkippedVoiceIds(request.body?.skippedVoiceIds);
+    } catch (err) {
+      reply.code(400);
+      return errorResponse(
+        'validation',
+        err instanceof Error ? err.message : 'Invalid skippedVoiceIds.',
+      );
+    }
 
     if (!isCodeReviewMode(mode)) {
       reply.code(400);
@@ -182,8 +242,20 @@ export function registerCodeReviewRoutes(
         });
         await ensureThermoTemplate();
         const currentVoices = await voices.list({ enabled: true });
+        if (
+          skippedVoiceIds.length > 0
+          && currentVoices.length > 0
+          && currentVoices.every((voice) => skippedVoiceIds.includes(voice.id))
+        ) {
+          reply.code(400);
+          return errorResponse(
+            'validation',
+            'At least one reviewer must remain active for code review.',
+          );
+        }
         const assignments = assignThermoReviewDomains({
           voices: currentVoices,
+          skippedVoiceIds,
           changedFiles: scope.files,
         });
         const work = [
@@ -222,6 +294,7 @@ export function registerCodeReviewRoutes(
             route: 'POST /code-review',
             mode: scope.mode,
             reviewMode: mode,
+            skippedVoiceIds,
             fileCount: scope.files.length,
             totalBytes: scope.totalBytes,
             requestId: request.id,
@@ -302,9 +375,11 @@ export function registerCodeReviewRoutes(
         });
       }
 
-      const { templateRow, parsedTemplate, firstPhase } = await getCodeReviewTemplateConfig({
+      const templateConfig = await getCodeReviewTemplateConfig({
         refreshBuiltin: true,
       });
+      const { templateRow } = templateConfig;
+      let { parsedTemplate, firstPhase } = templateConfig;
       if (!templateRow) {
         reply.code(500);
         return errorResponse(
@@ -325,6 +400,18 @@ export function registerCodeReviewRoutes(
           'template_invalid',
           `Built-in template "${TEMPLATE_ID}" must start with a review_only phase.`,
         );
+      }
+
+      if (skippedVoiceIds.length > 0) {
+        parsedTemplate = await buildPerRunCodeReviewTemplate(skippedVoiceIds);
+        firstPhase = parsedTemplate?.phases[0] ?? null;
+        if (!parsedTemplate || !firstPhase || !isReviewOnlyPhase(firstPhase)) {
+          reply.code(400);
+          return errorResponse(
+            'validation',
+            'At least one reviewer must remain active for code review.',
+          );
+        }
       }
 
       const scope = await resolveCodeReviewScope(repoPath, {
@@ -365,6 +452,7 @@ export function registerCodeReviewRoutes(
           templateId: TEMPLATE_ID,
           route: 'POST /code-review',
           mode: scope.mode,
+          skippedVoiceIds,
           fileCount: scope.files.length,
           totalBytes: scope.totalBytes,
           requestId: request.id,

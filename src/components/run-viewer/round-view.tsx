@@ -17,18 +17,20 @@ import type {
 export function RoundView({
   round,
   isLatest,
-  activeFor,
   liveTails,
+  liveDurationFor,
   chatTerminal,
+  chatStatus,
   reviewOnly,
   chatId,
   swaps,
 }: {
   round: RoundSnapshot;
   isLatest?: boolean;
-  activeFor: (p: ParticipantSnapshot) => boolean;
   liveTails: Record<string, string>;
+  liveDurationFor?: (participant: ParticipantSnapshot) => number | undefined;
   chatTerminal: boolean;
+  chatStatus?: string;
   /** Review-only chats hide the doer card and the "Round N" header — there
    *  is no doer to render, and the chat is single-pass. The participants
    *  list still arrives with a synthetic doer-artifact slot; we filter it
@@ -80,7 +82,6 @@ export function RoundView({
           <ParticipantCard
             key={p.participant}
             participant={p}
-            isActive={activeFor(p)}
             // Look up the live tail by the participant's directory-name
             // identity (`p.participant` is "reviewer-opencode-cli-1",
             // "reviewer-opencode-cli-2", etc.) — must match the key format
@@ -88,7 +89,9 @@ export function RoundView({
             // `role:lineage` key collided across same-lineage reviewers
             // and rendered one reviewer's stream in another's card.
             liveTail={liveTails[p.participant]}
+            liveDurationMs={liveDurationFor?.(p)}
             chatTerminal={chatTerminal}
+            chatStatus={chatStatus}
             chatId={chatId}
             reviewOnly={reviewOnly}
             swaps={swapsForParticipant(p)}

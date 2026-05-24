@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { _resetDbForTests, chats, templates, voices } from '../src/lib/db/index';
+import { _resetDbForTests, chats, settings, templates, voices } from '../src/lib/db/index';
 import type { runThermoCodeReview } from '../src/daemon/runner/thermo-code-review';
 
 type ThermoRunnerArgs = Parameters<typeof runThermoCodeReview>[0];
@@ -64,6 +64,7 @@ phases:
 
 type ThermoRunnerCall = [{
   assignments: {
+    skippedVoiceIds: string[];
     assignments: {
       final_synthesis: {
         primary?: {
@@ -345,6 +346,62 @@ describe('registerCodeReviewRoutes', () => {
     ).toBe('opencode-go/deepseek-v4-pro');
   });
 
+  it('excludes skipped voices from thermo assignments at launch', async () => {
+    const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
+    await voices.upsert({
+      id: 'codex-cli',
+      label: 'Codex',
+      source: 'cli',
+      provider: 'codex-cli',
+      model_id: 'gpt-5.5',
+      lineage: 'openai',
+      enabled: true,
+    });
+    await voices.upsert({
+      id: 'opencode-deepseek',
+      label: 'DeepSeek via OpenCode',
+      source: 'cli',
+      provider: 'opencode-cli',
+      model_id: 'opencode-go/deepseek-v4-pro',
+      lineage: 'opencode',
+      enabled: true,
+    });
+    gitScopeMock.resolveCodeReviewScope.mockResolvedValue({
+      repoPath: '/repo',
+      repoRoot: '/repo',
+      mode: 'worktree',
+      headRef: 'feature/current',
+      files: ['app.ts'],
+      artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
+      title: 'Review worktree changes in repo',
+      totalBytes: 92,
+    });
+
+    const app = Fastify({ logger: false });
+    registerCodeReviewRoutes(app, {
+      startRun: true,
+      tmuxMgr: {} as never,
+      errorDetector: {} as never,
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/code-review',
+      payload: {
+        repoPath: '/repo',
+        mode: 'thermo',
+        skippedVoiceIds: ['codex-cli'],
+      },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    const thermoCalls = thermoRunnerMock.runThermoCodeReview.mock.calls as unknown as ThermoRunnerCall[];
+    expect(thermoCalls.at(-1)?.[0].assignments.skippedVoiceIds).toEqual(['codex-cli']);
+    expect(
+      thermoCalls.at(-1)?.[0].assignments.assignments.final_synthesis.primary?.voice.model_id,
+    ).toBe('opencode-go/deepseek-v4-pro');
+  });
+
   it('registers thermo runs with the active-run lifecycle so cancellation can abort them', async () => {
     const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
     const { getActiveRun } = await import('../src/daemon/runner-multiplex');
@@ -536,6 +593,48 @@ describe('registerCodeReviewRoutes', () => {
     expect(res.json()).toMatchObject({
       ok: false,
       error: { code: 'no_changes', message: 'No reviewable changes.' },
+    });
+  });
+
+  it('uses saved code-review disabled voices when launch payload omits skipped voices', async () => {
+    const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
+    await voices.upsert({
+      id: 'codex-cli',
+      label: 'Codex',
+      source: 'cli',
+      provider: 'codex-cli',
+      model_id: 'gpt-5.5',
+      lineage: 'openai',
+      enabled: true,
+    });
+    await settings.set('code_review.disabled_voice_ids', ['codex-cli']);
+    gitScopeMock.resolveCodeReviewScope.mockResolvedValue({
+      repoPath: '/repo',
+      repoRoot: '/repo',
+      mode: 'worktree',
+      headRef: 'feature/current',
+      files: ['app.ts'],
+      artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
+      title: 'Review worktree changes in repo',
+      totalBytes: 92,
+    });
+
+    const app = Fastify({ logger: false });
+    registerCodeReviewRoutes(app, { startRun: false });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/code-review',
+      payload: { repoPath: '/repo' },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      ok: false,
+      error: {
+        code: 'validation',
+        message: 'At least one reviewer must remain active for code review.',
+      },
     });
   });
 

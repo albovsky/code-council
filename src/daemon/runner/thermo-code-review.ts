@@ -90,22 +90,35 @@ export async function runThermoCodeReview(args: {
         domain,
         ranked,
         fallbackRanked: args.assignments.assignments[domain]?.validator,
+        validatorRanked: args.assignments.assignments[domain]?.validator,
       };
     })
     .filter((job): job is NonNullable<typeof job> => job !== null);
   const phaseOneFallbackSlots = phaseOneJobs.filter((job) => job.fallbackRanked).length;
   let nextFallbackIdx = phaseOneJobs.length;
-  const phaseOneRuns = await Promise.all(phaseOneJobs.map((job, idx) => {
+  let nextValidatorIdx = phaseOneJobs.length + phaseOneFallbackSlots;
+  const laneJobs = phaseOneJobs.map((job, idx) => {
     const fallbackIdx = job.fallbackRanked ? nextFallbackIdx++ : undefined;
-    return runPhaseOneSpecialist({
+    const validatorIdx = job.validatorRanked ? nextValidatorIdx++ : undefined;
+    return {
+      ...job,
+      reviewerIdx: idx,
+      fallbackReviewerIdx: fallbackIdx,
+      validatorReviewerIdx: validatorIdx,
+    };
+  });
+  const laneRuns = await Promise.all(laneJobs.map((job) => (
+    runThermoDomainLane({
       chatDir: args.chatDir,
       chatId: args.chatId,
       roundDir,
       domain: job.domain,
       ranked: job.ranked,
       fallbackRanked: job.fallbackRanked,
-      reviewerIdx: idx,
-      fallbackReviewerIdx: fallbackIdx,
+      validatorRanked: job.validatorRanked,
+      reviewerIdx: job.reviewerIdx,
+      fallbackReviewerIdx: job.fallbackReviewerIdx,
+      validatorReviewerIdx: job.validatorReviewerIdx,
       originalWork: args.work,
       filesBlock: args.filesBlock,
       artifact: args.artifact,
@@ -113,61 +126,17 @@ export async function runThermoCodeReview(args: {
       errorDetector: args.errorDetector,
       abortSignal: args.abortSignal,
       onEvent: args.onEvent,
-    });
-  }));
-
-  const fallbackDomains = new Set<ThermoDomain>();
-  for (const run of phaseOneRuns) {
-    skippedAgents.push(...run.skippedAgents);
-    if (run.output) {
-      phaseOneOutputs.push(run.output);
-    } else if (!args.abortSignal.aborted) {
-      runtimeCoverageGaps.push(runtimeCoverageGap(run.domain, 'specialist'));
-    }
-    if (run.usedFallback) {
-      fallbackDomains.add(run.domain);
-      runtimeCoverageGaps.push({
-        domain: run.domain,
-        severity: 'warning',
-        message: `The ${run.domain} validator was promoted to specialist fallback, so no independent ${run.domain} validation ran.`,
-      });
-    }
-  }
-
-  if (args.abortSignal.aborted) {
-    return cancelledResult(args, { phaseOneOutputs, validationNotes, skippedAgents });
-  }
-
-  const phaseTwoBaseIdx = phaseOneJobs.length + phaseOneFallbackSlots;
-  const phaseTwoJobs = SPECIALIST_DOMAINS
-    .map((domain) => {
-      if (fallbackDomains.has(domain)) return null;
-      const ranked = args.assignments.assignments[domain]?.validator;
-      if (!ranked) return null;
-      return { domain, ranked };
     })
-    .filter((job): job is NonNullable<typeof job> => job !== null);
-  const phaseTwoRuns = await Promise.all(phaseTwoJobs.map((job, idx) => runValidationParticipant({
-    chatDir: args.chatDir,
-    chatId: args.chatId,
-    roundDir,
-    domain: job.domain,
-    ranked: job.ranked,
-    reviewerIdx: phaseTwoBaseIdx + idx,
-    artifact: args.artifact,
-    phaseOneOutputs,
-    tmuxMgr: args.tmuxMgr,
-    errorDetector: args.errorDetector,
-    abortSignal: args.abortSignal,
-    onEvent: args.onEvent,
-  })));
+  )));
 
-  for (const run of phaseTwoRuns) {
+  for (const run of laneRuns) {
     skippedAgents.push(...run.skippedAgents);
-    if (run.output) {
-      validationNotes.push(run.output);
-    } else if (!args.abortSignal.aborted) {
-      runtimeCoverageGaps.push(runtimeCoverageGap(run.domain, 'validator'));
+    runtimeCoverageGaps.push(...run.coverageGaps);
+    if (run.phaseOneOutput) {
+      phaseOneOutputs.push(run.phaseOneOutput);
+    }
+    if (run.validationOutput) {
+      validationNotes.push(run.validationOutput);
     }
   }
 
@@ -175,7 +144,7 @@ export async function runThermoCodeReview(args: {
     return cancelledResult(args, { phaseOneOutputs, validationNotes, skippedAgents });
   }
 
-  const finalSynthesisReviewerIdx = phaseTwoBaseIdx + phaseTwoJobs.length;
+  const finalSynthesisReviewerIdx = nextValidatorIdx;
   const auditReviewerIdx = finalSynthesisReviewerIdx + 1;
   const revisionReviewerIdx = finalSynthesisReviewerIdx + 2;
   const synthesis = await runSynthesisPass({
@@ -398,6 +367,123 @@ function standardPhase(
     },
 	  };
 	}
+
+async function runThermoDomainLane(args: {
+  chatDir: string;
+  chatId: string;
+  roundDir: string;
+  domain: ThermoDomain;
+  ranked: RankedReviewVoice;
+  fallbackRanked?: RankedReviewVoice;
+  validatorRanked?: RankedReviewVoice;
+  reviewerIdx: number;
+  fallbackReviewerIdx?: number;
+  validatorReviewerIdx?: number;
+  originalWork: string;
+  filesBlock: string;
+  artifact: string;
+  tmuxMgr: TmuxManager;
+  errorDetector: ErrorDetector;
+  abortSignal: AbortSignal;
+  onEvent: (event: RunnerEvent) => void;
+}): Promise<{
+  domain: ThermoDomain;
+  phaseOneOutput?: ThermoReviewOutput;
+  validationOutput?: ThermoValidationOutput;
+  skippedAgents: ThermoSkippedAgent[];
+  coverageGaps: ThermoCoverageGap[];
+}> {
+  const skippedAgents: ThermoSkippedAgent[] = [];
+  const coverageGaps: ThermoCoverageGap[] = [];
+  const phaseOne = await runPhaseOneSpecialist({
+    chatDir: args.chatDir,
+    chatId: args.chatId,
+    roundDir: args.roundDir,
+    domain: args.domain,
+    ranked: args.ranked,
+    fallbackRanked: args.fallbackRanked,
+    reviewerIdx: args.reviewerIdx,
+    fallbackReviewerIdx: args.fallbackReviewerIdx,
+    originalWork: args.originalWork,
+    filesBlock: args.filesBlock,
+    artifact: args.artifact,
+    tmuxMgr: args.tmuxMgr,
+    errorDetector: args.errorDetector,
+    abortSignal: args.abortSignal,
+    onEvent: args.onEvent,
+  });
+
+  skippedAgents.push(...phaseOne.skippedAgents);
+  if (!phaseOne.output) {
+    if (!args.abortSignal.aborted) {
+      coverageGaps.push(runtimeCoverageGap(args.domain, 'specialist'));
+    }
+    return { domain: args.domain, skippedAgents, coverageGaps };
+  }
+
+  if (phaseOne.usedFallback) {
+    coverageGaps.push({
+      domain: args.domain,
+      severity: 'warning',
+      message: `The ${args.domain} validator was promoted to specialist fallback, so no independent ${args.domain} validation ran.`,
+    });
+    return {
+      domain: args.domain,
+      phaseOneOutput: phaseOne.output,
+      skippedAgents,
+      coverageGaps,
+    };
+  }
+
+  if (
+    args.abortSignal.aborted ||
+    !args.validatorRanked ||
+    args.validatorReviewerIdx === undefined
+  ) {
+    return {
+      domain: args.domain,
+      phaseOneOutput: phaseOne.output,
+      skippedAgents,
+      coverageGaps,
+    };
+  }
+
+  const validation = await runValidationParticipant({
+    chatDir: args.chatDir,
+    chatId: args.chatId,
+    roundDir: args.roundDir,
+    domain: args.domain,
+    ranked: args.validatorRanked,
+    reviewerIdx: args.validatorReviewerIdx,
+    artifact: args.artifact,
+    phaseOneOutputs: [phaseOne.output],
+    tmuxMgr: args.tmuxMgr,
+    errorDetector: args.errorDetector,
+    abortSignal: args.abortSignal,
+    onEvent: args.onEvent,
+  });
+
+  skippedAgents.push(...validation.skippedAgents);
+  if (validation.output) {
+    return {
+      domain: args.domain,
+      phaseOneOutput: phaseOne.output,
+      validationOutput: validation.output,
+      skippedAgents,
+      coverageGaps,
+    };
+  }
+
+  if (!args.abortSignal.aborted) {
+    coverageGaps.push(runtimeCoverageGap(args.domain, 'validator'));
+  }
+  return {
+    domain: args.domain,
+    phaseOneOutput: phaseOne.output,
+    skippedAgents,
+    coverageGaps,
+  };
+}
 
 async function runPhaseOneSpecialist(args: {
   chatDir: string;

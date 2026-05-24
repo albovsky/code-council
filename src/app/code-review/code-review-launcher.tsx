@@ -18,12 +18,20 @@ import {
   getCodeReviewContext,
   startCodeReview,
 } from "@/lib/api/code-review";
+import { getSettings } from "@/lib/api/settings";
 import {
   CODE_REVIEW_MODE_LABELS,
   CODE_REVIEW_MODES,
-  DEFAULT_CODE_REVIEW_MODE,
   type CodeReviewMode,
 } from "@/lib/code-review-modes";
+import {
+  CODE_REVIEW_DISABLED_VOICE_IDS_SETTING_KEY,
+  readDisabledCodeReviewVoiceIds,
+} from "@/lib/code-review-agent-selection";
+import {
+  writeCodeReviewModeSelection,
+} from "@/lib/code-review-mode-selection";
+import type { Settings } from "@/lib/types";
 
 const MODE_META = {
   fast: {
@@ -56,10 +64,14 @@ const MODE_META = {
 
 const STEP_ICONS = [SearchCheck, UsersRound, ShieldCheck, Sparkles] as const;
 
-export function CodeReviewLauncher() {
+export function CodeReviewLauncher({
+  initialMode,
+}: {
+  initialMode: CodeReviewMode;
+}) {
   const router = useRouter();
   const [repoPath, setRepoPath] = useState("");
-  const [mode, setMode] = useState<CodeReviewMode>(DEFAULT_CODE_REVIEW_MODE);
+  const [mode, setMode] = useState<CodeReviewMode>(initialMode);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
 
@@ -72,11 +84,33 @@ export function CodeReviewLauncher() {
       .catch(() => setRepoPath(""));
   }, []);
 
+  function selectMode(nextMode: CodeReviewMode) {
+    setMode(nextMode);
+    writeCodeReviewModeSelection(nextMode);
+  }
+
   async function run() {
     setError(null);
     setIsStarting(true);
     try {
-      const chat = await startCodeReview(repoPath || undefined, mode);
+      let skippedVoiceIds = readDisabledCodeReviewVoiceIds();
+      try {
+        const settings = await getSettings();
+        const serverSkipped =
+          settings[CODE_REVIEW_DISABLED_VOICE_IDS_SETTING_KEY as keyof Settings];
+        if (Array.isArray(serverSkipped)) {
+          skippedVoiceIds = serverSkipped.filter(
+            (item): item is string => typeof item === "string",
+          );
+        }
+      } catch {
+        /* local state is good enough if settings cannot be loaded */
+      }
+      const chat = await startCodeReview(
+        repoPath || undefined,
+        mode,
+        skippedVoiceIds,
+      );
       router.push(`/runs/${chat.slug || chat.id}`);
     } catch (err) {
       setError(err instanceof DaemonError ? err.message : "Code review failed");
@@ -109,7 +143,7 @@ export function CodeReviewLauncher() {
                 <button
                   key={reviewMode}
                   type="button"
-                  onClick={() => setMode(reviewMode)}
+                  onClick={() => selectMode(reviewMode)}
                   disabled={isStarting}
                   className={`inline-flex min-w-20 items-center justify-center gap-1.5 rounded-sm px-3 text-sm font-medium transition disabled:cursor-not-allowed ${
                     mode === reviewMode

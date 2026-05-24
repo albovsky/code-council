@@ -62,7 +62,11 @@ export function ConcurrencySection() {
     setError(null);
     try {
       const next = await updateConcurrencySettings(patch);
-      setData(next);
+      setData((current) => ({
+        ...next,
+        cliLineages: next.cliLineages ?? current?.cliLineages,
+        defaults: next.defaults ?? current?.defaults,
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
     } finally {

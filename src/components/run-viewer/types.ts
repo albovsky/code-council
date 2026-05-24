@@ -73,6 +73,15 @@ export interface ParticipantSnapshot {
     cachedInputTokens?: number;
     costUsd?: number;
   };
+  /**
+   * Best-effort usage parsed from a live TUI footer. OpenCode tmux runs expose
+   * context/cost in the terminal but may not write structured JSON usage.
+   */
+  terminalUsage?: {
+    contextTokens?: number;
+    costUsd?: number;
+  };
+  events?: ParticipantEvent[];
   thermo?: ThermoParticipantMetadata;
   /**
    * Warnings emitted via cli_warning SSE events for this participant —
@@ -86,11 +95,21 @@ export interface ParticipantSnapshot {
 export interface ParticipantWarning {
   /** Short identifier — `persona_missing`, `persona_lookup_failed`, etc. */
   kind: string;
+  /** Visual severity. Omitted older live warnings default to warning. */
+  severity?: "info" | "warning" | "error";
   /** User-facing message the cockpit renders verbatim. */
   message: string;
+  /** Optional raw request/command context. */
+  detail?: string;
+  command?: string;
+  summary?: string;
   /** Wall-clock when the warning was received. */
   ts: number;
 }
+
+export type ParticipantEvent = ParticipantWarning & {
+  severity: "info" | "warning" | "error";
+};
 
 /**
  * One cross-lineage / cross-model fallback swap event. Emitted when a
@@ -139,4 +158,10 @@ export interface TriageSnapshot {
   answer?: string;
 }
 
-export type ParticipantState = "pending" | "working" | "done" | "errored" | "idle";
+export type ParticipantState =
+  | "pending"
+  | "working"
+  | "done"
+  | "errored"
+  | "cancelled"
+  | "idle";

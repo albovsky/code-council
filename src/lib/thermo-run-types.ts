@@ -6,6 +6,35 @@ export type ThermoParticipantRole =
   | "synthesizer"
   | "auditor";
 
+export type ThermoDomain =
+  | "architecture"
+  | "security"
+  | "correctness"
+  | "tests"
+  | "performance"
+  | "docs"
+  | "final_synthesis"
+  | "adversarial_noise"
+  | "synthesis_audit";
+
+const THERMO_DOMAINS = new Set<ThermoDomain>([
+  "architecture",
+  "security",
+  "correctness",
+  "tests",
+  "performance",
+  "docs",
+  "final_synthesis",
+  "adversarial_noise",
+  "synthesis_audit",
+]);
+
+export function parseThermoDomain(value: unknown): ThermoDomain | undefined {
+  return typeof value === "string" && THERMO_DOMAINS.has(value as ThermoDomain)
+    ? (value as ThermoDomain)
+    : undefined;
+}
+
 export interface ThermoParticipantMetadata {
   kind: "thermo";
   phaseGroup: ThermoPhaseGroup;
@@ -13,7 +42,7 @@ export interface ThermoParticipantMetadata {
   phaseLabel: string;
   description: string;
   check: string;
-  domain: string;
+  domain: ThermoDomain;
   role: ThermoParticipantRole;
   voiceId: string;
   provider: string;
@@ -29,7 +58,7 @@ export interface ThermoPlanVoice {
 }
 
 export interface ThermoPlanDomain {
-  domain: string;
+  domain: ThermoDomain;
   check: string;
   validatorPolicy: "always" | "conditional" | "none";
   validatorReason: string;

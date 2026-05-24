@@ -224,9 +224,9 @@ export default function TemplatesPage() {
                         </>
                       )}
                       <span className="flex items-center gap-1">
-                        {t.phases[0]?.reviewer?.candidates.map((l) => (
+                        {t.phases[0]?.reviewer?.candidates.map((l, index) => (
                           <span
-                            key={l}
+                            key={`${l}-${index}`}
                             className={`h-1.5 w-1.5 rounded-full ${LINEAGE_DOT[l]}`}
                             title={l}
                           />

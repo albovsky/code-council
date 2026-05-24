@@ -2,6 +2,11 @@ import { AppShell } from "@/components/app-shell";
 import { CodeReviewLauncher } from "./code-review-launcher";
 import { CliStatusPanel } from "@/components/cli-status-panel";
 import { DaemonError, getCodeReviewContext, type CodeReviewContext } from "@/lib/api";
+import { cookies } from "next/headers";
+import {
+  CODE_REVIEW_MODE_COOKIE_NAME,
+  parseCodeReviewModeSelection,
+} from "@/lib/code-review-mode-selection";
 import { FolderGit, GitBranch, FileCode, Plus, Minus, AlertCircle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -25,12 +30,16 @@ async function getCodeReviewPageContext(): Promise<CodeReviewContext> {
 
 export default async function CodeReviewPage() {
   const context = await getCodeReviewPageContext();
+  const cookieStore = await cookies();
+  const initialMode = parseCodeReviewModeSelection(
+    cookieStore.get(CODE_REVIEW_MODE_COOKIE_NAME)?.value,
+  );
   const hasRepo = !context.error && !!context.repoRoot;
 
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
-        <CodeReviewLauncher />
+        <CodeReviewLauncher initialMode={initialMode} />
 
         {context.error ? (
           <section className="mb-8 flex items-center gap-3 rounded-xl border border-destructive/50 bg-destructive/10 p-6">

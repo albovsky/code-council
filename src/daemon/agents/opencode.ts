@@ -60,6 +60,24 @@ export function wrapWithPty(
   return { command: cmd, args: [...args] };
 }
 
+export function buildOpencodeRunArgs(opts: Pick<
+  HeadlessSpawnOptions,
+  'autoApprove' | 'model' | 'cwd' | 'sandbox'
+>): string[] {
+  const promptPath = path.join(opts.cwd, 'prompt.md');
+  const directive =
+    `Open the file at this absolute path using your read tool: ${promptPath} ` +
+    `— follow the instructions inside exactly and respond with your full answer in this conversation, ending with ## DONE.`;
+
+  const args = ['run', '--format', 'json'];
+  if (opts.autoApprove !== false || opts.sandbox === 'full') {
+    args.push('--dangerously-skip-permissions');
+  }
+  if (opts.model) args.push('--model', opts.model);
+  args.push(directive);
+  return args;
+}
+
 export const opencodeShim: AgentShim = {
   lineage: 'opencode',
   name: 'opencode-cli',
@@ -174,13 +192,7 @@ export const opencodeShim: AgentShim = {
     // Don't tell opencode to write answer.md — the runner captures stdout
     // JSON via parseOpencodeExit and writes the file itself; a tool-side
     // write would race with the runner's clobber on message_done.
-    const directive =
-      `Open the file at this absolute path using your read tool: ${promptPath} ` +
-      `— follow the instructions inside exactly and respond with your full answer in this conversation, ending with ## DONE.`;
-
-    const opencodeArgs = ['run', '--format', 'json'];
-    if (opts.model) opencodeArgs.push('--model', opts.model);
-    opencodeArgs.push(directive);
+    const opencodeArgs = buildOpencodeRunArgs(opts);
 
     // PTY wrapping is non-optional: opencode 1.14.x's `run --format json`
     // checks isatty(stdout) and refuses to emit JSON when stdout is a pipe.

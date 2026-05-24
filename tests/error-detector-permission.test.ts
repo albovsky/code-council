@@ -59,6 +59,17 @@ describe('opencode permission dialog recovery', () => {
     expect(err?.lineage).toBe('opencode');
   });
 
+  it('extracts the requested command from an opencode permission dialog', () => {
+    const det = new ErrorDetector();
+    const err = det.inspect('permission-command', 'opencode', STEP_ONE);
+    expect(err?.permissionRequest).toEqual({
+      summary: 'Show OS release info',
+      command: 'cat /etc/os-release',
+    });
+    expect(err?.detail).toContain('Show OS release info');
+    expect(err?.detail).toContain('cat /etc/os-release');
+  });
+
   it('detector does NOT match the nested confirm dialog (would re-fire keys destructively)', () => {
     const det = new ErrorDetector();
     // The nested dialog contains "Always allow" in its heading, but no

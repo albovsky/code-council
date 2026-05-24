@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, Maximize2, Shuffle, X } from "lucide-react";
 import { uiLineageDot, uiLineageLabel } from "@/lib/lineage-maps";
+import {
+  displayModelName,
+  displayTier,
+  providerDisplayLabel,
+} from "@/lib/model-display";
+import { parseOpenCodeTerminalUsage } from "@/lib/opencode-terminal-usage";
 import { LINEAGE_GRADIENT } from "./lineage-gradient";
 import { StateBadge } from "./state-badge";
+import { MarkdownReview } from "./markdown-review";
 import {
   Dialog,
   DialogContent,
@@ -36,7 +43,7 @@ function thermoRoleLabel(role: NonNullable<ParticipantSnapshot["thermo"]>["role"
     case "primary":
       return "Primary";
     case "validator":
-      return "Adversarial";
+      return "Review";
     case "synthesizer":
       return "Synthesis";
     case "auditor":
@@ -49,26 +56,30 @@ function thermoRoleLabel(role: NonNullable<ParticipantSnapshot["thermo"]>["role"
  *
  * Card state precedence (most-specific first):
  *   pending  — placeholder synthesised from template, no dir on disk yet
- *   done     — answer.md has non-empty content
+ *   done     — answer.md carries the durable DONE sentinel
  *   working  — chat is mid-run AND (proc is alive OR live tail has bytes)
  *   errored  — chat is in a terminal state but this participant produced 0 B
  *   idle     — fall-through (rare; shouldn't normally render)
  */
 export function ParticipantCard({
   participant,
-  isActive,
   liveTail,
+  liveDurationMs,
   chatTerminal,
+  chatStatus,
   chatId,
   reviewOnly,
   swaps,
 }: {
   participant: ParticipantSnapshot;
-  isActive: boolean;
   liveTail?: string;
+  liveDurationMs?: number;
   /** Chat itself reached a terminal state — distinguishes "errored (no
    *  output produced even though run finished)" from "still working". */
   chatTerminal: boolean;
+  /** Raw chat status. Needed so cancelled runs do not render old in-flight
+   *  participant rows as still WORKING. */
+  chatStatus?: string;
   /** When provided AND the card is in working state, render a per-card
    *  cancel button. Routes to /chats/:id/participants/:key/cancel.
    *  When omitted (older callers, terminal chats), the button is hidden. */
@@ -101,45 +112,98 @@ export function ParticipantCard({
   // (quota_exhausted, refresh_token_stale, cli_failed, ...).
   const failure = parseFailureSummary(participant.answer);
 
-  // State precedence — `failure` MUST come before the chatTerminal check.
+  // State precedence — `failure` MUST come before "done".
   // The runner writes `## REVIEWER FAILED ...` to answer.md when a CLI
   // dies, but does NOT append `## DONE` (failure summaries aren't
-  // "answers"). Without elevating failure here, a single reviewer that
-  // crashes mid-chat would sit in `working` (showing "Thinking...") for
-  // the rest of the run, only flipping to `errored` when chatTerminal
-  // becomes true. Launch-eve gemini review of the run page caught this —
-  // a stuck-WORKING card is a UX trust hit. Same precedence applies to
-  // doer cards via the same helper.
+  // successful answers). Without elevating failure here, the non-empty
+  // diagnostic body makes the card look DONE even though it failed.
+  const hasReviewResult = participantHasReviewResult(participant, failure);
   const state: ParticipantState = participant.pending
     ? "pending"
-    : participant.hasAnswer
-      ? "done"
-      : failure
-        ? "errored"
-        : chatTerminal
-          ? "errored"
-          : "working";
-
+    : failure
+      ? "errored"
+      : hasReviewResult
+        ? "done"
+        : chatStatus === "cancelled"
+          ? "cancelled"
+          : chatTerminal
+            ? "errored"
+            : "working";
+  const hasExpandableResult =
+    Boolean(participant.answer?.trim()) &&
+    (state === "done" || state === "errored");
   const ui = displayLineage(participant);
   const showAgyQuotaPill = isAntigravityQuotaFailure(participant, failure);
   const thermo = participant.thermo;
   const roleLabel = thermo ? thermoRoleLabel(thermo.role) : participant.role;
-  const domainLabel = thermo?.domain.replaceAll("_", " ");
-  const tierLabel = thermo?.tier
-    .replace("_PLUS", "+")
-    .replace("_MINUS", "-");
+  const displayModel = thermo?.modelId ?? participant.modelUsed ?? participant.model;
+  const tierLabel = thermo?.tier ? displayTier(thermo.tier) : undefined;
+  const participantEvents = [
+    ...(participant.events ?? []),
+    ...(participant.warnings ?? []),
+  ];
+  const visibleInfoEvents = participantEvents.filter((warning) => {
+    const message = warning.message.trim();
+    return (
+      message &&
+      message !== "(no detail)" &&
+      message !== "unknown error" &&
+      (warning.severity === "info" ||
+        warning.kind === "permission_auto_approved")
+    );
+  });
+  const visibleWarnings = participantEvents.filter((warning) => {
+    const message = warning.message.trim();
+    return (
+      message &&
+      message !== "(no detail)" &&
+      message !== "unknown error" &&
+      warning.severity !== "info" &&
+      warning.kind !== "permission_auto_approved"
+    );
+  });
+  const tokenSummary = useMemo(
+    () =>
+      tokenUsageSummary(
+        participant.usage,
+        participant.terminalUsage,
+        liveTail,
+      ),
+    [participant.usage, participant.terminalUsage, liveTail],
+  );
+  const footerMetrics = useMemo(
+    () =>
+      participantFooterMetrics(
+        participant.durationMs ?? liveDurationMs,
+        participant.usage?.costUsd ?? participant.terminalUsage?.costUsd,
+        tokenSummary,
+      ),
+    [
+      liveDurationMs,
+      participant.durationMs,
+      participant.terminalUsage?.costUsd,
+      participant.usage?.costUsd,
+      tokenSummary,
+    ],
+  );
+  const terminalLabel = providerDisplayLabel(
+    participant.binaryUsed ?? participant.agentName,
+    ui,
+  );
 
   return (
     <div
-      className={`flex h-[320px] flex-col overflow-hidden rounded-lg border transition-[opacity,border-color,box-shadow] duration-300 ${
+      className={`relative flex h-[320px] flex-col overflow-hidden rounded-lg border transition-[opacity,border-color] duration-300 ${
         LINEAGE_GRADIENT[ui] ?? "bg-card"
       } ${
         state === "done"
           ? "border-emerald-500/30"
           : state === "working"
-            ? "border-primary/60 shadow-[0_0_0_1px_rgba(124,58,237,0.25),0_0_24px_-6px_rgba(124,58,237,0.45)] animate-pulse-soft"
+            ? "border-border/80"
             : state === "errored"
               ? "border-destructive/40"
+              : state === "cancelled"
+                ? "border-border/60 opacity-70 grayscale-[0.35]"
               : state === "pending"
                 ? "border-border/40 opacity-50 grayscale-[0.6]"
                 : "border-border"
@@ -148,30 +212,18 @@ export function ParticipantCard({
       <div className="flex items-center justify-between gap-2 border-b border-border bg-card/60 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2 text-xs leading-none">
           <span
-            className={`h-2 w-2 shrink-0 rounded-full ${uiLineageDot(ui)} ${
-              state === "working" ? "animate-pulse-soft" : ""
-            }`}
+            className={`h-2 w-2 shrink-0 rounded-full ${uiLineageDot(ui)}`}
           />
           <span className="font-medium capitalize text-foreground">{roleLabel}</span>
           <span className="text-muted-foreground">·</span>
-          {domainLabel && (
-            <>
-              <span className="truncate uppercase tracking-wider text-muted-foreground">
-                {domainLabel}
-              </span>
-              <span className="text-muted-foreground/60">·</span>
-            </>
-          )}
-          <span className="uppercase tracking-wider text-muted-foreground">
-            {uiLineageLabel(ui)}
-          </span>
-          {(participant.modelUsed ?? participant.model) && (
-            <>
-              <span className="text-muted-foreground/60">·</span>
-              <span className="truncate font-mono text-muted-foreground">
-                {participant.modelUsed ?? participant.model}
-              </span>
-            </>
+          {displayModel ? (
+            <span className="truncate text-muted-foreground">
+              {displayModelName(displayModel)}
+            </span>
+          ) : (
+            <span className="uppercase tracking-wider text-muted-foreground">
+              {uiLineageLabel(ui)}
+            </span>
           )}
           {tierLabel && (
             <>
@@ -238,17 +290,6 @@ export function ParticipantCard({
         </div>
       </div>
 
-      {thermo && (
-        <div className="border-b border-border/70 bg-card/35 px-4 py-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {thermo.phaseLabel}
-          </div>
-          <div className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-            {thermo.check}
-          </div>
-        </div>
-      )}
-
       {swaps && swaps.length > 0 && (() => {
         // Only the LAST entry's `to` voice actually produced an answer;
         // intermediate `to` voices were attempted and themselves failed
@@ -310,10 +351,28 @@ export function ParticipantCard({
         );
       })()}
 
-      {participant.warnings && participant.warnings.length > 0 && (
+      {visibleInfoEvents.length > 0 && (
+        <div className="space-y-1 border-b border-emerald-500/20 bg-emerald-500/5 px-4 py-2 text-[11px] text-emerald-100/80">
+          {visibleInfoEvents.map((w, i) => (
+            <div key={`${w.kind}-${w.ts}-${i}`} className="flex items-start gap-1.5">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/70" />
+              <div className="min-w-0 flex-1">
+                <span className="font-medium uppercase tracking-wider text-[10px] text-emerald-300/90">
+                  {w.kind}
+                </span>
+                <div className="mt-0.5 break-words font-mono text-[11px] leading-snug text-emerald-50/75">
+                  {w.message}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {visibleWarnings.length > 0 && (
         <div className="space-y-1 border-b border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[11px] text-amber-200/90">
-          {participant.warnings.map((w, i) => (
-            <div key={i} className="flex items-start gap-1.5">
+          {visibleWarnings.map((w, i) => (
+            <div key={`${w.kind}-${w.ts}-${i}`} className="flex items-start gap-1.5">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
               <div className="min-w-0 flex-1">
                 <span className="font-medium uppercase tracking-wider text-[10px] text-amber-300">
@@ -387,6 +446,10 @@ export function ParticipantCard({
               The program finished but didn&apos;t produce any output.
             </div>
           )
+        ) : state === "cancelled" ? (
+          <div className="text-muted-foreground/75">
+            Cancelled before this reviewer produced output.
+          </div>
         ) : state === "done" && participant.answer ? (
           // DONE state — render the answer inline, top-anchored, with
           // overflow scrolled internally so the card stays at fixed
@@ -409,8 +472,21 @@ export function ParticipantCard({
         )}
       </div>
 
+      {hasExpandableResult && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="absolute bottom-11 right-3 z-10 inline-flex h-7 items-center gap-1.5 rounded-full border border-border/80 bg-background/85 px-2.5 text-[11px] font-medium text-foreground/85 shadow-sm backdrop-blur transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+          title="View reviewer result"
+          aria-label="View reviewer result"
+        >
+          <Maximize2 className="h-3 w-3" />
+          Result
+        </button>
+      )}
+
       <div className="flex items-center justify-between gap-3 border-t border-border bg-card/60 px-4 py-2 font-mono text-[10px] text-muted-foreground">
-        <span className="truncate">{participant.binaryUsed ?? participant.agentName}</span>
+        <span className="truncate">{terminalLabel}</span>
         <span className="flex shrink-0 items-center gap-2">
           {showAgyQuotaPill && (
             <span
@@ -421,71 +497,53 @@ export function ParticipantCard({
               quota reached
             </span>
           )}
-          {participant.durationMs !== undefined && (
-            <span title="Wall-clock time the CLI took to finish.">
-              {formatDuration(participant.durationMs)}
+          {footerMetrics.map((metric, index) => (
+            <span key={metric.title} className="inline-flex items-center gap-2">
+              {index > 0 && (
+                <span aria-hidden="true" className="text-muted-foreground/45">
+                  ·
+                </span>
+              )}
+              <span title={metric.title}>{metric.label}</span>
             </span>
-          )}
-          {participant.usage?.costUsd !== undefined && (
-            <span title="USD cost reported by the CLI for this run.">
-              {formatCost(participant.usage.costUsd)}
-            </span>
-          )}
-          {participant.usage && formatTokens(participant.usage) && (
-            <span title={tokensTitle(participant.usage)}>
-              {formatTokens(participant.usage)}
-            </span>
-          )}
-          <span>
-            {participant.hasAnswer
-              ? `${(participant.answer?.length ?? 0).toLocaleString()} B`
-              : "—"}
-          </span>
-          {state === "done" && participant.answer && (
-            <button
-              type="button"
-              onClick={() => setExpanded(true)}
-              className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground/80 transition-colors hover:bg-foreground/10 hover:text-foreground"
-              title="View full answer"
-            >
-              <Maximize2 className="h-3 w-3" />
-              <span className="hidden sm:inline">expand</span>
-            </button>
-          )}
+          ))}
         </span>
       </div>
 
       <Dialog open={expanded} onOpenChange={setExpanded}>
-        <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] !max-w-[1180px] overflow-hidden sm:w-[92vw]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-sm">
               <span
                 className={`h-2 w-2 shrink-0 rounded-full ${uiLineageDot(ui)}`}
               />
-              <span className="font-medium capitalize">{participant.role}</span>
+              <span className="font-medium capitalize">{roleLabel}</span>
               <span className="text-muted-foreground">·</span>
-              <span className="uppercase tracking-wider text-muted-foreground">
-                {uiLineageLabel(ui)}
-              </span>
-              {(participant.modelUsed ?? participant.model) && (
-                <>
-                  <span className="text-muted-foreground/60">·</span>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {participant.modelUsed ?? participant.model}
-                  </span>
-                </>
+              {displayModel ? (
+                <span className="text-muted-foreground">
+                  {displayModelName(displayModel)}
+                </span>
+              ) : (
+                <span className="uppercase tracking-wider text-muted-foreground">
+                  {uiLineageLabel(ui)}
+                </span>
               )}
             </DialogTitle>
           </DialogHeader>
-          <div className="max-h-[70vh] overflow-y-auto rounded border border-border bg-card/40 p-4">
-            <pre className="whitespace-pre-wrap break-words text-sm text-foreground/90">
-              {participant.answer ?? ""}
-            </pre>
+          <div className="max-h-[76vh] overflow-y-auto rounded-md border border-border bg-card/35 px-6 py-5">
+            <MarkdownReview content={participant.answer ?? ""} />
           </div>
         </DialogContent>
       </Dialog>
     </div>
   );
+}
+
+export function participantHasReviewResult(
+  participant: Pick<ParticipantSnapshot, "hasAnswer">,
+  failure: unknown,
+): boolean {
+  return !failure && participant.hasAnswer;
 }
 
 function formatDuration(ms: number): string {
@@ -497,24 +555,85 @@ function formatDuration(ms: number): string {
   return `${m}m${r.toString().padStart(2, "0")}s`;
 }
 
-/**
- * Render USD cost as either `$0.022` (sub-dollar) or `$0.30` / `$2.45`.
- * Sub-cent costs round to the nearest cent — opencode reports
- * fractional cents (e.g. 0.000123) which clutter the chip; users care
- * about totals, not micro-cost precision.
- */
 function formatCost(usd: number): string {
   if (usd <= 0) return "$0.00";
   if (usd < 0.01) return "<$0.01";
-  if (usd < 1) return `$${usd.toFixed(3)}`;
   return `$${usd.toFixed(2)}`;
 }
 
 function formatTokens(u: NonNullable<ParticipantSnapshot["usage"]>): string | null {
-  const total = (u.inputTokens ?? 0) + (u.outputTokens ?? 0);
+  const total =
+    (u.inputTokens ?? 0) +
+    (u.outputTokens ?? 0) +
+    (u.cachedInputTokens ?? 0);
   if (total <= 0) return null;
   if (total < 1000) return `${total} tok`;
   return `${(total / 1000).toFixed(1)}k tok`;
+}
+
+function formatContextTokens(tokens: number): string {
+  if (tokens < 1000) return `${tokens}`;
+  return `${(tokens / 1000).toFixed(1)}k`;
+}
+
+function participantFooterMetrics(
+  durationMs: number | undefined,
+  costUsd: number | undefined,
+  tokenSummary: { label: string; title: string },
+): Array<{ label: string; title: string }> {
+  const metrics: Array<{ label: string; title: string }> = [];
+  if (durationMs !== undefined) {
+    metrics.push({
+      label: formatDuration(durationMs),
+      title: "Wall-clock time the CLI took to finish.",
+    });
+  }
+  if (costUsd !== undefined) {
+    metrics.push({
+      label: formatCost(costUsd),
+      title: "USD cost reported by the CLI for this run.",
+    });
+  }
+  metrics.push(tokenSummary);
+  return metrics;
+}
+
+function tokenUsageSummary(
+  usage: ParticipantSnapshot["usage"],
+  terminalUsage: ParticipantSnapshot["terminalUsage"],
+  liveTail: string | undefined,
+): { label: string; title: string } {
+  if (usage) {
+    const formatted = formatTokens(usage);
+    if (formatted) {
+      return {
+        label: formatted,
+        title: tokensTitle(usage),
+      };
+    }
+  }
+
+  if (terminalUsage?.contextTokens !== undefined) {
+    return {
+      label: formatContextTokens(terminalUsage.contextTokens),
+      title:
+        "OpenCode terminal context usage. Structured token usage was not reported.",
+    };
+  }
+
+  const terminal = parseOpenCodeTerminalUsage(liveTail);
+  if (terminal?.contextTokens !== undefined) {
+    return {
+      label: formatContextTokens(terminal.contextTokens),
+      title:
+        "OpenCode terminal context usage. Final token usage is shown when the CLI reports it.",
+    };
+  }
+
+  return {
+    label: "tokens n/a",
+    title: "This CLI did not report token usage for this participant.",
+  };
 }
 
 function tokensTitle(u: NonNullable<ParticipantSnapshot["usage"]>): string {
@@ -523,7 +642,7 @@ function tokensTitle(u: NonNullable<ParticipantSnapshot["usage"]>): string {
   if (u.outputTokens !== undefined) parts.push(`out ${u.outputTokens.toLocaleString()}`);
   if (u.cachedInputTokens !== undefined)
     parts.push(`cached ${u.cachedInputTokens.toLocaleString()}`);
-  return parts.join(" · ");
+  return parts.length > 0 ? parts.join(" · ") : "Token usage";
 }
 
 /**

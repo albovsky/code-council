@@ -11,63 +11,44 @@
  * Voice loading controls rendering; health loading is best-effort.
  */
 
-import { Plug } from "lucide-react";
 import { fetchFromDaemon } from "@/lib/api/client";
-import type { ListEnvelope } from "@/lib/types";
-import { lineageDot } from "@/lib/lineage-maps";
+import { cookies } from "next/headers";
+import type { ListEnvelope, Settings } from "@/lib/types";
 import type { Voice } from "@/lib/api/voices";
 import type { CliHealth } from "@/lib/api/cli-health";
-import { CliHealthBadge } from "@/components/cli-health-badge";
+import { CliStatusPanelClient } from "@/components/cli-status-panel-client";
+import { rankReviewVoices } from "@/lib/review-model-tiering";
 import {
-  rankReviewVoices,
-  type ReviewModelTier,
-} from "@/lib/review-model-tiering";
-import Link from "next/link";
-
-function tierLabel(tier: ReviewModelTier): string {
-  switch (tier) {
-    case "A_PLUS":
-      return "A+";
-    case "A_MINUS":
-      return "A-";
-    case "B_PLUS":
-      return "B+";
-    case "B_MINUS":
-      return "B-";
-    default:
-      return tier;
-  }
-}
-
-function tierBadge(tier: ReviewModelTier): React.ReactNode {
-  const tone =
-    tier.startsWith("A")
-      ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-300"
-      : tier.startsWith("B")
-        ? "border-sky-400/25 bg-sky-500/10 text-sky-300"
-        : "border-zinc-400/20 bg-muted text-muted-foreground";
-
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${tone}`}>
-      Tier {tierLabel(tier)}
-    </span>
-  );
-}
-
-const PROVIDER_LABELS: Record<string, string> = {
-  "claude-code": "Claude Code",
-  "codex-cli": "Codex CLI",
-  "antigravity-cli": "Antigravity CLI",
-  "kimi-cli": "Kimi CLI",
-  "opencode-cli": "OpenCode",
-  "grok-cli": "Grok",
-  "openrouter": "OpenRouter",
-};
+  displayModelName,
+  modelLogoForVoice,
+  providerLabelForVoice,
+} from "@/lib/model-display";
+import {
+  CODE_REVIEW_DISABLED_VOICE_IDS_SETTING_KEY,
+  CODE_REVIEW_DISABLED_VOICE_IDS_COOKIE_NAME,
+  parseDisabledCodeReviewVoiceIds,
+} from "@/lib/code-review-agent-selection";
 
 export async function CliStatusPanel() {
   let healths: CliHealth[] = [];
   let allVoices: Voice[] = [];
   let openrouterVoices: Voice[] = [];
+  const cookieStore = await cookies();
+  let initialDisabledVoiceIds = parseDisabledCodeReviewVoiceIds(
+    cookieStore.get(CODE_REVIEW_DISABLED_VOICE_IDS_COOKIE_NAME)?.value ?? null,
+  );
+  try {
+    const settings = await fetchFromDaemon<Settings>("/settings");
+    const disabledFromSettings =
+      settings[CODE_REVIEW_DISABLED_VOICE_IDS_SETTING_KEY];
+    if (Array.isArray(disabledFromSettings)) {
+      initialDisabledVoiceIds = disabledFromSettings.filter(
+        (item): item is string => typeof item === "string",
+      );
+    }
+  } catch {
+    /* settings load is best-effort; cookie/local fallback still works */
+  }
   try {
     const env = await fetchFromDaemon<ListEnvelope<CliHealth>>("/cli/health");
     healths = env.items;
@@ -102,56 +83,27 @@ export async function CliStatusPanel() {
   if (enabledVoices.length === 0) return null;
 
   return (
-    <section className="mt-10">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Reviewer fleet
-        </h2>
-        <Link
-          href="/connect"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
-        >
-          <Plug className="h-3 w-3" />
-          Manage connections →
-        </Link>
-      </div>
-      <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {enabledVoices.map((ranked) => {
-          const v = ranked.voice;
-          const lineage = v.lineage;
-          const healthKey = v.provider === "openrouter" ? "openrouter" : v.lineage;
-          const health = healthByLineage[healthKey] ?? {
-            lineage: healthKey,
-            status: "unknown" as const,
-            updatedAt: 0,
-          };
+    <CliStatusPanelClient
+      initialDisabledVoiceIds={initialDisabledVoiceIds}
+      voices={enabledVoices.map((ranked) => {
+        const v = ranked.voice;
+        const healthKey = v.provider === "openrouter" ? "openrouter" : v.lineage;
+        const health = healthByLineage[healthKey] ?? {
+          lineage: healthKey,
+          status: "unknown" as const,
+          updatedAt: 0,
+        };
 
-          return (
-            <div
-              key={v.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-sm hover:border-foreground/20 transition-colors"
-            >
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${lineageDot(lineage)}`}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-foreground" title={v.model_id}>
-                    {v.model_id}
-                  </div>
-                  <div className="mt-0.5 text-[10px] font-medium text-muted-foreground">
-                    via {PROVIDER_LABELS[v.provider] || v.provider}
-                  </div>
-                </div>
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                {tierBadge(ranked.tier)}
-                <CliHealthBadge voiceId={v.id} initialHealth={health} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
+        return {
+          id: v.id,
+          modelId: v.model_id,
+          modelName: displayModelName(v.model_id),
+          providerName: providerLabelForVoice(v),
+          logo: modelLogoForVoice(v),
+          tier: ranked.tier,
+          health,
+        };
+      })}
+    />
   );
 }

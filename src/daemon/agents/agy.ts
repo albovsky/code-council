@@ -84,9 +84,10 @@ export const agyShim: AgentShim = {
     const selected = selectGoogleCli();
 
     if (selected.kind === 'agy') {
-      const args = ['--prompt-interactive'];
+      const args = [];
       if (opts.sandbox === 'strict') args.push('--sandbox');
       else args.push('--dangerously-skip-permissions');
+      args.push('--prompt-interactive');
       return `cd ${cwd} && ${quotePath(selected.command)} ${args.join(' ')}`;
     }
 

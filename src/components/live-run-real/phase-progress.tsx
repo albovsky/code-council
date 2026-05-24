@@ -58,15 +58,17 @@ export function PhaseProgress({
           <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-4 py-3">
             <div className="flex items-center gap-2 text-sm font-medium text-amber-300">
               <AlertTriangle className="h-4 w-4" />
-              Ship phase blocked
+              {isThermo ? "Thermo run unavailable" : "Ship phase blocked"}
             </div>
             <p className="mt-1 break-words font-mono text-[11px] text-amber-200/80">
               {shipError}
             </p>
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              The reviewers approved the doer&apos;s output, but chorus
-              couldn&apos;t open a PR. Resolve the issue above and re-run.
-            </p>
+            {!isThermo && (
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                The reviewers approved the doer&apos;s output, but chorus
+                couldn&apos;t open a PR. Resolve the issue above and re-run.
+              </p>
+            )}
           </div>
         )}
 
@@ -188,10 +190,13 @@ function ThermoPhaseProgress({
             : isActive || item.started
               ? "active"
               : "queued";
+          const total = item.total || item.phaseParticipants.length || 1;
+          const done = Math.min(item.done, total);
+          const progress = Math.max(0, Math.min(1, done / total));
           return (
             <div
               key={item.phase.id}
-              className={`rounded-lg border px-3 py-2 ${
+              className={`relative overflow-hidden rounded-lg border px-3 pb-4 pt-2 ${
                 item.complete
                   ? "border-emerald-500/30 bg-emerald-500/5"
                   : isActive || item.started
@@ -209,45 +214,18 @@ function ThermoPhaseProgress({
                 {item.phase.description}
               </div>
               <div className="mt-2 font-mono text-[10px] text-muted-foreground">
-                {Math.min(item.done, item.total || item.done)} / {item.total || item.phaseParticipants.length || 1}
+                {done} / {total}
+              </div>
+              <div className="absolute inset-x-0 bottom-0 h-0.5 bg-emerald-950/25">
+                <div
+                  className="h-full rounded-r-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.55)] transition-[width] duration-700 ease-out"
+                  style={{ width: `${progress * 100}%` }}
+                />
               </div>
             </div>
           );
         })}
       </div>
-
-      {thermoPlan?.domains && thermoPlan.domains.length > 0 && (
-        <div className="rounded-lg border border-border bg-card/35 p-3">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Thermo domain assignment
-          </div>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {thermoPlan.domains.map((domain) => (
-              <div key={domain.domain} className="rounded-md border border-border/70 bg-background/30 p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold capitalize text-foreground">
-                    {domain.domain.replaceAll("_", " ")}
-                  </div>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {domain.validator ? "primary + review" : "primary"}
-                  </div>
-                </div>
-                <div className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-                  {domain.check}
-                </div>
-                <div className="mt-2 space-y-1 font-mono text-[10px] text-muted-foreground">
-                  <div>
-                    Main: {formatThermoVoice(domain.primary)}
-                  </div>
-                  <div>
-                    Review: {domain.validator ? formatThermoVoice(domain.validator) : domain.validatorReason}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="mx-auto flex w-full max-w-xs items-center gap-2">
         <div className="flex h-1 flex-1 overflow-hidden rounded-full bg-muted">
@@ -274,11 +252,6 @@ function expectedThermoPhaseTotal(
   if (phase === "specialist") return thermoPlan?.domains.filter((d) => d.primary).length ?? actualCount;
   if (phase === "validation") return thermoPlan?.domains.filter((d) => d.validator).length ?? actualCount;
   return 1;
-}
-
-function formatThermoVoice(voice: { modelId: string; tier: string } | null): string {
-  if (!voice) return "none";
-  return `${voice.modelId} · Tier ${voice.tier.replace("_PLUS", "+").replace("_MINUS", "-")}`;
 }
 
 /**

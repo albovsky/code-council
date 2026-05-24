@@ -16,10 +16,11 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isReviewOnlyTemplate, type Template } from "@/lib/types";
 import { BriefHeading } from "../run-viewer/brief-heading";
 import { RoundView } from "../run-viewer/round-view";
+import { ThermoDomainBoard } from "../run-viewer/thermo-domain-board";
 import type {
   FallbackSwap,
   ParticipantSnapshot,
@@ -79,6 +80,18 @@ interface Props {
   demoDataSource?: DemoDataSource;
 }
 
+interface ParticipantTimer {
+  startedAt: number;
+  finishedAt?: number;
+}
+
+interface RunArtifactsResponse {
+  rounds: RoundSnapshot[];
+  swaps?: FallbackSwap[];
+  triage?: TriageSnapshot | null;
+  thermoPlan?: ThermoRunPlan | null;
+}
+
 export function LiveRunReal({
   chatId,
   initialStatus,
@@ -99,6 +112,10 @@ export function LiveRunReal({
   const [activeParticipants, setActiveParticipants] = useState<Set<string>>(
     new Set(),
   );
+  const [participantTimers, setParticipantTimers] = useState<
+    Record<string, ParticipantTimer>
+  >({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [prUrl, setPrUrl] = useState<string | undefined>(initialPrUrl);
   const [shipError, setShipError] = useState<string | undefined>(initialShipError);
 
@@ -109,6 +126,20 @@ export function LiveRunReal({
   // falling back to disk-polled content when the SSE event hasn't
   // arrived yet.
   const [liveTails, setLiveTails] = useState<Record<string, string>>({});
+
+  const hasRunningTimer = useMemo(
+    () =>
+      Object.values(participantTimers).some(
+        (timer) => timer.finishedAt === undefined,
+      ),
+    [participantTimers],
+  );
+
+  useEffect(() => {
+    if (!hasRunningTimer) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [hasRunningTimer]);
 
   // Live phase-completion counter, driven from phase_done SSE events.
   // The status-only `completedPhaseCount` derivation stays at 0 until
@@ -141,14 +172,18 @@ export function LiveRunReal({
   const [thermoPlan, setThermoPlan] = useState<ThermoRunPlan | null>(
     initialThermoPlan ?? null,
   );
+  const artifactAbortRef = useRef<AbortController | null>(null);
   // Dedup key includes phaseId + role + agent so a future multi-phase
   // template can't collapse two distinct swaps that happen to share the
   // (round, agent, fromLineage, fromModel) tuple. Today's review-only
   // template has one phase + one role-per-agent, so this is purely
   // future-proofing — but the sidecar already stores the full identity.
-  const swapKey = (s: FallbackSwap) =>
-    `${s.round}:${s.phaseId}:${s.role}:${s.agent}:${s.fromLineage}:${s.fromModel}`;
-  const mergeSwapsFromArtifacts = (incoming: FallbackSwap[]) => {
+  const swapKey = useCallback(
+    (s: FallbackSwap) =>
+      `${s.round}:${s.phaseId}:${s.role}:${s.agent}:${s.fromLineage}:${s.fromModel}`,
+    [],
+  );
+  const mergeSwapsFromArtifacts = useCallback((incoming: FallbackSwap[]) => {
     setFallbackSwaps((prev) => {
       const seen = new Set(prev.map(swapKey));
       const merged = [...prev];
@@ -160,7 +195,55 @@ export function LiveRunReal({
       }
       return merged;
     });
-  };
+  }, [swapKey]);
+
+  const applyArtifactData = useCallback((
+    data: RunArtifactsResponse,
+    options: { replaceRounds?: boolean } = {},
+  ) => {
+    if (options.replaceRounds !== false) {
+      setRounds(data.rounds);
+    }
+    setTriage(data.triage ?? null);
+    setThermoPlan(data.thermoPlan ?? null);
+    if (Array.isArray(data.swaps) && data.swaps.length > 0) {
+      mergeSwapsFromArtifacts(data.swaps);
+    }
+  }, [mergeSwapsFromArtifacts]);
+
+  const refreshArtifacts = useCallback(async (
+    options: { replaceRounds?: boolean } = {},
+  ) => {
+    if (demoDataSource) {
+      const snapshot = demoDataSource.fetchArtifacts();
+      applyArtifactData(
+        { rounds: snapshot.rounds, swaps: snapshot.swaps },
+        options,
+      );
+      return;
+    }
+
+    artifactAbortRef.current?.abort();
+    const controller = new AbortController();
+    artifactAbortRef.current = controller;
+    try {
+      const res = await fetch(`/api/run-artifacts/${chatId}`, {
+        signal: controller.signal,
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as RunArtifactsResponse;
+      if (controller.signal.aborted) return;
+      applyArtifactData(data, options);
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        /* best-effort; next refresh retries */
+      }
+    } finally {
+      if (artifactAbortRef.current === controller) {
+        artifactAbortRef.current = null;
+      }
+    }
+  }, [applyArtifactData, chatId, demoDataSource]);
 
   const isTerminal = (TERMINAL_STATUSES as readonly string[]).includes(status);
 
@@ -177,29 +260,12 @@ export function LiveRunReal({
     // what the scenario script emits, with no surprise late writes
     // from a real /api/run-artifacts response.
     if (demoDataSource) return;
-    const refresh = async () => {
-      try {
-        const res = await fetch(`/api/run-artifacts/${chatId}`);
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          rounds: RoundSnapshot[];
-          swaps?: FallbackSwap[];
-          triage?: TriageSnapshot | null;
-          thermoPlan?: ThermoRunPlan | null;
-        };
-        setRounds(data.rounds);
-        setTriage(data.triage ?? null);
-        setThermoPlan(data.thermoPlan ?? null);
-        if (Array.isArray(data.swaps) && data.swaps.length > 0) {
-          mergeSwapsFromArtifacts(data.swaps);
-        }
-      } catch {
-        // ignore — next tick retries
-      }
+    const refresh = () => {
+      void refreshArtifacts();
     };
     const id = setInterval(refresh, 8000);
     return () => clearInterval(id);
-  }, [chatId, isTerminal, demoDataSource]);
+  }, [isTerminal, demoDataSource, refreshArtifacts]);
 
   useEffect(() => {
     if (isTerminal) return;
@@ -214,36 +280,31 @@ export function LiveRunReal({
         const role = e.payload.role as string | undefined;
         const agent = e.payload.agent as string | undefined;
         const phaseId = e.payload.phaseId as string | undefined;
+        const timerPhaseKey = phaseId ?? String(e.payload.phaseIdx ?? "phase");
 
-        if (e.type === "phase_start" && role && agent && phaseId) {
+        if (e.type === "phase_start" && role && agent) {
           // Format mirrors directory naming: "<role>-<agentName>" plus
-          // phaseId so renderer maps back to dir-name participants by
-          // matching role + lineage.
+          // phase id/index so renderer maps back to dir-name participants.
+          // Replayed daemon DB events do not store phaseId, so phaseIdx is
+          // the reload-safe fallback for live elapsed-time reconstruction.
+          const activeKey = `${participantKey(role, agent)}-${timerPhaseKey}`;
           setActiveParticipants((prev) => {
             const next = new Set(prev);
-            next.add(`${role}-${agent}-${phaseId}`);
+            next.add(activeKey);
             return next;
+          });
+          setParticipantTimers((prev) => {
+            if (prev[activeKey]) return prev;
+            return {
+              ...prev,
+              [activeKey]: { startedAt: e.ts ?? Date.now() },
+            };
           });
           // Demo mode — swap rounds when a new phase begins so a
           // multi-phase scenario can rotate the participant grid as the
           // stepper advances. Production has /api/run-artifacts polling
           // for that; we shortcut here.
-          if (demoDataSource) {
-            const snapshot = demoDataSource.fetchArtifacts();
-            setRounds(snapshot.rounds);
-            if (Array.isArray(snapshot.swaps)) mergeSwapsFromArtifacts(snapshot.swaps);
-          } else {
-            fetch(`/api/run-artifacts/${chatId}`)
-              .then((r) => (r.ok ? r.json() : null))
-              .then((data) => {
-                if (!data) return;
-                setRounds(data.rounds);
-                setTriage(data.triage ?? null);
-                setThermoPlan(data.thermoPlan ?? null);
-                if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
-              })
-              .catch(() => {});
-          }
+          void refreshArtifacts();
         }
 
         if (e.type === "phase_progress" && role && agent) {
@@ -260,10 +321,30 @@ export function LiveRunReal({
         }
 
         if (e.type === "phase_done" || e.type === "phase_failed") {
-          // Clear actives — next phase_start re-populates. Don't clear
-          // liveTails — let the disk-poll update them with the final
-          // answer instead of flashing empty.
-          setActiveParticipants(new Set());
+          // Clear the participant that finished/failed. Older code
+          // cleared every active slot, which made parallel Thermo phases
+          // flicker when one reviewer finished before the others.
+          if (role && agent) {
+            const doneKey = `${participantKey(role, agent)}-${timerPhaseKey}`;
+            const finishedAt = e.ts ?? Date.now();
+            setActiveParticipants((prev) => {
+              const next = new Set(prev);
+              next.delete(doneKey);
+              return next;
+            });
+            setParticipantTimers((prev) => {
+              const existing = prev[doneKey];
+              return {
+                ...prev,
+                [doneKey]: {
+                  startedAt: existing?.startedAt ?? finishedAt,
+                  finishedAt: existing?.finishedAt ?? finishedAt,
+                },
+              };
+            });
+          } else {
+            setActiveParticipants(new Set());
+          }
           if (e.type === "phase_done") {
             const idx = (e.payload?.phaseIdx as number | undefined) ?? -1;
             if (Number.isInteger(idx) && idx >= 0) {
@@ -282,8 +363,17 @@ export function LiveRunReal({
           // chat from a daemon-restart edge doesn't drop the banner.
           const kind =
             reason ?? (e.payload.kind as string | undefined) ?? "warning";
-          const message =
-            (e.payload.message as string | undefined) ?? "(no detail)";
+          const severity = e.payload.severity as
+            | ParticipantWarning["severity"]
+            | undefined;
+          const message = (
+            (e.payload.message as string | undefined)
+            ?? (e.payload.detail as string | undefined)
+            ?? ""
+          ).trim();
+          if (!message) {
+            return;
+          }
           setParticipantWarnings((prev) => {
             const next = { ...prev };
             const existing = next[key] ?? [];
@@ -293,7 +383,18 @@ export function LiveRunReal({
             if (existing.some((w) => w.kind === kind && w.message === message)) {
               return prev;
             }
-            next[key] = [...existing, { kind, message, ts: e.ts ?? Date.now() }];
+            next[key] = [
+              ...existing,
+              {
+                kind,
+                ...(severity ? { severity } : {}),
+                message,
+                detail: e.payload.detail as string | undefined,
+                command: e.payload.command as string | undefined,
+                summary: e.payload.summary as string | undefined,
+                ts: e.ts ?? Date.now(),
+              },
+            ];
             return next;
           });
 
@@ -339,30 +440,44 @@ export function LiveRunReal({
         }
 
         if (e.type === "participant_done") {
+          if (role && agent) {
+            const doneKey = `${participantKey(role, agent)}-${timerPhaseKey}`;
+            const finishedAt = e.ts ?? Date.now();
+            setParticipantTimers((prev) => {
+              const existing = prev[doneKey];
+              return {
+                ...prev,
+                [doneKey]: {
+                  startedAt: existing?.startedAt ?? finishedAt,
+                  finishedAt: existing?.finishedAt ?? finishedAt,
+                },
+              };
+            });
+          }
           // The runner has just written `## DONE` to this participant's
           // answer.md. Pull artifacts immediately so the card flips
           // from WORKING to DONE without waiting for the 8s polling
           // tick. Demo mode hands the scripted snapshot in via
           // demoDataSource.fetchArtifacts() instead of /api/run-artifacts.
-          if (demoDataSource) {
-            const snapshot = demoDataSource.fetchArtifacts();
-            setRounds(snapshot.rounds);
-            if (Array.isArray(snapshot.swaps)) mergeSwapsFromArtifacts(snapshot.swaps);
-          } else {
-            fetch(`/api/run-artifacts/${chatId}`)
-              .then((r) => (r.ok ? r.json() : null))
-              .then((data) => {
-                if (!data) return;
-                setRounds(data.rounds);
-                setTriage(data.triage ?? null);
-                setThermoPlan(data.thermoPlan ?? null);
-                if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
-              })
-              .catch(() => {});
-          }
+          void refreshArtifacts();
         }
 
         if (e.type === "chat_done") {
+          setActiveParticipants(new Set());
+          setParticipantTimers((prev) => {
+            const finishedAt = e.ts ?? Date.now();
+            let changed = false;
+            const next: Record<string, ParticipantTimer> = {};
+            for (const [key, timer] of Object.entries(prev)) {
+              if (timer.finishedAt === undefined) {
+                changed = true;
+                next[key] = { ...timer, finishedAt };
+              } else {
+                next[key] = timer;
+              }
+            }
+            return changed ? next : prev;
+          });
           // Runner emits chat_done with payload.status as the canonical
           // terminal state ('completed' / 'merged' / 'blocked' /
           // 'no_review'). Prefer that over verdict for the UI.
@@ -401,29 +516,14 @@ export function LiveRunReal({
           }
 
           es.close();
-          if (demoDataSource) {
-            const snapshot = demoDataSource.fetchArtifacts();
-            setRounds(snapshot.rounds);
-            if (Array.isArray(snapshot.swaps)) mergeSwapsFromArtifacts(snapshot.swaps);
-          } else {
-            fetch(`/api/run-artifacts/${chatId}`)
-              .then((r) => (r.ok ? r.json() : null))
-              .then((data) => {
-                if (!data) return;
-                setRounds(data.rounds);
-                setTriage(data.triage ?? null);
-                setThermoPlan(data.thermoPlan ?? null);
-                if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
-              })
-              .catch(() => {});
-          }
+          void refreshArtifacts();
         }
       } catch {
         // skip malformed
       }
     };
     return () => es.close();
-  }, [chatId, isTerminal, demoDataSource]);
+  }, [chatId, isTerminal, demoDataSource, mergeSwapsFromArtifacts, refreshArtifacts, swapKey]);
 
   // One-shot fetch on mount (incl. for terminal chats where the SSE
   // useEffect early-returns). Without this, navigating to a completed
@@ -432,23 +532,14 @@ export function LiveRunReal({
   // scenario events drive every fallback render directly.
   useEffect(() => {
     if (demoDataSource) return;
-    let cancelled = false;
-    fetch(`/api/run-artifacts/${chatId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return;
-        setTriage(data.triage ?? null);
-        setThermoPlan(data.thermoPlan ?? null);
-        if (Array.isArray(data.swaps)) mergeSwapsFromArtifacts(data.swaps);
-      })
-      .catch(() => {
-        /* best-effort */
-      });
+    const id = window.setTimeout(() => {
+      void refreshArtifacts({ replaceRounds: false });
+    }, 0);
     return () => {
-      cancelled = true;
+      window.clearTimeout(id);
+      artifactAbortRef.current?.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId, demoDataSource]);
+  }, [demoDataSource, refreshArtifacts]);
 
   /** Active keys are built as `${role}-${agent}-${phaseId}` in the
    * phase_start handler (where `agent` includes the per-slot index for
@@ -464,6 +555,19 @@ export function LiveRunReal({
       if (k.startsWith(prefix)) return true;
     }
     return false;
+  };
+
+  const liveDurationFor = (p: ParticipantSnapshot): number | undefined => {
+    if (p.durationMs !== undefined) return undefined;
+    const prefix = `${p.participant}-`;
+    let best: ParticipantTimer | undefined;
+    for (const [key, timer] of Object.entries(participantTimers)) {
+      if (!key.startsWith(prefix)) continue;
+      if (!best || timer.startedAt > best.startedAt) best = timer;
+    }
+    if (!best) return undefined;
+    const finishedAt = best.finishedAt ?? nowMs;
+    return finishedAt >= best.startedAt ? finishedAt - best.startedAt : undefined;
   };
 
   const meta = deriveStatusMeta(status, verdict);
@@ -489,12 +593,14 @@ export function LiveRunReal({
   }, [status, totalPhases, livePhaseDoneIdx]);
 
   const reviewOnly = useMemo(() => isReviewOnlyTemplate(template), [template]);
+  const isThermo = template?.id === "branch-code-review-thermo" || Boolean(thermoPlan);
   const enrichedRounds = useMemo<RoundSnapshot[]>(
     () => enrichRounds(rounds, template, participantWarnings),
     [rounds, template, participantWarnings],
   );
 
   const latestRound = enrichedRounds[enrichedRounds.length - 1];
+  const thermoRound = latestRound ?? (thermoPlan ? { round: 1, participants: [] } : undefined);
   const olderRounds = enrichedRounds.slice(0, -1);
 
   return (
@@ -586,7 +692,7 @@ export function LiveRunReal({
           tool surface. */}
       <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8">
         <div className="mx-auto w-full space-y-8">
-          {rounds.length === 0 && (
+          {rounds.length === 0 && !thermoPlan && (
             <div className="rounded-lg border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
               Waiting for first phase to start…
             </div>
@@ -603,13 +709,26 @@ export function LiveRunReal({
             </section>
           )}
 
-          {latestRound && (
+          {isThermo && thermoRound ? (
+            <ThermoDomainBoard
+              round={thermoRound}
+              activeFor={lineageMatchActive}
+              liveTails={liveTails}
+              liveDurationFor={liveDurationFor}
+              chatTerminal={isTerminal}
+              chatStatus={status}
+              chatId={chatId}
+              swaps={fallbackSwaps}
+              thermoPlan={thermoPlan}
+            />
+          ) : latestRound && (
             <RoundView
               round={latestRound}
               isLatest
-              activeFor={lineageMatchActive}
               liveTails={liveTails}
+              liveDurationFor={liveDurationFor}
               chatTerminal={isTerminal}
+              chatStatus={status}
               reviewOnly={reviewOnly}
               chatId={chatId}
               swaps={fallbackSwaps}
@@ -632,9 +751,10 @@ export function LiveRunReal({
                     <RoundView
                       key={r.round}
                       round={r}
-                      activeFor={() => false}
                       liveTails={{}}
+                      liveDurationFor={liveDurationFor}
                       chatTerminal={isTerminal}
+                      chatStatus={status}
                       swaps={fallbackSwaps}
                     />
                   ))}

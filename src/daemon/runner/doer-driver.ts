@@ -5,6 +5,11 @@ import { recordHealth, kindToStatus, type CliLineage } from '../../lib/cli-healt
 import { precheckLineage } from '../../lib/cli-precheck.js';
 import { personas } from '../../lib/db/index.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
+import {
+  appendParticipantEvent,
+  permissionAutoApprovedEvent,
+  permissionBlockedEvent,
+} from '../../lib/server/participant-events.js';
 import { getTransport } from '../../lib/settings/transport.js';
 import { CLI_LINEAGES, type CliLineageKey } from '../../lib/settings/concurrency.js';
 import { acquire as acquireCliSlot } from '../cli-semaphore.js';
@@ -336,6 +341,12 @@ export async function runDoer(
         if (recoveryKeys && recoveryKeys.length > 0) {
           // Layer 2 recovery: navigate the dialog, emit a warning (not error),
           // skip health recording — we recovered, no degradation.
+          const event = err.kind === 'permission_prompt'
+            ? permissionAutoApprovedEvent(err, recoveryKeys)
+            : null;
+          if (event) {
+            appendParticipantEvent(path.dirname(answerFile), event);
+          }
           tmuxMgr.sendKeys(session.name, [...recoveryKeys]);
           onEvent({
             chatId,
@@ -345,13 +356,25 @@ export async function runDoer(
               round,
               role: 'doer',
               agent: agentName,
+              ...(event
+                ? {
+                    kind: event.kind,
+                    severity: event.severity,
+                    message: event.message,
+                    command: event.command,
+                    summary: event.summary,
+                  }
+                : {}),
               recovered: err.kind,
               keys: [...recoveryKeys],
-              detail: err.detail,
+              detail: event?.detail ?? err.detail,
             },
             ts: Date.now(),
           });
         } else {
+          if (err.kind === 'permission_prompt') {
+            appendParticipantEvent(path.dirname(answerFile), permissionBlockedEvent(err));
+          }
           // Fire-and-forget — recordHealth became async in the libsql
           // migration. Inside a setInterval callback we can't await without
           // changing the callback shape; explicit .catch keeps unhandled

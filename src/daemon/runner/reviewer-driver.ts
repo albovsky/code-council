@@ -7,6 +7,12 @@ import { personas } from '../../lib/db/index.js';
 import { getPermissions } from '../../lib/settings/permissions.js';
 import { getTransport } from '../../lib/settings/transport.js';
 import { CLI_LINEAGES, type CliLineageKey } from '../../lib/settings/concurrency.js';
+import { parseOpenCodeTerminalUsage } from '../../lib/opencode-terminal-usage.js';
+import {
+  appendParticipantEvent,
+  permissionAutoApprovedEvent,
+  permissionBlockedEvent,
+} from '../../lib/server/participant-events.js';
 import { acquire as acquireCliSlot } from '../cli-semaphore.js';
 import { isHttpDispatchedShim, pickShimForVoice } from '../agents/index.js';
 import type { ErrorDetector } from '../error-detector.js';
@@ -48,6 +54,29 @@ import { verdictFromReviewerText } from './verdict.js';
  */
 function isCappedLineage(shimName: string): shimName is CliLineageKey {
   return (CLI_LINEAGES as readonly string[]).includes(shimName);
+}
+
+function emitReviewerPhaseStart(args: {
+  chatId: string;
+  phase: StandardPhase;
+  phaseIdx: number;
+  round: number;
+  agent: string;
+  onEvent: (e: RunnerEvent) => void;
+}): void {
+  args.onEvent({
+    chatId: args.chatId,
+    type: 'phase_start',
+    payload: {
+      phaseId: args.phase.id,
+      phaseIdx: args.phaseIdx,
+      kind: args.phase.kind,
+      round: args.round,
+      role: 'reviewer',
+      agent: args.agent,
+    },
+    ts: Date.now(),
+  });
 }
 
 export async function runReviewers(
@@ -92,9 +121,8 @@ export async function runReviewers(
   // with Retry-After) is the upstream's job; chorus shouldn't double-
   // throttle. Local CLI candidates go through the semaphore which
   // enforces both the global cap and the per-CLI cap; the wait happens
-  // INSIDE runReviewer right before spawn so a reviewer that's queued
-  // still emits its phase_start / participant cards, just in a
-  // "waiting for slot" state.
+  // INSIDE runReviewer right before spawn. A reviewer emits phase_start
+  // only after it has moved past the queue and is about to run.
   const localCandidateIdxs: number[] = [];
   const httpCandidateIdxs: number[] = [];
   for (let i = 0; i < candidates.length; i++) {
@@ -111,31 +139,11 @@ export async function runReviewers(
   async function runOne(idx: number): Promise<void> {
     if (abortSignal.aborted) return;
     const candidate = candidates[idx];
-    // Resolve the agent name for events here so phase_start/phase_done
-    // carry the same `agent` shape the cockpit + per-reviewer error/
-    // warning events already emit (`<shimName>-<idx>`). Without this,
-    // successful reviewers never produced a `phase_start` / `phase_done`
-    // pair and the runner-multiplex persister had nothing to write to
-    // SQLite — so /chats/:id and the CLI's /show only saw the doer side
-    // even though answer.md + verdict were correct on disk. Errored
-    // reviewers were unaffected (cli_error has its own persistence
-    // path). Mirrors the doer pattern in runner.ts.
+    // Resolve the agent name for phase_done here so it matches the
+    // phase_start emitted by runReviewer after the CLI slot/spawn gate.
     const reviewerModel = candidate.models?.[0];
     const reviewerShim = pickShimForVoice(candidate.lineage as Lineage, reviewerModel);
     const reviewerAgentLabel = `${reviewerShim.name}-${idx}`;
-    onEvent({
-      chatId,
-      type: 'phase_start',
-      payload: {
-        phaseId: phase.id,
-        phaseIdx,
-        kind: phase.kind,
-        round,
-        role: 'reviewer',
-        agent: reviewerAgentLabel,
-      },
-      ts: Date.now(),
-    });
     try {
       const res = await runReviewer(
         chatDir,
@@ -247,20 +255,25 @@ export async function runSingleReviewerWithPrompt(args: {
   const reviewerModel = candidate.models?.[0];
   const reviewerShim = pickShimForVoice(candidate.lineage as Lineage, reviewerModel);
   const reviewerAgentLabel = `${reviewerShim.name}-${displayIdx}`;
+  const roundDir = path.join(args.chatDir, `round-${args.round}`);
+  const answerFile = path.join(roundDir, `reviewer-${reviewerShim.name}-${displayIdx}`, 'answer.md');
 
-  args.onEvent({
-    chatId: args.chatId,
-    type: 'phase_start',
-    payload: {
-      phaseId: args.phase.id,
-      phaseIdx: args.phaseIdx,
-      kind: args.phase.kind,
-      round: args.round,
-      role: 'reviewer',
-      agent: reviewerAgentLabel,
-    },
-    ts: Date.now(),
-  });
+  const emitPhaseFailed = (reason: string): void => {
+    args.onEvent({
+      chatId: args.chatId,
+      type: 'phase_failed',
+      payload: {
+        phaseId: args.phase.id,
+        phaseIdx: args.phaseIdx,
+        kind: args.phase.kind,
+        round: args.round,
+        role: 'reviewer',
+        agent: reviewerAgentLabel,
+        reason,
+      },
+      ts: Date.now(),
+    });
+  };
 
   try {
     const result = await runReviewer(
@@ -283,9 +296,6 @@ export async function runSingleReviewerWithPrompt(args: {
       args.participantMetadata,
     );
 
-    const roundDir = path.join(args.chatDir, `round-${args.round}`);
-    const answerFile = path.join(roundDir, `reviewer-${reviewerShim.name}-${displayIdx}`, 'answer.md');
-
     if (result !== null) {
       args.onEvent({
         chatId: args.chatId,
@@ -301,9 +311,46 @@ export async function runSingleReviewerWithPrompt(args: {
         },
         ts: Date.now(),
       });
+    } else {
+      emitPhaseFailed('reviewer_no_result');
     }
 
     return { result, answerFile };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    try {
+      fs.mkdirSync(path.dirname(answerFile), { recursive: true });
+      fs.writeFileSync(
+        answerFile,
+        `## REVIEWER FAILED\n\n` +
+          `**Kind:** reviewer_spawn_failed\n` +
+          `**Lineage:** ${candidate.lineage}\n` +
+          `**Model:** ${reviewerModel ?? '(default)'}\n` +
+          `\n${message}\n`,
+      );
+    } catch {
+      /* best-effort — diagnostics shouldn't fail the runner */
+    }
+    args.onEvent({
+      chatId: args.chatId,
+      type: 'cli_error',
+      payload: {
+        phaseId: args.phase.id,
+        phaseKind: args.phase.kind,
+        phaseIdx: args.phaseIdx,
+        round: args.round,
+        role: 'reviewer',
+        agent: reviewerAgentLabel,
+        error: {
+          kind: 'reviewer_spawn_failed',
+          message,
+          lineage: candidate.lineage,
+        },
+      },
+      ts: Date.now(),
+    });
+    emitPhaseFailed('reviewer_spawn_failed');
+    return { result: null, answerFile };
   } finally {
     resetFallbackRound(args.chatId, args.round);
   }
@@ -340,6 +387,7 @@ async function runReviewer(
   const agentName = shim.name;
   const agentLabel = `${agentName}-${displayReviewerIdx}`;
   const isHttp = isHttpDispatchedShim(shim);
+  const startedAt = Date.now();
 
   // Reviewer dir is created BEFORE the precheck so any pre-spawn failure
   // can still write a `## REVIEWER FAILED` summary to answer.md. Without
@@ -526,6 +574,14 @@ async function runReviewer(
       abortSignal,
     );
     try {
+      emitReviewerPhaseStart({
+        chatId,
+        phase,
+        phaseIdx,
+        round,
+        agent: agentLabel,
+        onEvent,
+      });
       // Compose: this slot's per-slot chain + template-level
       // fallback.reviewer (same lineage, dedup'd against this slot AND
       // every other reviewer slot in the phase so we don't spawn a
@@ -717,6 +773,15 @@ async function runReviewer(
     agentName: agentLabel,
   });
 
+  emitReviewerPhaseStart({
+    chatId,
+    phase,
+    phaseIdx,
+    round,
+    agent: agentLabel,
+    onEvent,
+  });
+
   if (shim.clearKeys && shim.clearKeys.length > 0) {
     tmuxMgr.sendKeys(session.name, [...shim.clearKeys]);
   }
@@ -740,6 +805,10 @@ async function runReviewer(
   const detectedFailure = new Promise<CliError>((resolve) => {
     failDetected = resolve;
   });
+  let terminalCompletionDetected: ((content: string) => void) | null = null;
+  const detectedTerminalCompletion = new Promise<string>((resolve) => {
+    terminalCompletionDetected = resolve;
+  });
 
   // Failure-mode polling — same pattern as the doer.
   const pollHandle = setInterval(() => {
@@ -755,12 +824,28 @@ async function runReviewer(
           agent: agentLabel,
           output: pane,
         },
-        ts: Date.now(),
+          ts: Date.now(),
       });
+      if (candidate.lineage === 'opencode' && openCodePaneShowsDone(pane)) {
+        try {
+          const answer = fs.readFileSync(answerFile, 'utf-8');
+          if (answer.trim().length > 0 && !answer.startsWith('## REVIEWER FAILED')) {
+            terminalCompletionDetected?.(answer);
+          }
+        } catch {
+          /* answer file may not have flushed yet */
+        }
+      }
       const err = errorDetector.inspect(session.name, candidate.lineage, pane);
       if (err) {
         const recoveryKeys = shim.recoverKeys?.[err.kind as keyof typeof shim.recoverKeys];
         if (recoveryKeys && recoveryKeys.length > 0) {
+          const event = err.kind === 'permission_prompt'
+            ? permissionAutoApprovedEvent(err, recoveryKeys)
+            : null;
+          if (event) {
+            appendParticipantEvent(reviewerDir, event);
+          }
           tmuxMgr.sendKeys(session.name, [...recoveryKeys]);
           onEvent({
             chatId,
@@ -770,13 +855,25 @@ async function runReviewer(
               round,
               role: 'reviewer',
               agent: agentLabel,
+              ...(event
+                ? {
+                    kind: event.kind,
+                    severity: event.severity,
+                    message: event.message,
+                    command: event.command,
+                    summary: event.summary,
+                  }
+                : {}),
               recovered: err.kind,
               keys: [...recoveryKeys],
-              detail: err.detail,
+              detail: event?.detail ?? err.detail,
             },
             ts: Date.now(),
           });
         } else {
+          if (err.kind === 'permission_prompt') {
+            appendParticipantEvent(reviewerDir, permissionBlockedEvent(err));
+          }
           // Fire-and-forget — see doer-driver for rationale.
           recordHealth({
             lineage: candidate.lineage as CliLineage,
@@ -816,11 +913,30 @@ async function runReviewer(
         doneSentinel: '## DONE',
       }),
       detectedFailure.then(() => null),
+      detectedTerminalCompletion.then((content) => ({ content, full: true })),
     ]);
     if (result === null) return null;
     if (!result.full || result.content.trim().length === 0) {
       // Watcher resolved on timeout/silence with no real answer.
       return null;
+    }
+    ensureDoneSentinel(answerFile, result.content);
+    try {
+      const pane = tmuxMgr.capturePane(session.name);
+      const terminalUsage =
+        candidate.lineage === 'opencode'
+          ? parseOpenCodeTerminalUsage(pane) ?? undefined
+          : undefined;
+      fs.writeFileSync(
+        path.join(reviewerDir, '_stats.json'),
+        JSON.stringify({
+          durationMs: Date.now() - startedAt,
+          ...(terminalUsage ? { terminalUsage } : {}),
+        }),
+        'utf-8',
+      );
+    } catch {
+      /* sidecar is informational; ignore write errors */
     }
     try {
       await recordHealth({
@@ -839,5 +955,19 @@ async function runReviewer(
   }
   } finally {
     releaseSlot?.();
+  }
+}
+
+export function openCodePaneShowsDone(pane: string): boolean {
+  return /\n\s*DONE\s*\n/.test(pane) && /Build\s+·/.test(pane);
+}
+
+export function ensureDoneSentinel(answerFile: string, content: string): void {
+  const trimmed = content.trimEnd();
+  if (/\n##\s*DONE\s*$/i.test(trimmed)) return;
+  try {
+    fs.writeFileSync(answerFile, `${trimmed}\n\n## DONE\n`, 'utf-8');
+  } catch {
+    /* best-effort: result is already in memory */
   }
 }

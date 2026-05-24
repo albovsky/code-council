@@ -1,4 +1,5 @@
 import type { Chat } from "@/lib/types";
+import type { CodeReviewMode } from "@/lib/code-review-modes";
 import { fetchFromDaemon } from "./client";
 import { chatFromRow, type RawChatRow } from "./chats";
 
@@ -38,10 +39,13 @@ export async function getCodeReviewContext(): Promise<CodeReviewContext> {
   return fetchFromDaemon<CodeReviewContext>("/code-review/context");
 }
 
-export async function startCodeReview(repoPath?: string): Promise<CodeReviewResult> {
+export async function startCodeReview(
+  repoPath?: string,
+  mode?: CodeReviewMode,
+): Promise<CodeReviewResult> {
   const row = await fetchFromDaemon<RawCodeReviewResult>("/code-review", {
     method: "POST",
-    body: JSON.stringify({ repoPath }),
+    body: JSON.stringify({ repoPath, mode }),
   });
   return {
     ...chatFromRow(row),

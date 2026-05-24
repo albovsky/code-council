@@ -233,6 +233,14 @@ export async function runReviewerHeadless(args: {
           },
           ts: Date.now(),
         });
+        try {
+          await recordHealth({
+            lineage: candidateLineage as CliLineage,
+            status: 'healthy',
+          });
+        } catch (healthErr: unknown) {
+          console.error(`[chorus] recordHealth failed for ${candidateLineage}:`, healthErr);
+        }
       } else if (event.type === 'error') {
         errored = true;
         // Surface OpenRouter HTTP failures (insufficient credits, bad key,

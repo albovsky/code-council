@@ -62,7 +62,7 @@ describe('cli-semaphore', () => {
     // Third must wait — set up a watcher that resolves the slot
     // promise's settled state without blocking the test.
     let r3Settled = false;
-    const r3Promise = acquire('gemini-cli').then((r) => {
+    const r3Promise = acquire('antigravity-cli').then((r) => {
       r3Settled = true;
       return r;
     });
@@ -388,7 +388,7 @@ describe('cli-semaphore', () => {
     // defaults reasonably.
     const r1 = await acquire('claude-code');
     const r2 = await acquire('codex-cli');
-    const r3 = await acquire('gemini-cli');
+    const r3 = await acquire('antigravity-cli');
 
     // Default global=3 — fourth must queue.
     let r4Settled = false;

@@ -13,6 +13,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { runReviewerHeadless } from '../src/daemon/runner';
 import { _resetDbForTests } from '../src/lib/db/connection';
+import { getHealth } from '../src/lib/cli-health';
 import type { StandardPhase } from '../src/lib/template-schema';
 import type { RunnerEvent } from '../src/daemon/runner';
 import { makeFakeShim, happyPathEvents } from './helpers/fake-agent-shim';
@@ -131,6 +132,17 @@ describe('runReviewerHeadless', () => {
       role: 'reviewer',
       agent: 'codex-cli-0',
       round: 1,
+    });
+  });
+
+  it('records the reviewer lineage as healthy after a successful run', async () => {
+    const text = `${PADDING}\nlgtm.\n## DONE`;
+    const handle = makeFakeShim({ events: happyPathEvents(text) });
+    await callReviewer(handle);
+
+    await expect(getHealth('openai')).resolves.toMatchObject({
+      lineage: 'openai',
+      status: 'healthy',
     });
   });
 

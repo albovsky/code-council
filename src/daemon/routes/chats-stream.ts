@@ -53,6 +53,8 @@ const TERMINAL_STATUSES = [
   'no_review',
 ] as const;
 
+const THERMO_TEMPLATE_ID = 'branch-code-review-thermo';
+
 interface RegisterStreamRouteArgs {
   tmuxMgr: TmuxManager;
   errorDetector: ErrorDetector;
@@ -209,6 +211,27 @@ export function registerChatStreamRoute(
           existing.subscribers.delete(subscriber);
           reply.raw.removeListener('drain', onDrain);
         });
+        return;
+      }
+
+      if (chat.template_id === THERMO_TEMPLATE_ID) {
+        const line = `data: ${JSON.stringify({
+          chatId,
+          type: 'chat_done',
+          payload: {
+            status: 'non_resumable',
+            verdict: chat.verdict ?? 'unknown',
+            replay: true,
+            error: {
+              code: 'thermo_runner_unavailable',
+              message:
+                'Thermo code review cannot be resumed after the active runner is gone. Existing artifacts remain viewable; start a new Thermo review for fresh execution.',
+            },
+          },
+          ts: Date.now(),
+        })}\n\n`;
+        subscriber.write(line);
+        reply.raw.end();
         return;
       }
 

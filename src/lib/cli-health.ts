@@ -10,6 +10,7 @@
  */
 
 import { settings } from './db';
+import { getDb } from './db/connection.js';
 
 export type CliLineage =
   | 'anthropic'
@@ -81,7 +82,51 @@ export async function getHealth(lineage: CliLineage): Promise<CliHealth> {
 }
 
 export async function getAllHealth(): Promise<CliHealth[]> {
-  return Promise.all(ALL_LINEAGES.map(getHealth));
+  const [healths, submittedAtByLineage] = await Promise.all([
+    Promise.all(ALL_LINEAGES.map(getHealth)),
+    latestSubmittedPhaseEventByLineage(),
+  ]);
+  return healths.map((health) => {
+    const latestSubmittedAt = submittedAtByLineage[health.lineage];
+    if (!latestSubmittedAt || latestSubmittedAt <= health.updatedAt) {
+      return health;
+    }
+    return {
+      lineage: health.lineage,
+      status: 'healthy',
+      updatedAt: latestSubmittedAt,
+    };
+  });
+}
+
+async function latestSubmittedPhaseEventByLineage(): Promise<Partial<Record<CliLineage, number>>> {
+  const db = await getDb();
+  const result = await db.execute(`
+    SELECT agent_id, MAX(COALESCE(finished_at, started_at)) AS submitted_at
+    FROM phase_events
+    WHERE state = 'submitted' AND agent_id IS NOT NULL AND agent_id <> ''
+    GROUP BY agent_id
+  `);
+  const latest: Partial<Record<CliLineage, number>> = {};
+  for (const row of result.rows) {
+    const lineage = lineageFromAgentId(String(row.agent_id ?? ''));
+    const submittedAt = Number(row.submitted_at ?? 0);
+    if (!lineage || !Number.isFinite(submittedAt) || submittedAt <= 0) continue;
+    latest[lineage] = Math.max(latest[lineage] ?? 0, submittedAt);
+  }
+  return latest;
+}
+
+function lineageFromAgentId(agentId: string): CliLineage | null {
+  if (agentId.startsWith('claude-code')) return 'anthropic';
+  if (agentId.startsWith('codex-cli')) return 'openai';
+  if (agentId.startsWith('antigravity-cli') || agentId.startsWith('gemini-cli')) return 'google';
+  if (agentId.startsWith('opencode-cli')) return 'opencode';
+  if (agentId.startsWith('kimi-cli')) return 'moonshot';
+  if (agentId.startsWith('openrouter')) return 'openrouter';
+  if (agentId.startsWith('local')) return 'local';
+  if (agentId.startsWith('grok-cli')) return 'grok';
+  return null;
 }
 
 /**

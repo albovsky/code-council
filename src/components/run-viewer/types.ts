@@ -1,4 +1,19 @@
 import type { ReviewerLineage } from "@/lib/types";
+import type {
+  ThermoParticipantMetadata,
+  ThermoPhaseGroup,
+  ThermoPlanDomain,
+  ThermoPlanVoice,
+  ThermoRunPlan,
+} from "@/lib/thermo-run-types";
+
+export type {
+  ThermoParticipantMetadata,
+  ThermoPhaseGroup,
+  ThermoPlanDomain,
+  ThermoPlanVoice,
+  ThermoRunPlan,
+};
 
 /**
  * Shared snapshot shapes for the run-viewer family.
@@ -58,6 +73,7 @@ export interface ParticipantSnapshot {
     cachedInputTokens?: number;
     costUsd?: number;
   };
+  thermo?: ThermoParticipantMetadata;
   /**
    * Warnings emitted via cli_warning SSE events for this participant —
    * persona id misconfigurations, transient CLI hiccups, etc. Threaded

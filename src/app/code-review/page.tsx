@@ -1,5 +1,4 @@
 import { AppShell } from "@/components/app-shell";
-import { PageHeader } from "@/components/page-header";
 import { CodeReviewLauncher } from "./code-review-launcher";
 import { CliStatusPanel } from "@/components/cli-status-panel";
 import { DaemonError, getCodeReviewContext, type CodeReviewContext } from "@/lib/api";
@@ -31,12 +30,7 @@ export default async function CodeReviewPage() {
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
-        <PageHeader
-          eyebrow="Review"
-          title="Code Review"
-          subtitle="Review the current worktree, or compare the current branch against main."
-          action={<CodeReviewLauncher />}
-        />
+        <CodeReviewLauncher />
 
         {context.error ? (
           <section className="mb-8 flex items-center gap-3 rounded-xl border border-destructive/50 bg-destructive/10 p-6">

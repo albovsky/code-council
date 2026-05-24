@@ -220,6 +220,95 @@ export async function runReviewers(
   return { agreed, summary, allFailed };
 }
 
+export async function runSingleReviewerWithPrompt(args: {
+  chatDir: string;
+  chatId: string;
+  phase: StandardPhase;
+  phaseIdx: number;
+  round: number;
+  candidateIdx?: number;
+  reviewerIdx: number;
+  askContent: string;
+  tmuxMgr: TmuxManager;
+  errorDetector: ErrorDetector;
+  onEvent: (e: RunnerEvent) => void;
+  abortSignal: AbortSignal;
+  templateFallbackReviewer?: ReadonlyArray<{ lineage: string; models: string[] }>;
+  participantMetadata?: Record<string, unknown>;
+}): Promise<{ result: boolean | null; answerFile: string }> {
+  if (!args.phase.reviewer) {
+    const roundDir = path.join(args.chatDir, `round-${args.round}`);
+    return { result: true, answerFile: path.join(roundDir, 'reviewer-unknown-0', 'answer.md') };
+  }
+
+  const candidateIdx = args.candidateIdx ?? args.reviewerIdx;
+  const displayIdx = args.reviewerIdx;
+  const candidate = args.phase.reviewer.candidates[candidateIdx];
+  const reviewerModel = candidate.models?.[0];
+  const reviewerShim = pickShimForVoice(candidate.lineage as Lineage, reviewerModel);
+  const reviewerAgentLabel = `${reviewerShim.name}-${displayIdx}`;
+
+  args.onEvent({
+    chatId: args.chatId,
+    type: 'phase_start',
+    payload: {
+      phaseId: args.phase.id,
+      phaseIdx: args.phaseIdx,
+      kind: args.phase.kind,
+      round: args.round,
+      role: 'reviewer',
+      agent: reviewerAgentLabel,
+    },
+    ts: Date.now(),
+  });
+
+  try {
+    const result = await runReviewer(
+      args.chatDir,
+      args.chatId,
+      args.phase,
+      args.phaseIdx,
+      args.round,
+      candidateIdx,
+      '',
+      '',
+      '',
+      args.tmuxMgr,
+      args.errorDetector,
+      args.onEvent,
+      args.abortSignal,
+      args.templateFallbackReviewer,
+      args.askContent,
+      displayIdx,
+      args.participantMetadata,
+    );
+
+    const roundDir = path.join(args.chatDir, `round-${args.round}`);
+    const answerFile = path.join(roundDir, `reviewer-${reviewerShim.name}-${displayIdx}`, 'answer.md');
+
+    if (result !== null) {
+      args.onEvent({
+        chatId: args.chatId,
+        type: 'phase_done',
+        payload: {
+          phaseId: args.phase.id,
+          phaseIdx: args.phaseIdx,
+          kind: args.phase.kind,
+          round: args.round,
+          role: 'reviewer',
+          agent: reviewerAgentLabel,
+          verdict: result ? 'agreed' : 'disagreed',
+        },
+        ts: Date.now(),
+      });
+    }
+
+    return { result, answerFile };
+  } finally {
+    resetFallbackRound(args.chatId, args.round);
+  }
+}
+
 async function runReviewer(
   chatDir: string,
   chatId: string,
@@ -235,6 +324,9 @@ async function runReviewer(
   onEvent: (e: RunnerEvent) => void,
   abortSignal: AbortSignal,
   templateFallbackReviewer?: ReadonlyArray<{ lineage: string; models: string[] }>,
+  askOverride?: string,
+  displayReviewerIdx = reviewerIdx,
+  participantMetadata?: Record<string, unknown>,
 ): Promise<boolean | null> {
   // Returns:
   //   true  = reviewer ran and approved
@@ -246,6 +338,7 @@ async function runReviewer(
   const reviewerModel = candidate.models?.[0];
   const shim = pickShimForVoice(candidate.lineage, reviewerModel);
   const agentName = shim.name;
+  const agentLabel = `${agentName}-${displayReviewerIdx}`;
   const isHttp = isHttpDispatchedShim(shim);
 
   // Reviewer dir is created BEFORE the precheck so any pre-spawn failure
@@ -256,12 +349,23 @@ async function runReviewer(
   // "Queued — waiting for an open slot." forever (issue #25 — user with
   // no codex/gemini/kimi installed saw every chat stuck queued).
   const roundDir = path.join(chatDir, `round-${round}`);
-  const reviewerDir = path.join(roundDir, `reviewer-${agentName}-${reviewerIdx}`);
+  const reviewerDir = path.join(roundDir, `reviewer-${agentName}-${displayReviewerIdx}`);
   if (!fs.existsSync(reviewerDir)) {
     fs.mkdirSync(reviewerDir, { recursive: true });
   }
   const askFile = path.join(reviewerDir, 'ask.md');
   const answerFile = path.join(reviewerDir, 'answer.md');
+  if (participantMetadata) {
+    try {
+      fs.writeFileSync(
+        path.join(reviewerDir, '_thermo.json'),
+        JSON.stringify(participantMetadata, null, 2),
+        'utf-8',
+      );
+    } catch {
+      /* informational sidecar; ignore write errors */
+    }
+  }
 
   // Helper: write a `## REVIEWER FAILED` summary to answer.md so the
   // cockpit's `parseFailureSummary` lifts the slot out of "pending" and
@@ -304,7 +408,7 @@ async function runReviewer(
           phaseId: phase.id,
           round,
           role: 'reviewer',
-          agent: `${agentName}-${reviewerIdx}`,
+          agent: agentLabel,
           lineage: candidate.lineage,
           reason: preRev.reason,
           message: preRev.message,
@@ -373,7 +477,7 @@ async function runReviewer(
             phaseIdx,
             round,
             role: 'reviewer',
-            agent: `${agentName}-${reviewerIdx}`,
+            agent: agentLabel,
             kind: 'persona_missing',
             message: `Reviewer persona "${personaId}" not found in personas table — running with generic prompt. Check the template's reviewer candidate persona field.`,
           },
@@ -390,7 +494,7 @@ async function runReviewer(
           phaseIdx,
           round,
           role: 'reviewer',
-          agent: `${agentName}-${reviewerIdx}`,
+          agent: agentLabel,
           kind: 'persona_lookup_failed',
           message: `Reviewer persona lookup for "${personaId}" failed: ${message} — running with generic prompt.`,
         },
@@ -399,7 +503,7 @@ async function runReviewer(
     }
   }
 
-  const ask = buildReviewerAsk(
+  const ask = askOverride ?? buildReviewerAsk(
     phase,
     phaseIdx,
     round,
@@ -418,7 +522,7 @@ async function runReviewer(
   if (transport === 'headless' && shim.runHeadless) {
     const handle = participantAborts.register(
       chatId,
-      participantAborts.participantKey('reviewer', agentName, reviewerIdx),
+      participantAborts.participantKey('reviewer', agentName, displayReviewerIdx),
       abortSignal,
     );
     try {
@@ -461,8 +565,8 @@ async function runReviewer(
           );
           if (!claimed) {
             console.warn(
-              `[reviewer] fallback collision chat=${chatId} round=${round} ` +
-                `slot=${agentName}-${reviewerIdx} ` +
+                `[reviewer] fallback collision chat=${chatId} round=${round} ` +
+                `slot=${agentLabel} ` +
                 `target=${entry.lineage}/${entry.model ?? '(default)'} ` +
                 `— another slot is already running it; advancing chain`,
             );
@@ -473,7 +577,7 @@ async function runReviewer(
                 phaseId: phase.id,
                 round,
                 role: 'reviewer',
-                agent: `${agentName}-${reviewerIdx}`,
+                agent: agentLabel,
                 reason: 'fallback_collision',
                 fromLineage: entry.lineage,
                 toLineage: entry.lineage,
@@ -501,7 +605,7 @@ async function runReviewer(
               chatId,
               phase,
               round,
-              reviewerIdx,
+              reviewerIdx: displayReviewerIdx,
               candidateLineage: entry.lineage,
               candidateModel: entry.model,
               agentName,
@@ -539,7 +643,7 @@ async function runReviewer(
           // "attempt failed" or success in order, per slot.
           console.warn(
             `[reviewer] fallback fired chat=${chatId} round=${round} ` +
-              `slot=${agentName}-${reviewerIdx} reason=${reason} ` +
+              `slot=${agentLabel} reason=${reason} ` +
               `from=${from.lineage}/${from.model ?? '(default)'} ` +
               `to=${to.lineage}/${to.model ?? '(default)'} ` +
               `chain_idx=${fromIdx}`,
@@ -551,7 +655,7 @@ async function runReviewer(
               phaseId: phase.id,
               round,
               role: 'reviewer',
-              agent: `${agentName}-${reviewerIdx}`,
+              agent: agentLabel,
               reason,
               fromLineage: from.lineage,
               toLineage: to.lineage,
@@ -571,7 +675,7 @@ async function runReviewer(
             round,
             phaseId: phase.id,
             role: 'reviewer',
-            agent: `${agentName}-${reviewerIdx}`,
+            agent: agentLabel,
             reason,
             fromLineage: from.lineage,
             toLineage: to.lineage,
@@ -592,7 +696,7 @@ async function runReviewer(
   // makes sense.
   const perms = await getPermissions();
   const sessionName = sanitizeName(
-    `council-${chatId}-${phase.id}-reviewer-${agentName}-${reviewerIdx}`,
+    `council-${chatId}-${phase.id}-reviewer-${agentName}-${displayReviewerIdx}`,
   );
   const session = await tmuxMgr.acquire({
     chatId,
@@ -610,7 +714,7 @@ async function runReviewer(
       autoApprove: perms.autoApprovePrompts,
       networkAccess: perms.networkAccess,
     },
-    agentName: `${agentName}-${reviewerIdx}`,
+    agentName: agentLabel,
   });
 
   if (shim.clearKeys && shim.clearKeys.length > 0) {
@@ -648,7 +752,7 @@ async function runReviewer(
           phaseId: phase.id,
           round,
           role: 'reviewer',
-          agent: `${agentName}-${reviewerIdx}`,
+          agent: agentLabel,
           output: pane,
         },
         ts: Date.now(),
@@ -665,7 +769,7 @@ async function runReviewer(
               phaseId: phase.id,
               round,
               role: 'reviewer',
-              agent: `${agentName}-${reviewerIdx}`,
+              agent: agentLabel,
               recovered: err.kind,
               keys: [...recoveryKeys],
               detail: err.detail,
@@ -689,7 +793,7 @@ async function runReviewer(
               phaseId: phase.id,
               round,
               role: 'reviewer',
-              agent: `${agentName}-${reviewerIdx}`,
+              agent: agentLabel,
               error: err,
             },
             ts: Date.now(),
@@ -717,6 +821,14 @@ async function runReviewer(
     if (!result.full || result.content.trim().length === 0) {
       // Watcher resolved on timeout/silence with no real answer.
       return null;
+    }
+    try {
+      await recordHealth({
+        lineage: candidate.lineage as CliLineage,
+        status: 'healthy',
+      });
+    } catch (healthErr: unknown) {
+      console.error(`[chorus] recordHealth failed for ${candidate.lineage}:`, healthErr);
     }
     return verdictFromReviewerText(result.content);
   } catch {

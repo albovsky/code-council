@@ -13,9 +13,11 @@ import {
   successResponse,
   errorResponse,
   listEnvelope,
+  sendError,
   type ApiResponse,
   type ListEnvelope,
 } from '../api-response.js';
+import type { CliLineage, HealthStatus } from '../../lib/cli-health.js';
 
 export interface SystemRouteDeps {
   /** Absolute path to bin/chorus.mjs — used by /orchestrators/:name/connect. */
@@ -33,6 +35,40 @@ export interface SystemRouteDeps {
 // `chorus update` always see fresh state on first cockpit load.
 const NPM_LATEST_TTL_MS = 30 * 60 * 1000;
 let npmLatestCache: { value: string | null; fetchedAt: number } | null = null;
+
+const CLI_LINEAGES = new Set<CliLineage>([
+  'anthropic',
+  'openai',
+  'google',
+  'opencode',
+  'moonshot',
+  'openrouter',
+  'local',
+  'grok',
+]);
+
+function healthLineageForVoice(voice: {
+  provider: string;
+  lineage: string;
+}): CliLineage | null {
+  if (voice.provider === 'openrouter') return 'openrouter';
+  if (CLI_LINEAGES.has(voice.lineage as CliLineage)) {
+    return voice.lineage as CliLineage;
+  }
+  return null;
+}
+
+function openRouterStatusFromValidation(error?: string): HealthStatus {
+  const message = error ?? '';
+  if (/invalid api key/i.test(message)) return 'auth_invalid';
+  if (/network error/i.test(message)) return 'unknown';
+  const status = message.match(/returned\s+(\d{3})/i)?.[1];
+  if (status === '401' || status === '403') return 'auth_invalid';
+  if (status === '402') return 'quota_exhausted';
+  if (status === '429') return 'rate_limited';
+  if (status && Number(status) >= 500) return 'rate_limited';
+  return 'unknown';
+}
 
 async function getCachedLatestVersion(
   fetcher: () => Promise<string | null>,
@@ -100,6 +136,101 @@ export function registerSystemRoutes(
       const { getAllHealth } = await import('../../lib/cli-health.js');
       const items = await getAllHealth();
       return successResponse(listEnvelope(items));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return errorResponse('internal', message);
+    }
+  });
+
+  fastify.post<{
+    Body: { voiceId?: string };
+    Reply: ApiResponse<object>;
+  }>('/cli/health/check', async (request, reply) => {
+    try {
+      const voiceId = request.body?.voiceId;
+      if (!voiceId || typeof voiceId !== 'string') {
+        return sendError(reply, 'bad_request', 'voiceId is required');
+      }
+
+      const { voices, secrets } = await import('../../lib/db/index.js');
+      const voice = await voices.getById(voiceId);
+      if (!voice) {
+        return sendError(reply, 'not_found', `Voice ${voiceId} not found`);
+      }
+      if (!voice.enabled) {
+        return sendError(reply, 'validation', `Voice ${voiceId} is disabled`);
+      }
+
+      const lineage = healthLineageForVoice(voice);
+      if (!lineage) {
+        return sendError(reply, 'validation', `Voice ${voiceId} has unsupported lineage`);
+      }
+
+      const { getHealth, recordHealth } = await import('../../lib/cli-health.js');
+
+      if (voice.provider === 'openrouter') {
+        const stored = await secrets.get('openrouter');
+        if (!stored?.value) {
+          const message = 'No OpenRouter API key saved.';
+          await recordHealth({ lineage, status: 'auth_invalid', message });
+          return successResponse({
+            ok: false,
+            voiceId,
+            health: await getHealth(lineage),
+            message,
+          });
+        }
+
+        const { validateKey } = await import('../openrouter.js');
+        const result = await validateKey(stored.value);
+        if (!result.valid) {
+          const message = result.error ?? 'OpenRouter key validation failed.';
+          await recordHealth({
+            lineage,
+            status: openRouterStatusFromValidation(message),
+            message,
+          });
+          return successResponse({
+            ok: false,
+            voiceId,
+            health: await getHealth(lineage),
+            message,
+          });
+        }
+
+        await recordHealth({ lineage, status: 'healthy' });
+        return successResponse({
+          ok: true,
+          voiceId,
+          health: await getHealth(lineage),
+        });
+      }
+
+      const { precheckLineage } = await import('../../lib/cli-precheck.js');
+      const result = await precheckLineage(lineage);
+      if (!result.ok) {
+        const status: HealthStatus =
+          result.reason === 'quota_exhausted' ? 'quota_exhausted' : 'auth_invalid';
+        await recordHealth({
+          lineage,
+          status,
+          message: result.message,
+          resetAt: result.resetAt,
+        });
+        return successResponse({
+          ok: false,
+          voiceId,
+          health: await getHealth(lineage),
+          message: result.message,
+        });
+      }
+
+      await recordHealth({ lineage, status: 'healthy' });
+      return successResponse({
+        ok: true,
+        voiceId,
+        health: await getHealth(lineage),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return errorResponse('internal', message);

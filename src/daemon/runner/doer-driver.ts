@@ -379,10 +379,21 @@ export async function runDoer(
   }, 2000);
 
   try {
-    return await waitForAnswer(answerFile, {
+    const result = await waitForAnswer(answerFile, {
       timeoutMs: phase.timeoutMs ?? DEFAULT_TMUX_PHASE_TIMEOUT_MS,
       doneSentinel: '## DONE',
     });
+    if (result.full && result.content.trim().length > 0) {
+      try {
+        await recordHealth({
+          lineage: phase.doer.lineage as CliLineage,
+          status: 'healthy',
+        });
+      } catch (healthErr: unknown) {
+        console.error(`[chorus] recordHealth failed for ${phase.doer.lineage}:`, healthErr);
+      }
+    }
+    return result;
   } catch {
     return null;
   } finally {

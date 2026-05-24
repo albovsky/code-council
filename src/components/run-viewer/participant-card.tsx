@@ -56,7 +56,7 @@ function thermoRoleLabel(role: NonNullable<ParticipantSnapshot["thermo"]>["role"
  *
  * Card state precedence (most-specific first):
  *   pending  — placeholder synthesised from template, no dir on disk yet
- *   done     — answer.md has non-empty content
+ *   done     — answer.md carries the durable DONE sentinel
  *   working  — chat is mid-run AND (proc is alive OR live tail has bytes)
  *   errored  — chat is in a terminal state but this participant produced 0 B
  *   idle     — fall-through (rare; shouldn't normally render)
@@ -117,9 +117,7 @@ export function ParticipantCard({
   // dies, but does NOT append `## DONE` (failure summaries aren't
   // successful answers). Without elevating failure here, the non-empty
   // diagnostic body makes the card look DONE even though it failed.
-  const hasReviewResult =
-    !failure &&
-    (participant.hasAnswer || Boolean(participant.answer?.trim()));
+  const hasReviewResult = participantHasReviewResult(participant, failure);
   const state: ParticipantState = participant.pending
     ? "pending"
     : failure
@@ -539,6 +537,13 @@ export function ParticipantCard({
       </Dialog>
     </div>
   );
+}
+
+export function participantHasReviewResult(
+  participant: Pick<ParticipantSnapshot, "hasAnswer">,
+  failure: unknown,
+): boolean {
+  return !failure && participant.hasAnswer;
 }
 
 function formatDuration(ms: number): string {

@@ -413,6 +413,13 @@ export function registerCodeReviewRoutes(
           );
         }
       }
+      if (!parsedTemplate) {
+        reply.code(500);
+        return errorResponse(
+          'template_invalid',
+          `Built-in template "${TEMPLATE_ID}" could not be parsed.`,
+        );
+      }
 
       const scope = await resolveCodeReviewScope(repoPath, {
         maxBytes: firstPhase.artifact.maxBytes,
@@ -431,6 +438,15 @@ export function registerCodeReviewRoutes(
         artifact: scope.artifact,
         yolo: false,
       });
+      try {
+        await chats.setTemplateSnapshot(chat.id, JSON.stringify(parsedTemplate));
+      } catch (err) {
+        chatLogger(chat.id).warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'failed to persist code-review template snapshot',
+        );
+      }
+      const chatForResponse = (await chats.getById(chat.id)) ?? chat;
 
       await phaseEvents.create({
         chat_id: chat.id,
@@ -461,13 +477,6 @@ export function registerCodeReviewRoutes(
       );
 
       if (shouldStartRun && args.tmuxMgr && args.errorDetector) {
-        if (!parsedTemplate) {
-          reply.code(500);
-          return errorResponse(
-            'template_invalid',
-            `Built-in template "${TEMPLATE_ID}" could not be parsed.`,
-          );
-        }
         const entry = runWithMultiplex({
           chatId: chat.id,
           template: parsedTemplate,
@@ -484,7 +493,7 @@ export function registerCodeReviewRoutes(
       }
 
       return successResponse({
-        ...chat,
+        ...chatForResponse,
         codeReview: {
           mode: scope.mode,
           repoRoot: scope.repoRoot,

@@ -638,6 +638,57 @@ describe('registerCodeReviewRoutes', () => {
     });
   });
 
+  it('persists the effective fast-review template when voices are skipped', async () => {
+    const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
+    await voices.upsert({
+      id: 'codex-cli',
+      label: 'Codex',
+      source: 'cli',
+      provider: 'codex-cli',
+      model_id: 'gpt-5.5',
+      lineage: 'openai',
+      enabled: true,
+    });
+    await voices.upsert({
+      id: 'antigravity-cli',
+      label: 'Antigravity',
+      source: 'cli',
+      provider: 'antigravity-cli',
+      model_id: 'gemini-3.5-flash',
+      lineage: 'google',
+      enabled: true,
+    });
+    gitScopeMock.resolveCodeReviewScope.mockResolvedValue({
+      repoPath: '/repo',
+      repoRoot: '/repo',
+      mode: 'worktree',
+      headRef: 'feature/current',
+      files: ['app.ts'],
+      artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
+      title: 'Review worktree changes in repo',
+      totalBytes: 92,
+    });
+
+    const app = Fastify({ logger: false });
+    registerCodeReviewRoutes(app, { startRun: false });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/code-review',
+      payload: { repoPath: '/repo', skippedVoiceIds: ['codex-cli'] },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    const row = await chats.getById(res.json().data.id);
+    expect(row?.template_snapshot).toBeTruthy();
+    const snapshot = JSON.parse(row?.template_snapshot ?? '{}');
+    const models = snapshot.phases?.[0]?.reviewer?.candidates?.flatMap(
+      (candidate: { models?: string[] }) => candidate.models ?? [],
+    );
+    expect(models).toContain('gemini-3.5-flash');
+    expect(models).not.toContain('gpt-5.5');
+  });
+
   it('refreshes the builtin code-review template from currently enabled voices at launch', async () => {
     const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
     await voices.upsert({

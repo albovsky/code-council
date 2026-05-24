@@ -165,6 +165,7 @@ export function buildParticipantSnapshot(
   const rawAgent = input.participantName
     .replace(/^(doer-|reviewer-)/, "")
     .replace(/-\d+$/, "");
+  const sessionAgent = input.participantName.replace(/^(doer-|reviewer-)/, "");
   const lineage = lineageForAgent(rawAgent);
   const answerState = readAnswer(path.join(input.participantDir, "answer.md"));
   const meta = readMeta(input.participantDir);
@@ -178,7 +179,7 @@ export function buildParticipantSnapshot(
   let terminalUsage = stats.terminalUsage;
   if (!terminalUsage && thermo?.provider === "opencode-cli") {
     terminalUsage =
-      readOpenCodeTerminalUsageFromTmux(input.chatId, thermo.phaseId, role, rawAgent) ??
+      readOpenCodeTerminalUsageFromTmux(input.chatId, thermo.phaseId, role, sessionAgent) ??
       undefined;
   }
 

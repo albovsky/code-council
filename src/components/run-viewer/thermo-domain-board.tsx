@@ -97,7 +97,7 @@ export function ThermoDomainBoard({
   return (
     <div className="space-y-5">
       {domainSlots.map(({ domain, primary, validator, primaryCandidates }) => {
-        const primaryDone = primary ? participantHasSavedResult(primary) : false;
+        const primaryDone = primary ? participantHasCompletedResult(primary) : false;
         const usedValidatorAsFallback =
           !validator &&
           Boolean(domain.validator) &&
@@ -280,8 +280,10 @@ function ThermoWaitingSlot({
   );
 }
 
-function participantHasSavedResult(participant: ParticipantSnapshot): boolean {
-  return participant.hasAnswer || Boolean(participant.answer?.trim());
+export function participantHasCompletedResult(
+  participant: Pick<ParticipantSnapshot, "hasAnswer">,
+): boolean {
+  return participant.hasAnswer;
 }
 
 function shouldRenderParticipant(

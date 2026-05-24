@@ -149,13 +149,17 @@ describe('runReviewers — pre-spawn precheck failure', () => {
     const answer = fs.readFileSync(result.answerFile, 'utf-8');
     expect(answer).toMatch(/\*\*Lineage:\*\* openai/);
     expect(answer).toMatch(/\*\*Model:\*\* gpt-5\.5/);
-    expect(events).toContainEqual(expect.objectContaining({
+    expect(events).not.toContainEqual(expect.objectContaining({
       type: 'phase_start',
       payload: expect.objectContaining({ agent: 'codex-cli-5' }),
     }));
     expect(events).toContainEqual(expect.objectContaining({
       type: 'cli_warning',
       payload: expect.objectContaining({ agent: 'codex-cli-5', reason: 'cli_missing' }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'phase_failed',
+      payload: expect.objectContaining({ agent: 'codex-cli-5', reason: 'reviewer_no_result' }),
     }));
   });
 });

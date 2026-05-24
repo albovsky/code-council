@@ -1,4 +1,5 @@
 import { spawnSync } from 'child_process';
+import { buildTmuxSessionName, validateTmuxSessionNameComponent } from '../lib/tmux-session-name.js';
 import type { TmuxManager, SessionHandle, AcquireSessionOptions } from './tmux-types.js';
 
 /**
@@ -82,10 +83,7 @@ export class TmuxManagerImpl implements TmuxManager {
    * Tmux allows [a-zA-Z0-9_-].
    */
   private validateNameComponent(value: string, field: string): string {
-    if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
-      throw new Error(`Invalid ${field}: ${value} contains forbidden characters`);
-    }
-    return value;
+    return validateTmuxSessionNameComponent(value, field);
   }
 
   /**
@@ -110,7 +108,7 @@ export class TmuxManagerImpl implements TmuxManager {
     role: 'doer' | 'reviewer',
     agentName: string
   ): string {
-    return `council-${chatId}-${phaseId}-${role}-${agentName}`;
+    return buildTmuxSessionName({ chatId, phaseId, role, agent: agentName });
   }
 
   /**
@@ -197,7 +195,12 @@ export class TmuxManagerImpl implements TmuxManager {
       // Use child_process.spawnSync with args array for safety
       const result = spawnSync('tmux', ['new-session', '-d', '-s', sessionName, launchCommand], {
         encoding: 'utf-8',
+        timeout: 10000,
       });
+
+      if (result.error) {
+        throw result.error;
+      }
 
       if (result.status !== 0) {
         throw new Error(

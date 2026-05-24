@@ -42,10 +42,11 @@ export async function getCodeReviewContext(): Promise<CodeReviewContext> {
 export async function startCodeReview(
   repoPath?: string,
   mode?: CodeReviewMode,
+  skippedVoiceIds?: string[],
 ): Promise<CodeReviewResult> {
   const row = await fetchFromDaemon<RawCodeReviewResult>("/code-review", {
     method: "POST",
-    body: JSON.stringify({ repoPath, mode }),
+    body: JSON.stringify({ repoPath, mode, skippedVoiceIds }),
   });
   return {
     ...chatFromRow(row),

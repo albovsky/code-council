@@ -112,6 +112,48 @@ describe('runThermoCodeReview', () => {
     expect(order.indexOf('security-start')).toBeLessThan(order.indexOf('architecture-end'));
   });
 
+  it('starts each domain validator as soon as that domain primary finishes', async () => {
+    const order: string[] = [];
+    let markValidatorStarted: () => void = () => {};
+    const validatorStarted = new Promise<void>((resolve) => {
+      markValidatorStarted = resolve;
+    });
+
+    runSingleReviewerWithPromptMock.mockImplementation(async (args: ReviewerCallArgs) => {
+      if (args.phase.id === 'thermo-phase-1-architecture') {
+        order.push('architecture-primary-start');
+        return writeParticipantAnswer(args, 'architecture output\n\n## DONE', true);
+      }
+      if (args.phase.id === 'thermo-phase-2-architecture') {
+        order.push('architecture-validator-start');
+        markValidatorStarted();
+        return writeParticipantAnswer(args, 'architecture validation\n\n## DONE', true);
+      }
+      if (args.phase.id === 'thermo-phase-1-security') {
+        order.push('security-primary-start');
+        await Promise.race([validatorStarted, delay(100)]);
+        order.push('security-primary-end');
+        return writeParticipantAnswer(args, 'security output\n\n## DONE', true);
+      }
+      if (args.phase.id === 'thermo-final-synthesis') {
+        return writeParticipantAnswer(args, finalReport({ validBlocking: '- None.', validNonBlocking: '- None.' }), true);
+      }
+      return writeParticipantAnswer(args, 'phase output\n\n## DONE', true);
+    });
+
+    await runThermoCodeReview(baseArgs(planWith({
+      architecture: {
+        primary: voice('arch', 'openai', 'gpt-5.5', 'A_PLUS'),
+        validator: voice('arch-v', 'opencode', 'opencode-go/kimi-k2.6', 'A_MINUS'),
+      },
+      security: { primary: voice('sec', 'opencode', 'opencode-go/deepseek-v4-pro', 'A') },
+      final_synthesis: { primary: voice('final', 'openai', 'gpt-5.5', 'A_PLUS') },
+    })));
+
+    expect(order.indexOf('architecture-validator-start'))
+      .toBeLessThan(order.indexOf('security-primary-end'));
+  });
+
   it('records null phase 1 participants as skipped and still passes skipped metadata into synthesis', async () => {
     runSingleReviewerWithPromptMock.mockImplementation(async (args: ReviewerCallArgs) => {
       if (args.phase.id === 'thermo-phase-1-architecture') {

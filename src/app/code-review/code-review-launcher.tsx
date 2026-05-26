@@ -22,6 +22,8 @@ import { getSettings } from "@/lib/api/settings";
 import {
   CODE_REVIEW_MODE_LABELS,
   CODE_REVIEW_MODES,
+  DEFAULT_CODE_REVIEW_MODE,
+  isCodeReviewMode,
   type CodeReviewMode,
 } from "@/lib/code-review-modes";
 import {
@@ -33,7 +35,7 @@ import {
 } from "@/lib/code-review-mode-selection";
 import type { Settings } from "@/lib/types";
 
-const MODE_META = {
+export const MODE_META = {
   fast: {
     Icon: Zap,
     tone: "text-sky-400",
@@ -48,7 +50,7 @@ const MODE_META = {
     tone: "text-orange-400",
     steps: [
       { label: "Select tiers", detail: "ranked fleet" },
-      { label: "Specialists", detail: "security, tests, perf" },
+      { label: "Specialists", detail: "7 domains" },
       { label: "Validate", detail: "cross-check notes" },
       { label: "Synthesize", detail: "strict final review" },
     ],
@@ -64,6 +66,10 @@ const MODE_META = {
 
 const STEP_ICONS = [SearchCheck, UsersRound, ShieldCheck, Sparkles] as const;
 
+export function normalizeCodeReviewMode(mode: unknown): CodeReviewMode {
+  return isCodeReviewMode(mode) ? mode : DEFAULT_CODE_REVIEW_MODE;
+}
+
 export function CodeReviewLauncher({
   initialMode,
 }: {
@@ -71,7 +77,9 @@ export function CodeReviewLauncher({
 }) {
   const router = useRouter();
   const [repoPath, setRepoPath] = useState("");
-  const [mode, setMode] = useState<CodeReviewMode>(initialMode);
+  const [mode, setMode] = useState<CodeReviewMode>(() =>
+    normalizeCodeReviewMode(initialMode),
+  );
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
 
@@ -85,8 +93,9 @@ export function CodeReviewLauncher({
   }, []);
 
   function selectMode(nextMode: CodeReviewMode) {
-    setMode(nextMode);
-    writeCodeReviewModeSelection(nextMode);
+    const safeMode = normalizeCodeReviewMode(nextMode);
+    setMode(safeMode);
+    writeCodeReviewModeSelection(safeMode);
   }
 
   async function run() {
@@ -108,7 +117,7 @@ export function CodeReviewLauncher({
       }
       const chat = await startCodeReview(
         repoPath || undefined,
-        mode,
+        normalizeCodeReviewMode(mode),
         skippedVoiceIds,
       );
       router.push(`/runs/${chat.slug || chat.id}`);
@@ -119,7 +128,8 @@ export function CodeReviewLauncher({
     }
   }
 
-  const activeMode = MODE_META[mode];
+  const activeModeKey = normalizeCodeReviewMode(mode);
+  const activeMode = MODE_META[activeModeKey];
 
   return (
     <header className="relative mb-6">
@@ -146,13 +156,13 @@ export function CodeReviewLauncher({
                   onClick={() => selectMode(reviewMode)}
                   disabled={isStarting}
                   className={`inline-flex min-w-20 items-center justify-center gap-1.5 rounded-sm px-3 text-sm font-medium transition disabled:cursor-not-allowed ${
-                    mode === reviewMode
+                    activeModeKey === reviewMode
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
-                  aria-pressed={mode === reviewMode}
+                  aria-pressed={activeModeKey === reviewMode}
                 >
-                  <Icon className={`h-3.5 w-3.5 ${mode === reviewMode ? tone : ""}`} />
+                  <Icon className={`h-3.5 w-3.5 ${activeModeKey === reviewMode ? tone : ""}`} />
                   {CODE_REVIEW_MODE_LABELS[reviewMode]}
                 </button>
               );

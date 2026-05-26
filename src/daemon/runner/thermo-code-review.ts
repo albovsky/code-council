@@ -3,11 +3,17 @@ import path from 'path';
 import type {
   RankedReviewVoice,
 } from '../../lib/review-model-tiering.js';
+import type { CodeReviewPlanContract } from '../../lib/git-code-review-scope.js';
 import type {
   ThermoAssignmentPlan,
   ThermoCoverageGap,
-  ThermoDomain,
 } from '../../lib/thermo-review-assignment.js';
+import {
+  THERMO_SPECIALIST_DOMAINS,
+  isCriticalThermoSpecialistDomain,
+  thermoDomainCheck,
+  type ThermoDomain,
+} from '../../lib/thermo-run-types.js';
 import type { StandardPhase } from '../../lib/template-schema.js';
 import type { ErrorDetector } from '../error-detector.js';
 import type { TmuxManager } from '../tmux-types.js';
@@ -25,14 +31,6 @@ import type { RunnerEvent } from './types.js';
 
 const ROUND = 1;
 const PHASE_IDX = 0;
-const SPECIALIST_DOMAINS: ThermoDomain[] = [
-  'architecture',
-  'security',
-  'correctness',
-  'tests',
-  'performance',
-  'docs',
-];
 type ReviewerLineage = NonNullable<StandardPhase['reviewer']>['candidates'][number]['lineage'];
 
 export type ThermoReviewVerdict = 'approved' | 'request_changes' | 'failed';
@@ -63,6 +61,7 @@ export async function runThermoCodeReview(args: {
   artifact: string;
   work: string;
   filesBlock: string;
+  planContract?: CodeReviewPlanContract;
   assignments: ThermoAssignmentPlan;
   tmuxMgr: TmuxManager;
   errorDetector: ErrorDetector;
@@ -82,15 +81,19 @@ export async function runThermoCodeReview(args: {
   const validationNotes: ThermoValidationOutput[] = [];
   const skippedAgents: ThermoSkippedAgent[] = [];
   const runtimeCoverageGaps = [...args.assignments.coverageGaps];
-  const phaseOneJobs = SPECIALIST_DOMAINS
+  const phaseOneJobs = THERMO_SPECIALIST_DOMAINS
     .map((domain) => {
       const ranked = args.assignments.assignments[domain]?.primary;
       if (!ranked) return null;
+      const assignedValidatorRanked = args.assignments.assignments[domain]?.validator;
+      const validatorRanked = assignedValidatorRanked?.voice.id === ranked.voice.id
+        ? undefined
+        : assignedValidatorRanked;
       return {
         domain,
         ranked,
-        fallbackRanked: args.assignments.assignments[domain]?.validator,
-        validatorRanked: args.assignments.assignments[domain]?.validator,
+        fallbackRanked: validatorRanked,
+        validatorRanked,
       };
     })
     .filter((job): job is NonNullable<typeof job> => job !== null);
@@ -122,6 +125,7 @@ export async function runThermoCodeReview(args: {
       originalWork: args.work,
       filesBlock: args.filesBlock,
       artifact: args.artifact,
+      planContract: args.planContract,
       tmuxMgr: args.tmuxMgr,
       errorDetector: args.errorDetector,
       abortSignal: args.abortSignal,
@@ -140,6 +144,53 @@ export async function runThermoCodeReview(args: {
     }
   }
 
+  const readinessGaps = synthesisReadinessGaps(args.assignments, laneRuns, args.planContract);
+  if (readinessGaps.length > 0) {
+    runtimeCoverageGaps.push(...readinessGaps);
+  }
+  const blockingReadinessGaps = readinessGaps.filter((gap) => gap.severity === 'critical');
+  if (blockingReadinessGaps.length > 0 && !args.abortSignal.aborted) {
+    const answerFile = path.join(roundDir, 'triage', 'answer.md');
+    writeFailureSummary(
+      answerFile,
+      'thermo_domain_reviews_incomplete',
+      [
+        'Final synthesis was not started because every Thermo domain must have a completed primary review and review note first.',
+        '',
+        ...blockingReadinessGaps.map((gap) => `- ${gap.domain}: ${gap.message}`),
+      ].join('\n'),
+    );
+    args.onEvent({
+      chatId: args.chatId,
+      type: 'phase_failed',
+      payload: {
+        phaseId: 'thermo-final-synthesis',
+        phaseIdx: PHASE_IDX,
+        kind: 'review',
+        round: ROUND,
+        role: 'reviewer',
+        agent: 'triage-0',
+        reason: 'thermo_domain_reviews_incomplete',
+      },
+      ts: Date.now(),
+    });
+    args.onEvent({
+      chatId: args.chatId,
+      type: 'chat_done',
+      payload: { status: 'failed', verdict: 'failed' },
+      ts: Date.now(),
+    });
+    return {
+      completed: false,
+      verdict: 'failed',
+      phaseOneOutputs,
+      validationNotes,
+      skippedAgents,
+      coverageGaps: dedupeCoverageGaps(runtimeCoverageGaps),
+      answerFile,
+    };
+  }
+
   if (args.abortSignal.aborted) {
     return cancelledResult(args, { phaseOneOutputs, validationNotes, skippedAgents });
   }
@@ -152,6 +203,7 @@ export async function runThermoCodeReview(args: {
     chatId: args.chatId,
     roundDir,
     artifact: args.artifact,
+    planContract: args.planContract,
     assignments: args.assignments,
     coverageGaps: runtimeCoverageGaps,
     reviewerIdx: finalSynthesisReviewerIdx,
@@ -214,6 +266,7 @@ export async function runThermoCodeReview(args: {
     const auditPrompt = buildThermoAuditPrompt({
       draftFinalReport: finalBody,
       artifact: args.artifact,
+      planContract: args.planContract,
       phaseOneOutputs,
       validationNotes,
       coverageGaps: coverageGapNotes(runtimeCoverageGaps),
@@ -253,19 +306,20 @@ export async function runThermoCodeReview(args: {
         if (revisionRanked) {
           validationNotes.push({
             validator: auditMetadata,
-	            output: `Synthesis audit required revisions:\n\n${auditOutput}`,
-	          });
+            output: `Synthesis audit required revisions:\n\n${auditOutput}`,
+          });
           const revision = await runSynthesisPass({
-	            chatDir: args.chatDir,
-	            chatId: args.chatId,
-	            roundDir,
-	            artifact: args.artifact,
-	            assignments: args.assignments,
-	            coverageGaps: runtimeCoverageGaps,
-	            reviewerIdx: revisionReviewerIdx,
-	            phaseOneOutputs,
-	            validationNotes,
-	            skippedAgents,
+            chatDir: args.chatDir,
+            chatId: args.chatId,
+            roundDir,
+            artifact: args.artifact,
+            planContract: args.planContract,
+            assignments: args.assignments,
+            coverageGaps: runtimeCoverageGaps,
+            reviewerIdx: revisionReviewerIdx,
+            phaseOneOutputs,
+            validationNotes,
+            skippedAgents,
             tmuxMgr: args.tmuxMgr,
             errorDetector: args.errorDetector,
             abortSignal: args.abortSignal,
@@ -289,7 +343,7 @@ export async function runThermoCodeReview(args: {
         }
       }
     }
-	  }
+  }
 
   const verdict = finalVerdict(finalBody, {
     allSpecialistsFailed: phaseOneJobs.length > 0 && phaseOneOutputs.length === 0,
@@ -365,8 +419,8 @@ function standardPhase(
       shareSessionAcrossRounds: false,
       shareSessionAcrossPhases: false,
     },
-	  };
-	}
+  };
+}
 
 async function runThermoDomainLane(args: {
   chatDir: string;
@@ -382,6 +436,7 @@ async function runThermoDomainLane(args: {
   originalWork: string;
   filesBlock: string;
   artifact: string;
+  planContract?: CodeReviewPlanContract;
   tmuxMgr: TmuxManager;
   errorDetector: ErrorDetector;
   abortSignal: AbortSignal;
@@ -390,6 +445,7 @@ async function runThermoDomainLane(args: {
   domain: ThermoDomain;
   phaseOneOutput?: ThermoReviewOutput;
   validationOutput?: ThermoValidationOutput;
+  validationSkippedForFallback?: boolean;
   skippedAgents: ThermoSkippedAgent[];
   coverageGaps: ThermoCoverageGap[];
 }> {
@@ -407,6 +463,7 @@ async function runThermoDomainLane(args: {
     originalWork: args.originalWork,
     filesBlock: args.filesBlock,
     artifact: args.artifact,
+    planContract: args.planContract,
     tmuxMgr: args.tmuxMgr,
     errorDetector: args.errorDetector,
     abortSignal: args.abortSignal,
@@ -416,17 +473,12 @@ async function runThermoDomainLane(args: {
   skippedAgents.push(...phaseOne.skippedAgents);
   if (!phaseOne.output) {
     if (!args.abortSignal.aborted) {
-      coverageGaps.push(runtimeCoverageGap(args.domain, 'specialist'));
+      coverageGaps.push(runtimeCoverageGap(args.domain, 'specialist', args.planContract));
     }
     return { domain: args.domain, skippedAgents, coverageGaps };
   }
 
-  if (phaseOne.usedFallback) {
-    coverageGaps.push({
-      domain: args.domain,
-      severity: 'warning',
-      message: `The ${args.domain} validator was promoted to specialist fallback, so no independent ${args.domain} validation ran.`,
-    });
+  if (args.abortSignal.aborted) {
     return {
       domain: args.domain,
       phaseOneOutput: phaseOne.output,
@@ -435,11 +487,18 @@ async function runThermoDomainLane(args: {
     };
   }
 
-  if (
-    args.abortSignal.aborted ||
-    !args.validatorRanked ||
-    args.validatorReviewerIdx === undefined
-  ) {
+  if (phaseOne.usedFallback) {
+    coverageGaps.push(promotedValidatorCoverageGap(args.domain));
+    return {
+      domain: args.domain,
+      phaseOneOutput: phaseOne.output,
+      validationSkippedForFallback: true,
+      skippedAgents,
+      coverageGaps,
+    };
+  }
+
+  if (!args.validatorRanked || args.validatorReviewerIdx === undefined) {
     return {
       domain: args.domain,
       phaseOneOutput: phaseOne.output,
@@ -456,6 +515,7 @@ async function runThermoDomainLane(args: {
     ranked: args.validatorRanked,
     reviewerIdx: args.validatorReviewerIdx,
     artifact: args.artifact,
+    planContract: args.planContract,
     phaseOneOutputs: [phaseOne.output],
     tmuxMgr: args.tmuxMgr,
     errorDetector: args.errorDetector,
@@ -475,7 +535,7 @@ async function runThermoDomainLane(args: {
   }
 
   if (!args.abortSignal.aborted) {
-    coverageGaps.push(runtimeCoverageGap(args.domain, 'validator'));
+    coverageGaps.push(runtimeCoverageGap(args.domain, 'validator', args.planContract));
   }
   return {
     domain: args.domain,
@@ -497,6 +557,7 @@ async function runPhaseOneSpecialist(args: {
   originalWork: string;
   filesBlock: string;
   artifact: string;
+  planContract?: CodeReviewPlanContract;
   tmuxMgr: TmuxManager;
   errorDetector: ErrorDetector;
   abortSignal: AbortSignal;
@@ -557,6 +618,7 @@ async function runSpecialistAttempt(args: {
   originalWork: string;
   filesBlock: string;
   artifact: string;
+  planContract?: CodeReviewPlanContract;
   tmuxMgr: TmuxManager;
   errorDetector: ErrorDetector;
   abortSignal: AbortSignal;
@@ -564,10 +626,11 @@ async function runSpecialistAttempt(args: {
 }): Promise<{ output?: ThermoReviewOutput; skippedAgent: ThermoSkippedAgent }> {
   const metadata = metadataFor(args.ranked, args.domain, 'primary');
   const prompt = buildThermoPhaseOnePrompt({
-    domainScope: domainScope(args.domain),
+    domainScope: thermoDomainCheck(args.domain),
     originalWork: args.originalWork,
     filesBlock: args.filesBlock,
     artifact: args.artifact,
+    planContract: args.planContract,
     assignment: metadata,
   });
   const phaseId = args.phaseIdSuffix
@@ -605,6 +668,7 @@ async function runValidationParticipant(args: {
   ranked: RankedReviewVoice;
   reviewerIdx: number;
   artifact: string;
+  planContract?: CodeReviewPlanContract;
   phaseOneOutputs: ThermoReviewOutput[];
   tmuxMgr: TmuxManager;
   errorDetector: ErrorDetector;
@@ -618,10 +682,11 @@ async function runValidationParticipant(args: {
   const metadata = metadataFor(args.ranked, args.domain, 'validator');
   const prompt = buildThermoValidationPrompt({
     domain: args.domain,
-    domainScope: domainScope(args.domain),
+    domainScope: thermoDomainCheck(args.domain),
     originalArtifact: args.artifact,
     phaseOneOutputs: args.phaseOneOutputs,
     assignmentContext: assignmentContext(metadata),
+    planContract: args.planContract,
   });
 
   const run = await runThermoParticipant({
@@ -689,7 +754,7 @@ async function runThermoParticipant(args: {
       phaseId: args.phaseId,
       phaseLabel: args.title,
       description: args.description,
-      check: domainScope(args.metadata.domain),
+      check: thermoDomainCheck(args.metadata.domain),
       domain: args.metadata.domain,
       role: args.metadata.role,
       voiceId: args.metadata.voiceId,
@@ -705,6 +770,7 @@ async function runSynthesisPass(args: {
   chatId: string;
   roundDir: string;
   artifact: string;
+  planContract?: CodeReviewPlanContract;
   assignments: ThermoAssignmentPlan;
   coverageGaps: ThermoCoverageGap[];
   reviewerIdx: number;
@@ -730,6 +796,7 @@ async function runSynthesisPass(args: {
 
   const prompt = buildThermoSynthesisPrompt({
     artifact: args.artifact,
+    planContract: args.planContract,
     phaseOneOutputs: args.phaseOneOutputs,
     validationNotes: args.validationNotes,
     skippedAgents: skippedAgentNotes(args.skippedAgents),
@@ -764,7 +831,7 @@ async function runSynthesisPass(args: {
       phaseId: phase.id,
       phaseLabel: phase.title,
       description: phase.description ?? 'Synthesize thermo review findings into the final triage report.',
-      check: domainScope('final_synthesis'),
+      check: thermoDomainCheck('final_synthesis'),
       domain: 'final_synthesis',
       role: 'synthesizer',
       voiceId: ranked.voice.id,
@@ -818,31 +885,151 @@ function skippedFrom(
   };
 }
 
-function writeFailureSummary(answerFile: string, reason: string): void {
+function writeFailureSummary(answerFile: string, reason: string, detail?: string): void {
   fs.mkdirSync(path.dirname(answerFile), { recursive: true });
   fs.writeFileSync(
     answerFile,
-    `## REVIEWER FAILED\n\n**Kind:** ${reason}\n\nFinal thermo synthesis did not produce a completed answer.\n`,
+    `## REVIEWER FAILED\n\n**Kind:** ${reason}\n\n${detail ?? 'Final thermo synthesis did not produce a completed answer.'}\n`,
   );
 }
 
+function synthesisReadinessGaps(
+  assignments: ThermoAssignmentPlan,
+  laneRuns: Array<{
+    domain: ThermoDomain;
+    phaseOneOutput?: ThermoReviewOutput;
+    validationOutput?: ThermoValidationOutput;
+    validationSkippedForFallback?: boolean;
+  }>,
+  planContract?: CodeReviewPlanContract,
+): ThermoCoverageGap[] {
+  const runByDomain = new Map(laneRuns.map((run) => [run.domain, run]));
+  const gaps: ThermoCoverageGap[] = [];
+  const planContractMatched = planContract?.status === 'matched';
+
+  for (const domain of THERMO_SPECIALIST_DOMAINS) {
+    const assignment = assignments.assignments[domain];
+    const run = runByDomain.get(domain);
+    if (!assignment?.primary) {
+      gaps.push({
+        domain,
+        severity: isCriticalThermoSpecialistDomain(domain, { planContractMatched })
+          ? 'critical'
+          : 'warning',
+        message: `No ${domain} primary reviewer was assigned.`,
+      });
+      continue;
+    }
+    if (!run?.phaseOneOutput) {
+      gaps.push(runtimeCoverageGap(domain, 'specialist', planContract));
+      continue;
+    }
+    if (!assignment.validator) {
+      gaps.push({
+        domain,
+        severity: 'warning',
+        message: `No ${domain} review reviewer was assigned.`,
+      });
+      continue;
+    }
+    if (run.validationSkippedForFallback) {
+      continue;
+    }
+    if (!run.validationOutput) {
+      gaps.push(runtimeCoverageGap(domain, 'validator', planContract));
+    }
+  }
+
+  return dedupeCoverageGaps(gaps);
+}
+
+function dedupeCoverageGaps(gaps: ThermoCoverageGap[]): ThermoCoverageGap[] {
+  const seen = new Set<string>();
+  return gaps.filter((gap) => {
+    const key = `${gap.domain}:${gap.severity}:${gap.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function verdictFromFinalReport(body: string): Exclude<ThermoReviewVerdict, 'failed'> {
+  const explicit = explicitVerdictFromFinalReport(body);
+  if (explicit.found) {
+    return explicit.verdict === 'safe_to_merge' ? 'approved' : 'request_changes';
+  }
+  if (looksLikeConciseThermoReport(body)) return 'request_changes';
   if (hasMeaningfulSection(body, 'Valid Blocking')) return 'request_changes';
   return 'approved';
+}
+
+type ExplicitThermoVerdict =
+  | 'safe_to_merge'
+  | 'changes_requested'
+  | 'owner_decision_needed'
+  | 'human_review_required'
+  | 'no_verdict';
+
+const EXPLICIT_THERMO_VERDICTS = new Set<ExplicitThermoVerdict>([
+  'safe_to_merge',
+  'changes_requested',
+  'owner_decision_needed',
+  'human_review_required',
+  'no_verdict',
+]);
+
+function explicitVerdictFromFinalReport(body: string): (
+  | { found: true; verdict?: ExplicitThermoVerdict }
+  | { found: false }
+) {
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = rawLine.trim().replace(/^#{1,6}\s*/, '').trim();
+    const match = line.match(/^(.+?)\s*:\s*(.*)$/);
+    if (!match) continue;
+
+    const key = stripMarkdownVerdictDecoration(match[1]).toLowerCase();
+    if (key !== 'verdict') continue;
+
+    const normalized = stripMarkdownVerdictDecoration(match[2])
+      .trim()
+      .replace(/[.!?]+$/g, '')
+      .trim()
+      .toLowerCase();
+    if (EXPLICIT_THERMO_VERDICTS.has(normalized as ExplicitThermoVerdict)) {
+      return { found: true, verdict: normalized as ExplicitThermoVerdict };
+    }
+    return { found: true };
+  }
+
+  return { found: false };
+}
+
+function stripMarkdownVerdictDecoration(value: string): string {
+  const stripped = value.replace(/[*`]/g, '').trim();
+  if (stripped.startsWith('__') && stripped.endsWith('__')) {
+    return stripped.slice(2, -2).trim();
+  }
+  return stripped;
+}
+
+function looksLikeConciseThermoReport(body: string): boolean {
+  return (
+    /^Run Health:\s*/im.test(body) ||
+    /^Plan:\s*/im.test(body) ||
+    /^##\s*Domain Coverage\s*$/im.test(body)
+  );
 }
 
 function runtimeCoverageGap(
   domain: ThermoDomain,
   role: 'specialist' | 'validator',
+  planContract?: CodeReviewPlanContract,
 ): ThermoCoverageGap {
-  const criticalSpecialistDomains = new Set<ThermoDomain>([
-    'architecture',
-    'security',
-    'correctness',
-    'tests',
-  ]);
   const severity =
-    role === 'specialist' && criticalSpecialistDomains.has(domain)
+    role === 'validator' ||
+    isCriticalThermoSpecialistDomain(domain, {
+      planContractMatched: planContract?.status === 'matched',
+    })
       ? 'critical'
       : 'warning';
   return {
@@ -852,6 +1039,14 @@ function runtimeCoverageGap(
       role === 'specialist'
         ? `No completed ${domain} specialist review was produced at runtime.`
         : `No completed ${domain} validation note was produced at runtime.`,
+  };
+}
+
+function promotedValidatorCoverageGap(domain: ThermoDomain): ThermoCoverageGap {
+  return {
+    domain,
+    severity: 'warning',
+    message: `The ${domain} validator was promoted to specialist fallback, so no independent validation ran.`,
   };
 }
 
@@ -950,7 +1145,7 @@ function writeThermoPlan(chatDir: string, plan: ThermoAssignmentPlan): void {
             id: 'validation',
             label: 'Phase 2',
             title: 'Adversarial validation',
-            description: 'Second reviewers challenge risky-domain findings and conditional domains when needed.',
+            description: 'Second reviewers challenge each domain as soon as its primary review finishes.',
           },
           {
             id: 'synthesis',
@@ -965,11 +1160,11 @@ function writeThermoPlan(chatDir: string, plan: ThermoAssignmentPlan): void {
             description: 'A final auditor checks that the synthesis did not overstate or miss findings.',
           },
         ],
-        domains: SPECIALIST_DOMAINS.map((domain) => {
+        domains: THERMO_SPECIALIST_DOMAINS.map((domain) => {
           const assignment = plan.assignments[domain];
           return {
             domain,
-            check: domainScope(domain),
+            check: thermoDomainCheck(domain),
             validatorPolicy: assignment.validatorPolicy,
             validatorReason: assignment.validatorReason,
             primary: assignment.primary ? voiceSummary(assignment.primary) : null,
@@ -1022,25 +1217,4 @@ function quotaNotes(skippedAgents: ThermoSkippedAgent[]): string[] {
 
 function coverageGapNotes(gaps: ThermoCoverageGap[]): string[] {
   return gaps.map((gap) => `${gap.severity}: ${gap.domain}: ${gap.message}`);
-}
-
-function domainScope(domain: ThermoDomain): string {
-  switch (domain) {
-    case 'architecture':
-      return 'Architecture, maintainability, module boundaries, abstractions, and long-term change risk.';
-    case 'security':
-      return 'Security, auth, authorization, data loss, secrets, privacy, and tenant isolation.';
-    case 'correctness':
-      return 'Functional correctness, regressions, edge cases, state handling, and user-visible behavior.';
-    case 'tests':
-      return 'Test coverage, fake coverage, missing assertions, brittle tests, and verification gaps.';
-    case 'performance':
-      return 'Performance, scalability, resource usage, concurrency, caching, and avoidable repeated work.';
-    case 'docs':
-      return 'Documentation, migrations, release notes, operator handoff, and public-facing behavior notes.';
-    case 'final_synthesis':
-      return 'Final synthesis of validated review findings.';
-    case 'synthesis_audit':
-      return 'Audit the final synthesis for unsupported blockers and missing downgrades.';
-  }
 }

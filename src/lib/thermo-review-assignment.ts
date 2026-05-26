@@ -4,16 +4,17 @@ import {
   type RankedReviewVoice,
   type ReviewVoice,
 } from './review-model-tiering';
+import {
+  THERMO_REVIEW_DOMAINS,
+  isCriticalThermoSpecialistDomain,
+  thermoDomainLabel,
+  type ThermoDomain,
+} from './thermo-run-types';
 
-export type ThermoDomain =
-  | 'architecture'
-  | 'security'
-  | 'correctness'
-  | 'tests'
-  | 'performance'
-  | 'docs'
-  | 'final_synthesis'
-  | 'synthesis_audit';
+export {
+  THERMO_REVIEW_DOMAINS,
+  type ThermoDomain,
+} from './thermo-run-types';
 
 export type ThermoCoverageGapSeverity = 'critical' | 'warning';
 
@@ -41,20 +42,14 @@ export interface AssignThermoReviewDomainsInput {
   voices: ReviewVoice[];
   skippedVoiceIds?: string[];
   changedFiles?: string[];
+  planContractMatched?: boolean;
 }
 
-export const THERMO_REVIEW_DOMAINS: ThermoDomain[] = [
-  'architecture',
-  'security',
-  'correctness',
-  'tests',
-  'performance',
-  'docs',
-  'final_synthesis',
-  'synthesis_audit',
-];
-
 const TARGET_ASSIGNMENTS: Record<ThermoDomain, { primary: string; validator?: string }> = {
+  plan_completeness: {
+    primary: 'gpt-5.5',
+    validator: 'opencode-go/deepseek-v4-pro',
+  },
   architecture: {
     primary: 'gpt-5.5',
     validator: 'opencode-go/kimi-k2.6',
@@ -128,7 +123,7 @@ function selectPrimary(
     return firstAvailable(ranked, skippedVoiceIds, 'A_MINUS') ?? firstAvailable(ranked, skippedVoiceIds);
   }
 
-  if (domain === 'architecture') {
+  if (domain === 'plan_completeness' || domain === 'architecture') {
     return firstAvailable(ranked, skippedVoiceIds, 'A_MINUS') ?? firstAvailable(ranked, skippedVoiceIds);
   }
 
@@ -144,12 +139,8 @@ function selectValidator(
   ranked: RankedReviewVoice[],
   skippedVoiceIds: Set<string>,
   primary: RankedReviewVoice | undefined,
-  includeConditionalValidator: boolean,
 ): RankedReviewVoice | undefined {
   if (validatorPolicyForDomain(domain) === 'none') {
-    return undefined;
-  }
-  if (validatorPolicyForDomain(domain) === 'conditional' && !includeConditionalValidator) {
     return undefined;
   }
 
@@ -167,7 +158,7 @@ function selectValidator(
     return firstAvailable(ranked, excluded, 'A') ?? firstAvailable(ranked, excluded);
   }
 
-  if (domain === 'architecture' || domain === 'final_synthesis' || domain === 'synthesis_audit') {
+  if (domain === 'plan_completeness' || domain === 'architecture') {
     return firstAvailable(ranked, excluded, 'A_MINUS') ?? firstAvailable(ranked, excluded);
   }
 
@@ -176,42 +167,24 @@ function selectValidator(
 
 function validatorPolicyForDomain(domain: ThermoDomain): ThermoDomainAssignment['validatorPolicy'] {
   switch (domain) {
+    case 'plan_completeness':
     case 'architecture':
     case 'security':
     case 'correctness':
     case 'tests':
-      return 'always';
     case 'performance':
     case 'docs':
-      return 'conditional';
+      return 'always';
     case 'final_synthesis':
     case 'synthesis_audit':
       return 'none';
   }
 }
 
-function touchesHotPath(files: string[]): boolean {
-  return files.some((file) => (
-    /(^|\/)(runner|daemon|api|lib|server|db|cache|stream|sync|worker|queue|storage|auth)(\/|[-_.])/i.test(file)
-    || /\.(sql|prisma)$/i.test(file)
-  ));
-}
-
-function touchesPublicApiOrSchema(files: string[]): boolean {
-  return files.some((file) => (
-    /(^|\/)(api|routes|schema|migration|migrations|templates|docs)(\/|[-_.])/i.test(file)
-    || /\.(sql|prisma|ya?ml|md)$/i.test(file)
-  ));
-}
-
-function shouldIncludeConditionalValidator(domain: ThermoDomain, changedFiles: string[]): boolean {
-  if (domain === 'performance') return touchesHotPath(changedFiles);
-  if (domain === 'docs') return touchesPublicApiOrSchema(changedFiles);
-  return true;
-}
-
-function validatorReasonForDomain(domain: ThermoDomain, included: boolean): string {
+function validatorReasonForDomain(domain: ThermoDomain): string {
   switch (domain) {
+    case 'plan_completeness':
+      return 'Plan completeness gets a second reviewer to compare the detected implementation plan against the diff and verification evidence.';
     case 'architecture':
       return 'Architecture / maintainability is risky, so a second adversarial reviewer checks the primary findings.';
     case 'security':
@@ -221,13 +194,9 @@ function validatorReasonForDomain(domain: ThermoDomain, included: boolean): stri
     case 'tests':
       return 'Tests / fake coverage gets a second checker; Tier C is acceptable as secondary.';
     case 'performance':
-      return included
-        ? 'Performance gets a second reviewer because the diff touches hot-path code.'
-        : 'Performance secondary skipped because the diff does not look like hot-path code.';
+      return 'Performance gets a second reviewer for scalability, resource usage, concurrency, caching, and avoidable repeated work.';
     case 'docs':
-      return included
-        ? 'Docs / migrations gets a second reviewer because the diff touches docs, schema, public API, or release-facing files.'
-        : 'Docs secondary skipped because this does not look like a public API, schema, migration, or release-note change.';
+      return 'Docs / migrations gets a second reviewer for public-facing behavior, operator handoff, and release clarity.';
     case 'final_synthesis':
       return 'Final synthesis is its own phase, not a domain validator.';
     case 'synthesis_audit':
@@ -242,6 +211,7 @@ function hasTierAtLeast(ranked: RankedReviewVoice[], minimumTier: RankedReviewVo
 function buildCoverageGaps(
   ranked: RankedReviewVoice[],
   assignments: Record<ThermoDomain, ThermoDomainAssignment>,
+  options: { planContractMatched?: boolean },
 ): ThermoCoverageGap[] {
   const gaps: ThermoCoverageGap[] = [];
 
@@ -271,10 +241,12 @@ function buildCoverageGaps(
     if (!assignment.primary) {
       gaps.push({
         domain,
-        severity: domain === 'security' || domain === 'architecture' || domain === 'final_synthesis'
+        severity: domain === 'final_synthesis' || isCriticalThermoSpecialistDomain(domain, {
+          planContractMatched: options.planContractMatched,
+        })
           ? 'critical'
           : 'warning',
-        message: `${domainLabel(domain)} has no available reviewer after skipped or unavailable models.`,
+        message: `${thermoDomainLabel(domain)} has no available reviewer after skipped or unavailable models.`,
       });
       continue;
     }
@@ -288,8 +260,8 @@ function buildCoverageGaps(
       }
       gaps.push({
         domain,
-        severity: 'warning',
-        message: `${domainLabel(domain)} has no separate validator after skipped or unavailable models.`,
+        severity: domain === 'security' ? 'critical' : 'warning',
+        message: `${thermoDomainLabel(domain)} has no separate validator after skipped or unavailable models.`,
       });
     }
   }
@@ -297,29 +269,19 @@ function buildCoverageGaps(
   return gaps;
 }
 
-function domainLabel(domain: ThermoDomain): string {
-  return domain
-    .split('_')
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
 export function assignThermoReviewDomains(input: AssignThermoReviewDomainsInput): ThermoAssignmentPlan {
   const skippedVoiceIds = new Set(input.skippedVoiceIds ?? []);
-  const changedFiles = input.changedFiles ?? [];
   const ranked = rankReviewVoices(input.voices)
     .filter((item) => !skippedVoiceIds.has(item.voice.id));
 
   const assignments = Object.fromEntries(
     THERMO_REVIEW_DOMAINS.map((domain) => {
-      const includeConditionalValidator = shouldIncludeConditionalValidator(domain, changedFiles);
       const primary = selectPrimary(domain, ranked, skippedVoiceIds);
       const validator = selectValidator(
         domain,
         ranked,
         skippedVoiceIds,
         primary,
-        includeConditionalValidator,
       );
       return [
         domain,
@@ -328,7 +290,7 @@ export function assignThermoReviewDomains(input: AssignThermoReviewDomainsInput)
           primary,
           validator,
           validatorPolicy: validatorPolicyForDomain(domain),
-          validatorReason: validatorReasonForDomain(domain, includeConditionalValidator),
+          validatorReason: validatorReasonForDomain(domain),
         },
       ];
     }),
@@ -336,7 +298,9 @@ export function assignThermoReviewDomains(input: AssignThermoReviewDomainsInput)
 
   return {
     assignments,
-    coverageGaps: buildCoverageGaps(ranked, assignments),
+    coverageGaps: buildCoverageGaps(ranked, assignments, {
+      planContractMatched: input.planContractMatched,
+    }),
     skippedVoiceIds: [...skippedVoiceIds].sort(),
   };
 }

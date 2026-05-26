@@ -20,6 +20,23 @@ function makeRepo(): string {
   return dir;
 }
 
+function writePlan(repo: string, name = '2026-05-24-example.md'): string {
+  const planPath = path.join(repo, 'docs', 'superpowers', 'plans', name);
+  fs.mkdirSync(path.dirname(planPath), { recursive: true });
+  fs.writeFileSync(
+    planPath,
+    [
+      '# Example Implementation Plan',
+      '',
+      '**Goal:** Add the example behavior.',
+      '',
+      '- [ ] **Step 1: Change app behavior**',
+      '',
+    ].join('\n'),
+  );
+  return path.relative(repo, planPath);
+}
+
 describe('resolveCodeReviewScope', () => {
   it('reviews staged, unstaged, deleted, and untracked worktree changes before branch diff', async () => {
     const repo = makeRepo();
@@ -60,6 +77,80 @@ describe('resolveCodeReviewScope', () => {
     expect(scope.files).toEqual(['app.ts']);
     expect(scope.artifact).toContain('# Code Review: feature/review-me against main');
     expect(scope.artifact).toContain('diff --git a/app.ts b/app.ts');
+  });
+
+  it('detects a single changed Superpowers plan in worktree scope', async () => {
+    const repo = makeRepo();
+    const planFile = writePlan(repo);
+
+    const scope = await resolveCodeReviewScope(repo);
+
+    expect(scope.mode).toBe('worktree');
+    expect(scope.files).toEqual([planFile]);
+    expect(scope.planContract).toMatchObject({
+      status: 'matched',
+      path: planFile,
+      source: 'review_scope',
+    });
+    expect(scope.planContract?.status === 'matched' ? scope.planContract.content : '')
+      .toContain('**Goal:** Add the example behavior.');
+  });
+
+  it('detects a branch Superpowers plan even when dirty worktree files define the review scope', async () => {
+    const repo = makeRepo();
+    git(repo, ['checkout', '-b', 'feature/with-plan']);
+    const planFile = writePlan(repo);
+    git(repo, ['add', planFile]);
+    git(repo, ['commit', '-m', 'add implementation plan']);
+    fs.writeFileSync(path.join(repo, 'app.ts'), 'export const value = 42;\n');
+
+    const scope = await resolveCodeReviewScope(repo);
+
+    expect(scope.mode).toBe('worktree');
+    expect(scope.files).toEqual(['app.ts']);
+    expect(scope.planContract).toMatchObject({
+      status: 'matched',
+      path: planFile,
+      source: 'branch',
+    });
+    expect(scope.planContract?.status === 'matched' ? scope.planContract.content : '')
+      .toContain('**Goal:** Add the example behavior.');
+  });
+
+  it('throws a clear error when a matched plan file cannot be read', async () => {
+    const repo = makeRepo();
+    const planFile = writePlan(repo);
+    git(repo, ['add', planFile]);
+    git(repo, ['commit', '-m', 'add implementation plan']);
+
+    const planPath = path.join(repo, planFile);
+    fs.rmSync(planPath);
+    fs.mkdirSync(planPath);
+    fs.writeFileSync(path.join(planPath, 'nested.md'), '# Nested plan fixture\n');
+
+    await expect(resolveCodeReviewScope(repo)).rejects.toMatchObject({
+      code: 'plan_contract_unreadable',
+      message: expect.stringContaining(planFile),
+    });
+  });
+
+  it('throws a clear error when a branch fallback plan file cannot be read', async () => {
+    const repo = makeRepo();
+    git(repo, ['checkout', '-b', 'feature/unreadable-branch-plan']);
+    const planFile = writePlan(repo);
+    git(repo, ['add', planFile]);
+    git(repo, ['commit', '-m', 'add implementation plan']);
+
+    git(repo, ['update-index', '--assume-unchanged', planFile]);
+    const planPath = path.join(repo, planFile);
+    fs.rmSync(planPath);
+    fs.mkdirSync(planPath);
+    fs.writeFileSync(path.join(repo, 'app.ts'), 'export const value = 42;\n');
+
+    await expect(resolveCodeReviewScope(repo)).rejects.toMatchObject({
+      code: 'plan_contract_unreadable',
+      message: expect.stringContaining(planFile),
+    });
   });
 
   it('throws a clear error when there are no worktree or branch changes', async () => {

@@ -13,6 +13,7 @@ import { StateBadge } from "./state-badge";
 import type {
   FallbackSwap,
   ParticipantSnapshot,
+  ParticipantState,
   RoundSnapshot,
   ThermoPlanDomain,
   ThermoPlanVoice,
@@ -32,7 +33,7 @@ interface ThermoDomainBoardProps {
 }
 
 /**
- * Thermo run layout. The daemon writes a plan sidecar with six domain rows;
+ * Thermo run layout. The daemon writes a plan sidecar with seven domain rows;
  * this board maps each domain to a primary slot and a review slot, then
  * attaches live participant artifacts by typed domain + role. Participants
  * outside those lanes, such as synthesis/audit outputs or legacy fallback
@@ -98,12 +99,32 @@ export function ThermoDomainBoard({
     <div className="space-y-5">
       {domainSlots.map(({ domain, primary, validator, primaryCandidates }) => {
         const primaryDone = primary ? participantHasCompletedResult(primary) : false;
+        const fallbackPrimary = primaryCandidates.find((candidate) =>
+          candidate.thermo?.phaseId.endsWith("-fallback"),
+        );
+        const fallbackPrimaryDone = fallbackPrimary
+          ? participantHasCompletedResult(fallbackPrimary)
+          : false;
+        const runEnded = chatStatus === "failed" || chatStatus === "cancelled";
         const usedValidatorAsFallback =
-          !validator &&
-          Boolean(domain.validator) &&
-          primaryCandidates.some((candidate) =>
-            candidate.thermo?.phaseId.endsWith("-fallback"),
-          );
+          !validator && Boolean(domain.validator) && fallbackPrimaryDone;
+        const waitingSlotState: ParticipantState = usedValidatorAsFallback
+          ? "skipped"
+          : domain.validator && runEnded
+          ? "not_run"
+          : "pending";
+        const waitingSlotMessage =
+          domain.validator
+            ? usedValidatorAsFallback
+              ? `Skipped: ${displayModelName(
+                  fallbackPrimary?.thermo?.modelId ?? domain.validator.modelId,
+                )} was used as a fallback primary, so no separate validation review ran.`
+              : runEnded
+              ? `${chatStatus === "cancelled" ? "Not run: the run was cancelled" : "Not run: the run failed"} before this validation review could start.`
+              : primaryDone
+              ? "Queued for adversarial review."
+              : "Waiting for primary reviewer to finish."
+            : domain.validatorReason || "No secondary reviewer assigned.";
         return (
           <section
             key={domain.domain}
@@ -159,15 +180,8 @@ export function ThermoDomainBoard({
                 <ThermoWaitingSlot
                   label="Review"
                   voice={validator ? voiceFromParticipant(validator) : domain.validator}
-                  message={
-                    domain.validator
-                      ? usedValidatorAsFallback
-                        ? "Review skipped: this reviewer was used as primary fallback."
-                        : primaryDone
-                        ? "Queued for adversarial review."
-                        : "Waiting for primary reviewer to finish."
-                      : domain.validatorReason || "No secondary reviewer assigned."
-                  }
+                  state={waitingSlotState}
+                  message={waitingSlotMessage}
                 />
               )}
             </div>
@@ -233,10 +247,12 @@ function participantScore(
 function ThermoWaitingSlot({
   label,
   voice,
+  state = "pending",
   message,
 }: {
   label: string;
   voice: ThermoPlanVoice | null;
+  state?: ParticipantState;
   message: string;
 }) {
   return (
@@ -260,7 +276,7 @@ function ThermoWaitingSlot({
             <span className="truncate text-muted-foreground">unassigned</span>
           )}
         </div>
-        <StateBadge state="pending" />
+        <StateBadge state={state} />
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-3 text-center">

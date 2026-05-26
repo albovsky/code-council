@@ -196,6 +196,21 @@ describe('ErrorDetector.inspect — quota_exhausted (opencode)', () => {
     expect(error!.kind).toBe('quota_exhausted');
     expect(error!.cta).toContain('Top up at opencode.ai');
   });
+
+  it('detects OpenCode-Go rolling usage limit with reset duration', () => {
+    const detector = new ErrorDetector();
+    const paneText = [
+      'Go limit reached',
+      '5 hour usage limit reached. It will reset in 5 minutes.',
+      'To continue using this model now, enable usage from your available balance',
+    ].join('\n');
+    const error = detector.inspect('oc-usage-limit', 'opencode', paneText);
+    expect(error).not.toBeNull();
+    expect(error!.kind).toBe('quota_exhausted');
+    expect(error!.message).toBe('OpenCode Go usage limit reached. Resets in 5 minutes.');
+    expect(error!.cta).toContain('enable OpenCode overages');
+    expect(error!.resetAt).toBeDefined();
+  });
 });
 
 describe('ErrorDetector.inspect — generic auth prompt across CLIs', () => {

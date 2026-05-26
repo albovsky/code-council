@@ -163,5 +163,7 @@ export type ParticipantState =
   | "working"
   | "done"
   | "errored"
+  | "skipped"
+  | "not_run"
   | "cancelled"
   | "idle";

@@ -85,6 +85,23 @@ describe("thermo run artifact helpers", () => {
     });
   });
 
+  it("maps legacy adversarial_noise headers to final synthesis", () => {
+    const answer = [
+      "# Thermo Phase 1 Specialist Review - adversarial_noise",
+      "",
+      "## Assignment",
+      "Domain: adversarial_noise",
+      "Role: primary",
+      "",
+      "## Findings",
+      "Legacy synthesis adversarial-noise output.",
+      "",
+      "## DONE",
+    ].join("\n");
+
+    expect(inferLegacyThermoMetadata(answer, "gpt-5.5")?.domain).toBe("final_synthesis");
+  });
+
   it("does not infer Thermo metadata from ordinary prose mentioning thermo or validation", () => {
     const answer = [
       "## Findings",

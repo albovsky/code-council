@@ -54,6 +54,8 @@ describe('thermo prompts', () => {
     expectDelimitedData(out, 'original-work', 'Implement encrypted vault cards.');
     expectDelimitedData(out, 'files', '## Attached files');
     expectDelimitedData(out, 'artifact', 'diff --git');
+    expect(out).toContain('## Plan Contract');
+    expect(out).toContain('Status: not_found');
     expect(out).toContain('Domain: security');
     expectDelimitedData(out, 'voice-id', 'voice-security');
     expectDelimitedData(out, 'provider', 'opencode-go');
@@ -132,7 +134,7 @@ describe('thermo prompts', () => {
     expect(out.trimEnd().endsWith('## DONE')).toBe(true);
   });
 
-  it('builds synthesis prompts with exact final sections, metadata, gaps, and admission rules', () => {
+  it('builds synthesis prompts with concise final sections, metadata, plan contract, and admission rules', () => {
     const out = buildThermoSynthesisPrompt({
       artifact: 'original artifact',
       phaseOneOutputs: [{ origin: assignment, output: 'finding text' }],
@@ -151,21 +153,26 @@ describe('thermo prompts', () => {
       quotaNotes: ['voice-docs hit provider quota'],
       coverageGaps: ['Docs has no separate validator.'],
       assignmentSummary: 'security primary Tier A, validator Tier A_PLUS',
+      planContract: {
+        status: 'matched',
+        source: 'review_scope',
+        path: 'docs/superpowers/plans/2026-05-24-example.md',
+        content: '# Example Plan\n\n**Goal:** Add concise Thermo review.',
+      },
     });
 
     const sections = [
-      '**Valid Blocking**',
-      '**Valid Non-Blocking**',
-      '**Mostly Valid**',
-      '**Needs Owner Decision**',
-      '**Noise**',
-      '**Coverage Gaps**',
-      '**Fix Plan**',
-      '**Validation**',
+      '## Domain Coverage',
+      '## Blockers',
+      '## Owner Decisions',
+      '## Follow-Ups',
+      '## Verification',
     ];
 
     expectDelimitedData(out, 'artifact', 'original artifact');
     expectDelimitedData(out, 'assignment-summary', 'security primary Tier A, validator Tier A_PLUS');
+    expectDelimitedData(out, 'plan-path', 'docs/superpowers/plans/2026-05-24-example.md');
+    expectDelimitedData(out, 'plan-contract', '**Goal:** Add concise Thermo review.');
     expect(out).toContain('## Phase 1 Outputs');
     expect(out).toContain('## Phase 2 Validation Notes');
     expect(out).toContain('### Output 1');
@@ -183,11 +190,17 @@ describe('thermo prompts', () => {
     for (let i = 1; i < sections.length; i += 1) {
       expect(out.indexOf(sections[i])).toBeGreaterThan(out.indexOf(sections[i - 1]));
     }
-    expect(out).toContain('A blocking finding needs Tier A-/better origin or validation.');
-    expect(out).toContain('A security/data-loss blocking finding needs Tier A/A+ validation when available.');
-    expect(out).toContain('If validators disagree, downgrade to Mostly Valid or Needs Owner Decision.');
-    expect(out).toContain('Broad style feedback needs concrete regression risk.');
-    expect(out).toContain('Quota/skipped agents belong only in Coverage Gaps.');
+    expect(out).toContain('Verdict: safe_to_merge | changes_requested | owner_decision_needed | human_review_required | no_verdict');
+    expect(out).toContain('Run Health: complete | degraded | failed');
+    expect(out).toContain('- Plan Completeness: clear | finding | degraded | not applicable | not checked');
+    expect(out).toContain('Deduplicate by root cause across domains.');
+    expect(out).toContain('Drop valid but low-impact findings from the default report');
+    expect(out).toContain('Missing-test findings are allowed only when tied to a concrete merge, safety, or plan-verification risk.');
+    expect(out).toContain('Keep quota, skipped-agent, model provenance, mostly-valid, noise, and reviewer debate out of the default report.');
+    expect(out).not.toContain('**Mostly Valid**');
+    expect(out).not.toContain('**Noise**');
+    expect(out).not.toContain('**Coverage Gaps**');
+    expect(out).not.toContain('**Validation**');
     expect(out.trimEnd().endsWith('## DONE')).toBe(true);
   });
 
@@ -209,8 +222,8 @@ describe('thermo prompts', () => {
     expectDelimitedData(out, 'skipped-agent', 'voice-docs quota_limited');
     expectDelimitedData(out, 'quota-note', 'voice-docs hit provider quota');
     expect(out).toContain('unsupported blockers');
-    expect(out).toContain('misclassified noise');
-    expect(out).toContain('missing coverage gaps');
+    expect(out).toContain('low-value noise');
+    expect(out).toContain('weak domain coverage statuses');
     expect(out).toContain('APPROVED');
     expect(out).toContain('REQUIRED_REVISIONS');
     expect(out.trimEnd().endsWith('## DONE')).toBe(true);

@@ -954,13 +954,62 @@ function dedupeCoverageGaps(gaps: ThermoCoverageGap[]): ThermoCoverageGap[] {
 }
 
 function verdictFromFinalReport(body: string): Exclude<ThermoReviewVerdict, 'failed'> {
-  const explicit = body.match(/^Verdict:[^\S\r\n]*([^\r\n]*)$/im)?.[1]?.trim();
-  if (explicit !== undefined) {
-    return explicit === 'safe_to_merge' ? 'approved' : 'request_changes';
+  const explicit = explicitVerdictFromFinalReport(body);
+  if (explicit.found) {
+    return explicit.verdict === 'safe_to_merge' ? 'approved' : 'request_changes';
   }
   if (looksLikeConciseThermoReport(body)) return 'request_changes';
   if (hasMeaningfulSection(body, 'Valid Blocking')) return 'request_changes';
   return 'approved';
+}
+
+type ExplicitThermoVerdict =
+  | 'safe_to_merge'
+  | 'changes_requested'
+  | 'owner_decision_needed'
+  | 'human_review_required'
+  | 'no_verdict';
+
+const EXPLICIT_THERMO_VERDICTS = new Set<ExplicitThermoVerdict>([
+  'safe_to_merge',
+  'changes_requested',
+  'owner_decision_needed',
+  'human_review_required',
+  'no_verdict',
+]);
+
+function explicitVerdictFromFinalReport(body: string): (
+  | { found: true; verdict?: ExplicitThermoVerdict }
+  | { found: false }
+) {
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = rawLine.trim().replace(/^#{1,6}\s*/, '').trim();
+    const match = line.match(/^(.+?)\s*:\s*(.*)$/);
+    if (!match) continue;
+
+    const key = stripMarkdownVerdictDecoration(match[1]).toLowerCase();
+    if (key !== 'verdict') continue;
+
+    const normalized = stripMarkdownVerdictDecoration(match[2])
+      .trim()
+      .replace(/[.!?]+$/g, '')
+      .trim()
+      .toLowerCase();
+    if (EXPLICIT_THERMO_VERDICTS.has(normalized as ExplicitThermoVerdict)) {
+      return { found: true, verdict: normalized as ExplicitThermoVerdict };
+    }
+    return { found: true };
+  }
+
+  return { found: false };
+}
+
+function stripMarkdownVerdictDecoration(value: string): string {
+  const stripped = value.replace(/[*`]/g, '').trim();
+  if (stripped.startsWith('__') && stripped.endsWith('__')) {
+    return stripped.slice(2, -2).trim();
+  }
+  return stripped;
 }
 
 function looksLikeConciseThermoReport(body: string): boolean {

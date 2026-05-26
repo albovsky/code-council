@@ -383,6 +383,27 @@ describe('runThermoCodeReview', () => {
     expect(result.verdict).toBe('request_changes');
   });
 
+  it.each([
+    ['bold verdict key', '**Verdict:** safe_to_merge'],
+    ['heading verdict key', '### Verdict: safe_to_merge'],
+    ['trailing punctuation', 'Verdict: safe_to_merge.'],
+    ['markdown-wrapped value', 'Verdict: `safe_to_merge`'],
+  ])('maps formatted safe_to_merge verdict lines to approved: %s', async (_label, verdictLine) => {
+    runSingleReviewerWithPromptMock.mockImplementation(async (args: ReviewerCallArgs) => {
+      if (args.phase.id === 'thermo-final-synthesis') {
+        return writeParticipantAnswer(args, conciseReportWithVerdictLine(verdictLine), true);
+      }
+      return writeParticipantAnswer(args, 'phase output\n\n## DONE', true);
+    });
+
+    const result = await runThermoCodeReview(baseArgs(completePlanWith({
+      final_synthesis: { primary: voice('final', 'openai', 'gpt-5.5', 'A_PLUS') },
+    })));
+
+    expect(result.completed).toBe(true);
+    expect(result.verdict).toBe('approved');
+  });
+
   it('maps compound concise verdict lines to request_changes', async () => {
     runSingleReviewerWithPromptMock.mockImplementation(async (args: ReviewerCallArgs) => {
       if (args.phase.id === 'thermo-final-synthesis') {
@@ -391,6 +412,27 @@ describe('runThermoCodeReview', () => {
           '',
           '## DONE',
         ].join('\n'), true);
+      }
+      return writeParticipantAnswer(args, 'phase output\n\n## DONE', true);
+    });
+
+    const result = await runThermoCodeReview(baseArgs(completePlanWith({
+      final_synthesis: { primary: voice('final', 'openai', 'gpt-5.5', 'A_PLUS') },
+    })));
+
+    expect(result.completed).toBe(true);
+    expect(result.verdict).toBe('request_changes');
+  });
+
+  it.each([
+    'Verdict: not safe_to_merge',
+    'Verdict: safe_to_merge requested',
+    'Verdict: this is safe_to_merge',
+    'Verdict: safe_to_merge | changes_requested | owner_decision_needed | human_review_required | no_verdict',
+  ])('maps unsafe or prose verdict lines to request_changes: %s', async (verdictLine) => {
+    runSingleReviewerWithPromptMock.mockImplementation(async (args: ReviewerCallArgs) => {
+      if (args.phase.id === 'thermo-final-synthesis') {
+        return writeParticipantAnswer(args, conciseReportWithVerdictLine(verdictLine), true);
       }
       return writeParticipantAnswer(args, 'phase output\n\n## DONE', true);
     });
@@ -774,4 +816,8 @@ function conciseReport(
     lines.unshift(`Verdict: ${verdict}`);
   }
   return lines.join('\n');
+}
+
+function conciseReportWithVerdictLine(verdictLine: string): string {
+  return conciseReport('safe_to_merge').replace(/^Verdict: safe_to_merge/m, verdictLine);
 }

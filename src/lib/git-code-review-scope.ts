@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
 
@@ -16,13 +17,31 @@ export interface CodeReviewScope {
   artifact: string;
   title: string;
   totalBytes: number;
+  planContract: CodeReviewPlanContract;
 }
+
+export type CodeReviewPlanContract =
+  | {
+      status: 'matched';
+      path: string;
+      source: 'review_scope' | 'branch';
+      content: string;
+    }
+  | {
+      status: 'ambiguous';
+      source: 'review_scope' | 'branch';
+      candidates: string[];
+    }
+  | {
+      status: 'not_found';
+    };
 
 export type CodeReviewScopeErrorCode =
   | 'not_git_repo'
   | 'no_changes'
   | 'base_ref_missing'
   | 'artifact_too_large'
+  | 'plan_contract_unreadable'
   | 'git_failed';
 
 export class CodeReviewScopeError extends Error {
@@ -69,6 +88,17 @@ async function changedWorktreeFiles(repoRoot: string): Promise<string[]> {
     '--exclude-standard',
   ]);
   return uniqueSorted([...tracked.split('\n'), ...untracked.split('\n')]);
+}
+
+async function changedBranchFiles(repoRoot: string, baseRef?: string): Promise<string[]> {
+  const base = baseRef ?? await resolveBaseRef(repoRoot);
+  const names = await git(repoRoot, [
+    'diff',
+    '--name-only',
+    `${base}...HEAD`,
+    '--',
+  ]);
+  return uniqueSorted(names.split('\n'));
 }
 
 async function trackedFiles(repoRoot: string): Promise<Set<string>> {
@@ -182,6 +212,69 @@ function buildHeading(args: {
     .join('\n');
 }
 
+function isSuperpowersPlanFile(file: string): boolean {
+  return /^docs\/superpowers\/plans\/[^/]+\.md$/i.test(file);
+}
+
+async function matchedPlanContract(
+  repoRoot: string,
+  file: string,
+  source: 'review_scope' | 'branch',
+): Promise<CodeReviewPlanContract> {
+  try {
+    return {
+      status: 'matched',
+      path: file,
+      source,
+      content: await fs.promises.readFile(path.join(repoRoot, file), 'utf-8'),
+    };
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code === 'ENOENT') return { status: 'not_found' };
+
+    const message = error instanceof Error ? error.message : String(error);
+    throw new CodeReviewScopeError(
+      'plan_contract_unreadable',
+      `Detected plan contract ${file}, but could not read it: ${message}`,
+    );
+  }
+}
+
+async function planContractFromFiles(
+  repoRoot: string,
+  files: string[],
+  source: 'review_scope' | 'branch',
+): Promise<CodeReviewPlanContract> {
+  const candidates = uniqueSorted(files.filter(isSuperpowersPlanFile));
+  if (candidates.length === 0) return { status: 'not_found' };
+  if (candidates.length > 1) {
+    return { status: 'ambiguous', source, candidates };
+  }
+  return matchedPlanContract(repoRoot, candidates[0], source);
+}
+
+async function detectPlanContract(
+  repoRoot: string,
+  scopeFiles: string[],
+  baseRef?: string,
+): Promise<CodeReviewPlanContract> {
+  const scoped = await planContractFromFiles(repoRoot, scopeFiles, 'review_scope');
+  if (scoped.status !== 'not_found') return scoped;
+
+  try {
+    const branchFiles = await changedBranchFiles(repoRoot, baseRef);
+    return planContractFromFiles(repoRoot, branchFiles, 'branch');
+  } catch (error) {
+    if (
+      error instanceof CodeReviewScopeError &&
+      error.code === 'plan_contract_unreadable'
+    ) {
+      throw error;
+    }
+    return { status: 'not_found' };
+  }
+}
+
 export async function resolveCodeReviewScope(
   repoPath: string,
   options: { maxBytes?: number } = {},
@@ -275,6 +368,7 @@ export async function resolveCodeReviewScope(
         ? `Review worktree changes in ${path.basename(repoRoot)}`
         : `Review ${headRef} against ${baseRef}`,
     totalBytes,
+    planContract: await detectPlanContract(repoRoot, files, baseRef),
   };
 }
 

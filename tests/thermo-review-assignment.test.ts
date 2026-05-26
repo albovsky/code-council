@@ -3,6 +3,10 @@ import {
   THERMO_REVIEW_DOMAINS,
   assignThermoReviewDomains,
 } from '@/lib/thermo-review-assignment';
+import {
+  THERMO_REVIEW_DOMAINS as CANONICAL_THERMO_REVIEW_DOMAINS,
+  THERMO_SPECIALIST_DOMAINS,
+} from '@/lib/thermo-run-types';
 import type { ReviewVoice } from '@/lib/review-model-tiering';
 
 function voice(modelId: string, overrides: Partial<ReviewVoice> = {}): ReviewVoice {
@@ -40,6 +44,20 @@ function selectedModelIds(plan: ReturnType<typeof assignThermoReviewDomains>) {
 }
 
 describe('assignThermoReviewDomains', () => {
+  it('uses canonical Thermo domain definitions', () => {
+    expect(THERMO_REVIEW_DOMAINS).toEqual(CANONICAL_THERMO_REVIEW_DOMAINS);
+    expect(THERMO_SPECIALIST_DOMAINS).toEqual([
+      'plan_completeness',
+      'architecture',
+      'security',
+      'correctness',
+      'tests',
+      'performance',
+      'docs',
+    ]);
+    expect(CANONICAL_THERMO_REVIEW_DOMAINS).not.toContain('adversarial_noise');
+  });
+
   it('uses the target current-fleet mapping exactly', () => {
     const plan = assignThermoReviewDomains({
       voices: fullFleet,
@@ -47,6 +65,7 @@ describe('assignThermoReviewDomains', () => {
     });
 
     expect(selectedModelIds(plan)).toEqual({
+      plan_completeness: { primary: 'gpt-5.5', validator: 'opencode-go/deepseek-v4-pro' },
       architecture: { primary: 'gpt-5.5', validator: 'opencode-go/kimi-k2.6' },
       security: { primary: 'opencode-go/deepseek-v4-pro', validator: 'gpt-5.5' },
       correctness: { primary: 'opencode-go/kimi-k2.6', validator: 'opencode-go/qwen3.6-plus' },
@@ -57,6 +76,18 @@ describe('assignThermoReviewDomains', () => {
       synthesis_audit: { primary: 'opencode-go/deepseek-v4-pro', validator: undefined },
     });
     expect(plan.coverageGaps).toEqual([]);
+  });
+
+  it('assigns performance and docs validators even when the diff does not match old conditional heuristics', () => {
+    const plan = assignThermoReviewDomains({
+      voices: fullFleet,
+      changedFiles: ['src/components/run-viewer/participant-card.tsx'],
+    });
+
+    expect(plan.assignments.performance.validator?.voice.model_id).toBe('opencode-go/deepseek-v4-pro');
+    expect(plan.assignments.performance.validatorPolicy).toBe('always');
+    expect(plan.assignments.docs.validator?.voice.model_id).toBe('gemini-3.5-flash');
+    expect(plan.assignments.docs.validatorPolicy).toBe('always');
   });
 
   it('reports a critical coverage gap when security has no A-tier model', () => {
@@ -71,7 +102,27 @@ describe('assignThermoReviewDomains', () => {
     });
   });
 
-  it('skips AGY Gemini for docs when quota-limited and uses another fallback', () => {
+  it('does not let security validate itself when only one A-tier model is available', () => {
+    const plan = assignThermoReviewDomains({
+      voices: [
+        voice('gpt-5.5', {
+          provider: 'openai',
+          lineage: 'openai',
+          vendor_family: 'openai',
+        }),
+      ],
+    });
+
+    expect(plan.assignments.security.primary?.voice.model_id).toBe('gpt-5.5');
+    expect(plan.assignments.security.validator).toBeUndefined();
+    expect(plan.coverageGaps).toContainEqual({
+      domain: 'security',
+      severity: 'critical',
+      message: 'Security has no separate validator after skipped or unavailable models.',
+    });
+  });
+
+  it('does not let docs validate itself when quota leaves only one model', () => {
     const plan = assignThermoReviewDomains({
       voices: [
         voice('gemini-3.5-flash', { id: 'agy-gemini', provider: 'google' }),
@@ -83,10 +134,11 @@ describe('assignThermoReviewDomains', () => {
     expect(plan.assignments.docs.primary?.voice.id).toBe('fallback-docs');
     expect(plan.assignments.docs.validator).toBeUndefined();
     expect(plan.skippedVoiceIds).toEqual(['agy-gemini']);
-    expect(plan.coverageGaps).not.toContainEqual(expect.objectContaining({
+    expect(plan.coverageGaps).toContainEqual({
       domain: 'docs',
+      severity: 'warning',
       message: 'Docs has no separate validator after skipped or unavailable models.',
-    }));
+    });
   });
 
   it('reports a docs gap when skipped AGY Gemini leaves no fallback', () => {
@@ -103,13 +155,53 @@ describe('assignThermoReviewDomains', () => {
     });
   });
 
+  it('reports correctness and tests primary gaps as critical', () => {
+    const plan = assignThermoReviewDomains({ voices: [] });
+
+    expect(plan.coverageGaps).toContainEqual({
+      domain: 'correctness',
+      severity: 'critical',
+      message: 'Correctness has no available reviewer after skipped or unavailable models.',
+    });
+    expect(plan.coverageGaps).toContainEqual({
+      domain: 'tests',
+      severity: 'critical',
+      message: 'Tests has no available reviewer after skipped or unavailable models.',
+    });
+  });
+
+  it('reports plan completeness primary gaps as critical only when a plan matched', () => {
+    const withoutMatchedPlan = assignThermoReviewDomains({ voices: [] });
+    const withMatchedPlan = assignThermoReviewDomains({
+      voices: [],
+      planContractMatched: true,
+    });
+
+    expect(withoutMatchedPlan.coverageGaps).toContainEqual({
+      domain: 'plan_completeness',
+      severity: 'warning',
+      message: 'Plan Completeness has no available reviewer after skipped or unavailable models.',
+    });
+    expect(withMatchedPlan.coverageGaps).toContainEqual({
+      domain: 'plan_completeness',
+      severity: 'critical',
+      message: 'Plan Completeness has no available reviewer after skipped or unavailable models.',
+    });
+  });
+
   it('falls back deterministically for a single model and reports critical gaps', () => {
     const plan = assignThermoReviewDomains({
       voices: [voice('unknown-review-pro', { provider: 'zeta', vendor_family: 'future' })],
     });
 
     expect(plan.assignments.architecture.primary?.voice.model_id).toBe('unknown-review-pro');
+    expect(plan.assignments.plan_completeness.primary?.voice.model_id).toBe('unknown-review-pro');
+    expect(plan.assignments.architecture.validator).toBeUndefined();
+    expect(plan.assignments.plan_completeness.validator).toBeUndefined();
     expect(plan.assignments.security.primary?.voice.model_id).toBe('unknown-review-pro');
+    expect(plan.assignments.security.validator).toBeUndefined();
+    expect(plan.assignments.docs.validator).toBeUndefined();
+    expect(plan.assignments.performance.validator).toBeUndefined();
     expect(plan.assignments.final_synthesis.primary?.voice.model_id).toBe('unknown-review-pro');
     expect(plan.coverageGaps).toEqual(expect.arrayContaining([
       {

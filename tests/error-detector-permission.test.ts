@@ -34,6 +34,29 @@ const STEP_TWO_NESTED_CONFIRM = `
   ┃   Confirm   Cancel
 `;
 
+const STEP_EXTERNAL_LIB = `
+  ┃  △ Permission required
+  ┃    ← Access external directory ~/Projects/code-council/src/lib
+  ┃
+  ┃  Patterns
+  ┃
+  ┃  - /Users/albovsky/Projects/code-council/src/lib/*
+  ┃
+  ┃   Allow once   Allow always   Reject
+`;
+
+const STEP_EXTERNAL_APP = `
+  ┃  △ Permission required
+  ┃    ← Access external directory ~/Projects/code-council/src/app/
+  ┃      code_review
+  ┃
+  ┃  Patterns
+  ┃
+  ┃  - /Users/albovsky/Projects/code-council/src/app/code_review/*
+  ┃
+  ┃   Allow once   Allow always   Reject
+`;
+
 describe('opencode permission dialog recovery', () => {
   it('shim emits exactly [Right, Enter, Enter] for permission_prompt', () => {
     expect(opencodeShim.recoverKeys?.permission_prompt).toEqual([
@@ -110,5 +133,12 @@ describe('opencode permission dialog recovery', () => {
     expect(det.inspect('s', 'opencode', STEP_ONE)?.kind).toBe('permission_prompt');
     // Same dialog, second poll — dedup kicks in
     expect(det.inspect('s', 'opencode', STEP_ONE)).toBeNull();
+  });
+
+  it('detector re-fires for a different opencode permission prompt in the same session', () => {
+    const det = new ErrorDetector();
+    expect(det.inspect('s', 'opencode', STEP_EXTERNAL_LIB)?.kind).toBe('permission_prompt');
+    expect(det.inspect('s', 'opencode', STEP_EXTERNAL_APP)?.kind).toBe('permission_prompt');
+    expect(det.inspect('s', 'opencode', STEP_EXTERNAL_APP)).toBeNull();
   });
 });

@@ -13,6 +13,7 @@ import {
   CodeReviewScopeError,
   resolveCodeReviewScope,
   getCodeReviewContextData,
+  type CodeReviewPlanContract,
 } from '../../lib/git-code-review-scope.js';
 import { chatLogger, logger } from '../../lib/logger.js';
 import { assignThermoReviewDomains } from '../../lib/thermo-review-assignment.js';
@@ -44,6 +45,16 @@ interface RegisterCodeReviewRoutesArgs {
 
 function statusForScopeError(code: CodeReviewScopeError['code']): number {
   return code === 'git_failed' ? 500 : 400;
+}
+
+function planContractWorkSummary(planContract?: CodeReviewPlanContract): string {
+  if (!planContract || planContract.status === 'not_found') {
+    return 'Plan Contract: none detected. Run regular implementation-risk review without plan-completeness findings.';
+  }
+  if (planContract.status === 'ambiguous') {
+    return `Plan Contract: ambiguous (${planContract.candidates.length} candidates). Run regular implementation-risk review without plan-completeness findings.`;
+  }
+  return `Plan Contract: matched ${planContract.path}. Review implementation completeness against this plan.`;
 }
 
 async function getCurrentCodeReviewTemplate() {
@@ -257,9 +268,12 @@ export function registerCodeReviewRoutes(
           voices: currentVoices,
           skippedVoiceIds,
           changedFiles: scope.files,
+          planContractMatched: scope.planContract.status === 'matched',
         });
         const work = [
           scope.title,
+          '',
+          planContractWorkSummary(scope.planContract),
           '',
           'Thermo review this git diff with specialist reviewers, cross-validation, final synthesis, and coverage gaps.',
         ].join('\n');
@@ -315,10 +329,11 @@ export function registerCodeReviewRoutes(
                 await runThermoCodeReview({
                   chatDir: path.join(os.homedir(), '.code-council', 'chats', chat.id),
                   chatId: chat.id,
-                  artifact: scope.artifact,
-                  work,
-                  filesBlock: packAttachedFiles(scope.files, scope.repoRoot),
-                  assignments,
+	                  artifact: scope.artifact,
+	                  work,
+	                  filesBlock: packAttachedFiles(scope.files, scope.repoRoot),
+	                  planContract: scope.planContract,
+	                  assignments,
                   tmuxMgr: args.tmuxMgr as TmuxManager,
                   errorDetector: args.errorDetector as ErrorDetector,
                   onEvent: emit,

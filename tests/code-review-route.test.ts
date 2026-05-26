@@ -17,6 +17,7 @@ const gitScopeMock = vi.hoisted(() => {
         | 'no_changes'
         | 'base_ref_missing'
         | 'artifact_too_large'
+        | 'plan_contract_unreadable'
         | 'git_failed',
       message: string,
     ) {
@@ -63,8 +64,17 @@ phases:
 `;
 
 type ThermoRunnerCall = [{
+  planContract?: {
+    status: string;
+    path?: string;
+  };
   assignments: {
     skippedVoiceIds: string[];
+    coverageGaps: Array<{
+      domain: string;
+      severity: string;
+      message: string;
+    }>;
     assignments: {
       final_synthesis: {
         primary?: {
@@ -106,6 +116,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -144,6 +155,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -215,6 +227,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
     const beforeTemplate = await templates.getById('branch-code-review');
 
@@ -265,6 +278,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -311,6 +325,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -375,6 +390,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -400,6 +416,51 @@ describe('registerCodeReviewRoutes', () => {
     expect(
       thermoCalls.at(-1)?.[0].assignments.assignments.final_synthesis.primary?.voice.model_id,
     ).toBe('opencode-go/deepseek-v4-pro');
+  });
+
+  it('threads detected plan contracts into thermo runner args', async () => {
+    const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
+    gitScopeMock.resolveCodeReviewScope.mockResolvedValue({
+      repoPath: '/repo',
+      repoRoot: '/repo',
+      mode: 'worktree',
+      headRef: 'feature/current',
+      files: ['app.ts', 'docs/superpowers/plans/2026-05-24-example.md'],
+      artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
+      title: 'Review worktree changes in repo',
+      totalBytes: 92,
+      planContract: {
+        status: 'matched',
+        source: 'review_scope',
+        path: 'docs/superpowers/plans/2026-05-24-example.md',
+        content: '# Example Plan',
+      },
+    });
+
+    const app = Fastify({ logger: false });
+    registerCodeReviewRoutes(app, {
+      startRun: true,
+      tmuxMgr: {} as never,
+      errorDetector: {} as never,
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/code-review',
+      payload: { repoPath: '/repo', mode: 'thermo' },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    const thermoCalls = thermoRunnerMock.runThermoCodeReview.mock.calls as unknown as ThermoRunnerCall[];
+    expect(thermoCalls.at(-1)?.[0].planContract).toMatchObject({
+      status: 'matched',
+      path: 'docs/superpowers/plans/2026-05-24-example.md',
+    });
+    expect(thermoCalls.at(-1)?.[0].assignments.coverageGaps).toContainEqual({
+      domain: 'plan_completeness',
+      severity: 'critical',
+      message: 'Plan Completeness has no available reviewer after skipped or unavailable models.',
+    });
   });
 
   it('registers thermo runs with the active-run lifecycle so cancellation can abort them', async () => {
@@ -446,6 +507,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -496,6 +558,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -551,6 +614,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -596,6 +660,34 @@ describe('registerCodeReviewRoutes', () => {
     });
   });
 
+  it('returns validation error when a detected plan contract cannot be read', async () => {
+    const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
+    gitScopeMock.resolveCodeReviewScope.mockRejectedValue(
+      new gitScopeMock.CodeReviewScopeError(
+        'plan_contract_unreadable',
+        'Detected plan contract docs/superpowers/plans/2026-05-24-example.md, but could not read it: EISDIR',
+      ),
+    );
+
+    const app = Fastify({ logger: false });
+    registerCodeReviewRoutes(app, { startRun: false });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/code-review',
+      payload: { repoPath: '/repo' },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      ok: false,
+      error: {
+        code: 'plan_contract_unreadable',
+        message: expect.stringContaining('docs/superpowers/plans/2026-05-24-example.md'),
+      },
+    });
+  });
+
   it('uses saved code-review disabled voices when launch payload omits skipped voices', async () => {
     const { registerCodeReviewRoutes } = await import('../src/daemon/routes/code-review');
     await voices.upsert({
@@ -617,6 +709,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -667,6 +760,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });
@@ -747,6 +841,7 @@ describe('registerCodeReviewRoutes', () => {
       artifact: '# Code Review: worktree changes\n\ndiff --git a/app.ts b/app.ts\n',
       title: 'Review worktree changes in repo',
       totalBytes: 92,
+      planContract: { status: 'not_found' },
     });
 
     const app = Fastify({ logger: false });

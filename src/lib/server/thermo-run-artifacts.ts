@@ -8,7 +8,7 @@ import type {
   ThermoPhaseGroup,
   ThermoRunPlan,
 } from "@/lib/thermo-run-types";
-import { parseThermoDomain } from "@/lib/thermo-run-types";
+import { parseThermoDomain, thermoDomainCheck } from "@/lib/thermo-run-types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
@@ -152,7 +152,7 @@ export function inferLegacyThermoMetadata(
     phaseId: `legacy-${phaseGroup}-${domain}`,
     phaseLabel,
     description: phaseLabel,
-    check: legacyDomainCheck(domain),
+    check: thermoDomainCheck(domain),
     domain,
     role,
     voiceId: model,
@@ -183,13 +183,14 @@ function inferLegacyThermoDomain(header: string): ThermoDomain {
     /(?:\*\*Domain:\*\*|^Domain:|^## Domain\s*\n)\s*([^\n]+)/im,
   )?.[1];
   const heading = header.match(
-    /^#.*?\b(architecture|security|correctness|tests?|performance|docs?|documentation|adversarial_noise)\b/im,
+    /^#.*?\b(plan[_\s-]?completeness|architecture|security|correctness|tests?|performance|docs?|documentation|adversarial_noise)\b/im,
   )?.[1];
   return normalizeLegacyThermoDomain(explicit ?? heading ?? "final_synthesis");
 }
 
 function normalizeLegacyThermoDomain(value: string): ThermoDomain {
   const normalized = value.toLowerCase();
+  if (/plan[_\s-]?completeness/.test(normalized)) return "plan_completeness";
   if (normalized.includes("architecture")) return "architecture";
   if (normalized.includes("security")) return "security";
   if (normalized.includes("correctness")) return "correctness";
@@ -198,28 +199,9 @@ function normalizeLegacyThermoDomain(value: string): ThermoDomain {
   if (normalized.includes("documentation") || /\bdocs?\b/.test(normalized)) {
     return "docs";
   }
-  if (normalized.includes("adversarial_noise")) return "adversarial_noise";
+  if (normalized.includes("adversarial_noise")) return "final_synthesis";
   if (normalized.includes("synthesis_audit")) return "synthesis_audit";
   return parseThermoDomain(normalized) ?? "final_synthesis";
-}
-
-function legacyDomainCheck(domain: ThermoDomain): string {
-  switch (domain) {
-    case "architecture":
-      return "Architecture, maintainability, module boundaries, abstractions, and long-term change risk.";
-    case "security":
-      return "Security, auth, authorization, data loss, secrets, privacy, and tenant isolation.";
-    case "correctness":
-      return "Functional correctness, regressions, edge cases, state handling, and user-visible behavior.";
-    case "tests":
-      return "Test coverage, fake coverage, missing assertions, brittle tests, and verification gaps.";
-    case "performance":
-      return "Performance, scalability, resource usage, concurrency, caching, and avoidable repeated work.";
-    case "docs":
-      return "Documentation, migrations, release notes, operator handoff, and public-facing behavior notes.";
-    default:
-      return "Final synthesis of validated review findings.";
-  }
 }
 
 export function readThermoRunPlan(chatDir: string): ThermoRunPlan | null {

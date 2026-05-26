@@ -1,3 +1,4 @@
+import type { CodeReviewPlanContract } from '../../lib/git-code-review-scope';
 import type { ReviewModelTier } from '../../lib/review-model-tiering';
 import type { ThermoDomain } from '../../lib/thermo-review-assignment';
 
@@ -28,6 +29,7 @@ export interface ThermoPromptInput {
   filesBlock?: string;
   artifact: string;
   assignment: ThermoAssignmentMetadata;
+  planContract?: CodeReviewPlanContract;
 }
 
 export interface ThermoValidationPromptInput {
@@ -36,6 +38,7 @@ export interface ThermoValidationPromptInput {
   originalArtifact: string;
   phaseOneOutputs: ThermoReviewOutput[];
   assignmentContext: string;
+  planContract?: CodeReviewPlanContract;
 }
 
 export interface ThermoSynthesisPromptInput {
@@ -46,6 +49,7 @@ export interface ThermoSynthesisPromptInput {
   quotaNotes: string[];
   coverageGaps: string[];
   assignmentSummary: string;
+  planContract?: CodeReviewPlanContract;
 }
 
 export interface ThermoAuditPromptInput {
@@ -56,6 +60,7 @@ export interface ThermoAuditPromptInput {
   coverageGaps: string[];
   skippedAgents: string[];
   quotaNotes: string[];
+  planContract?: CodeReviewPlanContract;
 }
 
 function trimBlock(value: string): string {
@@ -89,6 +94,37 @@ function dataListOrNone(label: string, items: string[]): string {
   }
 
   return items.map((item) => `- ${fencedData(label, item)}`).join('\n');
+}
+
+function formatPlanContract(planContract?: CodeReviewPlanContract): string {
+  if (!planContract || planContract.status === 'not_found') {
+    return [
+      'Status: not_found',
+      'Plan Completeness domain must report not checked.',
+      'Do not create plan-completeness findings without a matched plan contract.',
+    ].join('\n');
+  }
+
+  if (planContract.status === 'ambiguous') {
+    return [
+      'Status: ambiguous',
+      `Source: ${planContract.source}`,
+      'Plan Completeness domain must report not checked.',
+      'Do not create plan-completeness findings because multiple candidate plans exist.',
+      '',
+      'Candidate plans:',
+      ...planContract.candidates.map((candidate) => `- ${fencedData('plan-candidate', candidate)}`),
+    ].join('\n');
+  }
+
+  return [
+    'Status: matched',
+    `Source: ${planContract.source}`,
+    'Path:',
+    fencedData('plan-path', planContract.path),
+    'Content:',
+    fencedData('plan-contract', planContract.content),
+  ].join('\n');
 }
 
 function formatAssignment(assignment: ThermoAssignmentMetadata): string {
@@ -163,6 +199,7 @@ export function buildThermoPhaseOnePrompt(input: ThermoPromptInput): string {
     section('Assignment', formatAssignment(input.assignment)),
     section('Domain Scope', fencedData('domain-scope', input.domainScope)),
     section('Original Work', fencedData('original-work', input.originalWork)),
+    section('Plan Contract', formatPlanContract(input.planContract)),
   ];
 
   if (input.filesBlock?.trim()) {
@@ -175,6 +212,8 @@ export function buildThermoPhaseOnePrompt(input: ThermoPromptInput): string {
       '## Instructions',
       `Review only the ${input.assignment.domain} domain unless another issue directly affects that domain.`,
       'Use concrete evidence from the artifact. Do not invent missing context.',
+      'If the plan contract is not matched, do not create plan-completeness findings.',
+      'When a plan is matched, treat concrete checklist items, stated constraints, and promised validation as the implementation contract.',
       'Classify severity in the heading as blocking, high, medium, low, or note.',
     ].join('\n'),
     [
@@ -207,6 +246,7 @@ export function buildThermoValidationPrompt(input: ThermoValidationPromptInput):
     section('Domain', input.domain),
     section('Domain Scope', fencedData('domain-scope', input.domainScope)),
     section('Assignment Context', fencedData('assignment-context', input.assignmentContext)),
+    section('Plan Contract', formatPlanContract(input.planContract)),
     section('Original Artifact', fencedData('original-artifact', input.originalArtifact)),
     section('Phase 1 Outputs', formatPhaseOneOutputs(input.phaseOneOutputs)),
     [
@@ -224,6 +264,7 @@ export function buildThermoSynthesisPrompt(input: ThermoSynthesisPromptInput): s
   return [
     '# Thermo Final Synthesis',
     section('Assignment Summary', fencedData('assignment-summary', input.assignmentSummary)),
+    section('Plan Contract', formatPlanContract(input.planContract)),
     section('Artifact', fencedData('artifact', input.artifact)),
     section('Phase 1 Outputs', formatPhaseOneOutputs(input.phaseOneOutputs)),
     section('Phase 2 Validation Notes', formatValidationNotes(input.validationNotes)),
@@ -240,24 +281,44 @@ export function buildThermoSynthesisPrompt(input: ThermoSynthesisPromptInput): s
     section('Coverage Gaps', dataListOrNone('coverage-gap', input.coverageGaps)),
     [
       '## Admission Rules',
-      'A blocking finding needs Tier A-/better origin or validation.',
-      'A security/data-loss blocking finding needs Tier A/A+ validation when available.',
-      'If validators disagree, downgrade to Mostly Valid or Needs Owner Decision.',
-      'Broad style feedback needs concrete regression risk.',
-      'Quota/skipped agents belong only in Coverage Gaps.',
+      'Optimize for implementation gaps and merge risk, not audit completeness.',
+      'Deduplicate by root cause across domains. One root cause becomes one finding with domain tags.',
+      'Drop valid but low-impact findings from the default report unless they affect the verdict.',
+      'A surfaced blocker needs validator agreement or deterministic evidence from the artifact/plan.',
+      'A security/privacy/data-loss blocker needs an exact trust boundary, attacker/control surface, exploit path, impacted asset, and independent validation or deterministic evidence.',
+      'Missing-test findings are allowed only when tied to a concrete merge, safety, or plan-verification risk.',
+      'If the plan contract is not matched, mark Plan Completeness as not checked and do not create plan-gap findings.',
+      'Keep quota, skipped-agent, model provenance, mostly-valid, noise, and reviewer debate out of the default report. They remain in trace artifacts.',
     ].join('\n'),
     [
       '## Final Report Contract',
-      'Return exactly these sections in this order:',
+      'Return a concise decision-grade markdown report. Omit empty findings sections.',
       '',
-      '**Valid Blocking**',
-      '**Valid Non-Blocking**',
-      '**Mostly Valid**',
-      '**Needs Owner Decision**',
-      '**Noise**',
-      '**Coverage Gaps**',
-      '**Fix Plan**',
-      '**Validation**',
+      'Verdict: safe_to_merge | changes_requested | owner_decision_needed | human_review_required | no_verdict',
+      'Run Health: complete | degraded | failed',
+      'Plan: matched `<path>` | not checked',
+      '',
+      '## Domain Coverage',
+      '- Plan Completeness: clear | finding | degraded | not applicable | not checked',
+      '- Correctness / Regression: clear | finding | degraded | not applicable | not checked',
+      '- Security / Privacy: clear | finding | degraded | not applicable | not checked',
+      '- Performance / Reliability: clear | finding | degraded | not applicable | not checked',
+      '- Tests / Verification: clear | finding | degraded | not applicable | not checked',
+      '- Maintainability / Architecture: clear | finding | degraded | not applicable | not checked',
+      '- Docs / Operator Handoff: clear | finding | degraded | not applicable | not checked',
+      '',
+      '## Blockers',
+      'Numbered list, maximum 3, only decision-grade blockers.',
+      '',
+      '## Owner Decisions',
+      'Numbered list, maximum 2, only unresolved product/merge-policy choices.',
+      '',
+      '## Follow-Ups',
+      'Numbered list, maximum 3, only important concrete non-blockers.',
+      '',
+      '## Verification',
+      '- Evidence observed:',
+      '- Missing verification affecting verdict:',
     ].join('\n'),
     doneFooter(),
   ].join('\n\n');
@@ -267,6 +328,7 @@ export function buildThermoAuditPrompt(input: ThermoAuditPromptInput): string {
   return [
     '# Thermo Synthesis Audit',
     section('Draft Final Report', fencedData('draft-final-report', input.draftFinalReport)),
+    section('Plan Contract', formatPlanContract(input.planContract)),
     section('Original Artifact', fencedData('original-artifact', input.artifact)),
     section('Phase 1 Outputs', formatPhaseOneOutputs(input.phaseOneOutputs)),
     section('Phase 2 Validation Notes', formatValidationNotes(input.validationNotes)),
@@ -283,9 +345,10 @@ export function buildThermoAuditPrompt(input: ThermoAuditPromptInput): string {
     section('Coverage Gaps', dataListOrNone('coverage-gap', input.coverageGaps)),
     [
       '## Audit Instructions',
-      'Find unsupported blockers, misclassified noise, and missing coverage gaps.',
-      'Check that quota or skipped agents appear only as coverage gaps.',
-      'Check that security or data-loss blockers have the required validation when available.',
+      'Find unsupported blockers, missing decision-grade findings, weak domain coverage statuses, and low-value noise that leaked into the default report.',
+      'Check that quota, skipped agents, model provenance, mostly-valid, noise, and reviewer debate stayed out of the default report.',
+      'Check that security or data-loss blockers have the required trust-boundary evidence and validation.',
+      'Check that plan-completeness findings appear only when the plan contract is matched.',
       'Output APPROVED when the draft can stand as final.',
       'Output REQUIRED_REVISIONS when the synthesizer must revise, followed by concise required changes.',
     ].join('\n'),

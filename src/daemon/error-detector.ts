@@ -86,6 +86,7 @@ function extractPermissionRequest(paneText: string): {
 
   let summary: string | undefined;
   let command: string | undefined;
+  let pattern: string | undefined;
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (/Allow once\s+(?:Always allow|Allow always)\s+Reject/i.test(line)) break;
@@ -93,12 +94,40 @@ function extractPermissionRequest(paneText: string): {
       const match = /^#\s*(.+)$/.exec(line);
       if (match) summary = match[1].trim();
     }
+    if (!summary) {
+      const match = /^[←→]\s*(.+)$/.exec(line);
+      if (match) {
+        const parts = [match[1].trim()];
+        for (let j = i + 1; j < lines.length; j++) {
+          const next = lines[j].trim();
+          if (
+            !next ||
+            /^Patterns$/i.test(next) ||
+            /^\$/.test(next) ||
+            /^[←→]/.test(next) ||
+            /^[-*]\s+/.test(next) ||
+            /Allow once\s+(?:Always allow|Allow always)\s+Reject/i.test(next)
+          ) {
+            break;
+          }
+          parts.push(next);
+        }
+        summary = parts.join(' ').replace(/\s+/g, ' ');
+      }
+    }
     if (!command) {
       const match = /^\$\s*(.+)$/.exec(line);
       if (match) command = match[1].trim();
     }
+    if (!pattern) {
+      const match = /^[-*]\s+(.+)$/.exec(line);
+      if (match) pattern = match[1].trim();
+    }
   }
 
+  if (pattern) {
+    summary = summary ? `${summary} (${pattern})` : pattern;
+  }
   if (!summary && !command) return undefined;
   return { summary, command };
 }
@@ -132,12 +161,12 @@ interface OpenCodeState {
  *
  * Per-session dedup: the runner polls capture-pane every ~2s, so the same
  * quota text sits in the buffer and would emit on every poll. We track the
- * last-emitted error kind per session and suppress repeats of the same kind
- * until a different kind (or no error) appears.
+ * last-emitted error signature per session and suppress repeats until the
+ * prompt changes or no error is visible.
  */
 export class ErrorDetector {
   private openCodeState = new Map<string, OpenCodeState>();
-  private lastEmittedKind = new Map<string, CliErrorKind>();
+  private lastEmittedSignature = new Map<string, string>();
 
   /**
    * Inspect a tmux pane snapshot for known failure patterns.
@@ -153,16 +182,27 @@ export class ErrorDetector {
       // (e.g. a *second* permission_prompt after we recovered the first) can
       // re-fire later. Without this, recoverable+recurring events are silently
       // suppressed for the rest of the session.
-      this.lastEmittedKind.delete(sessionName);
+      this.lastEmittedSignature.delete(sessionName);
       return null;
     }
 
-    // Dedup: skip if we already emitted this exact kind for this session.
+    const signature = this.dedupSignature(result);
+    // Dedup: skip if we already emitted this exact signature for this session.
     // The user's experience: one quota error event per quota event, not 149.
-    const lastKind = this.lastEmittedKind.get(sessionName);
-    if (lastKind === result.kind) return null;
-    this.lastEmittedKind.set(sessionName, result.kind);
+    const lastSignature = this.lastEmittedSignature.get(sessionName);
+    if (lastSignature === signature) return null;
+    this.lastEmittedSignature.set(sessionName, signature);
     return result;
+  }
+
+  private dedupSignature(error: CliError): string {
+    if (error.kind !== 'permission_prompt') return error.kind;
+    return [
+      error.kind,
+      error.permissionRequest?.summary ?? '',
+      error.permissionRequest?.command ?? '',
+      error.detail ?? '',
+    ].join('\u001f');
   }
 
   /** Inner pattern matcher — see inspect() for the dedup wrapper. */
@@ -279,6 +319,22 @@ export class ErrorDetector {
     // exceeded"; the TUI surfaces the same string. Distinct from
     // opencode_db_corrupt (Pattern 4) which is a session-replay failure.
     if (lineage === 'opencode') {
+      const goUsageLimit =
+        /(?:Go limit reached|5\s*hour usage limit reached)[\s\S]*?(?:reset|resets|will reset)\s+in\s+([0-9]+\s*(?:d(?:ays?)?|h(?:ours?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?))(?:\s+[0-9]+\s*(?:d(?:ays?)?|h(?:ours?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)))*)/i.exec(paneText);
+      if (goUsageLimit) {
+        const reset = goUsageLimit[1]?.trim();
+        return {
+          kind: 'quota_exhausted',
+          lineage,
+          message: reset
+            ? `OpenCode Go usage limit reached. Resets in ${reset}.`
+            : 'OpenCode Go usage limit reached.',
+          cta: 'Wait for the reset window, enable OpenCode overages, or switch to a different model.',
+          resetAt: parseResetDuration(reset),
+          detail: goUsageLimit[0].slice(0, 240),
+        };
+      }
+
       if (/subscription quota exceeded|Out of credits|insufficient credits/i.test(paneText)) {
         return {
           kind: 'quota_exhausted',
@@ -483,7 +539,7 @@ export class ErrorDetector {
    */
   reset(sessionName: string): void {
     this.openCodeState.delete(sessionName);
-    this.lastEmittedKind.delete(sessionName);
+    this.lastEmittedSignature.delete(sessionName);
   }
 
   /**

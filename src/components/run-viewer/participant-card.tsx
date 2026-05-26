@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, Maximize2, Shuffle, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { uiLineageDot, uiLineageLabel } from "@/lib/lineage-maps";
 import {
   displayModelName,
@@ -95,7 +96,9 @@ export function ParticipantCard({
    *  re-key mid-run. Empty when no swap fired. */
   swaps?: FallbackSwap[];
 }) {
+  const router = useRouter();
   const [cancelling, setCancelling] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   // State precedence: pending (synthesised slot) → done (answer on disk) →
@@ -190,6 +193,47 @@ export function ParticipantCard({
     participant.binaryUsed ?? participant.agentName,
     ui,
   );
+  const handleRetryRun = async () => {
+    if (!chatId || retrying) return;
+    setRetrying(true);
+    try {
+      const res = await fetch(`/api/daemon/chats/${chatId}/rerun`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        window.alert(
+          "Couldn't start a new run — Code Council didn't respond. Try restarting it from your terminal: council start",
+        );
+        setRetrying(false);
+        return;
+      }
+      const body = (await res.json()) as {
+        ok: boolean;
+        data?: { slug?: string; id?: string };
+        error?: { message?: string };
+      };
+      if (!body.ok) {
+        window.alert(
+          `Couldn't start a new run: ${body.error?.message ?? "Unknown error from Code Council."}`,
+        );
+        setRetrying(false);
+        return;
+      }
+      const target = body.data?.slug ?? body.data?.id;
+      if (target) {
+        router.push(`/runs/${target}`);
+        router.refresh();
+        return;
+      }
+      window.alert(
+        "Code Council accepted the retry but didn't return a chat id. Refresh and try again.",
+      );
+      setRetrying(false);
+    } catch {
+      window.alert("Retry failed. Network error.");
+      setRetrying(false);
+    }
+  };
 
   return (
     <div
@@ -286,7 +330,11 @@ export function ParticipantCard({
               <X className="h-3 w-3" />
             </button>
           )}
-          <StateBadge state={state} />
+          <StateBadge
+            state={state}
+            onRetry={state === "errored" && chatId ? handleRetryRun : undefined}
+            retrying={retrying}
+          />
         </div>
       </div>
 
